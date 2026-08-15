@@ -1,0 +1,22 @@
+#!/bin/bash 
+
+cores_num=$(nproc --all)
+cpu_read=($(sed -n 2,$(($cores_num + 1))p /proc/stat))
+sleep 2
+cpu_read2=($(sed -n 2,$(($cores_num + 1))p /proc/stat))
+arr_inc=0
+for ((i=1;i<=$cores_num;i++))
+do  
+	cpu_data[$i]="${cpu_read[@]:1+$arr_inc:10}"
+    cpu_data2[$i]="${cpu_read2[@]:1+$arr_inc:10}"
+	cpu_sum[$i]=$((${cpu_data[i]// /+}))
+	cpu_sum2[$i]=$((${cpu_data2[i]// /+}))
+	if [[ $((${cpu_sum[i]} - ${cpu_sum2[i]})) -eq 0 ]]
+	then
+		echo "Two cpu data cannot be equal to 0."
+	else
+		cpu_stat+="$((100 * (${cpu_sum[i]} - ${cpu_sum2[i]} - ${cpu_read[4 + arr_inc]}  + ${cpu_read2[ 4 + arr_inc ]})  / (${cpu_sum[i]} - ${cpu_sum2[i]})))% "
+	fi
+	((arr_inc+=11))
+done 
+echo $cpu_stat

@@ -1,0 +1,138 @@
+ /* Style the body of portal, you can add a background color or an image */
+body {}
+
+/* Default override for all buttons with class .btn, you can ommit this */
+.btn {}
+
+/* The main content */
+#main-content {}
+
+/* Banners */
+#pisofi_banner {}
+
+/* Notification for internet status */
+#connection-notification {}
+
+/* Container of your tagline */
+#tagline {}
+
+/* Container of charging options */
+#charging-options {}
+
+/* Container of charging station name and location */
+#charging-options .charging-station {}
+
+/* The charging station name */
+.charging-station .charging-station-name {}
+
+/* The charging station location */
+.charging-station .charging-station-location {}
+
+/* Charging Remaining time */
+#charging-options .charging-remaining-time {}
+
+/* Pause Charging Button */
+#btn-pause-charging {}
+/* Resume Charging Button */
+#btn-resume-charging {}
+
+/* Transfer charging time button */
+#btn-transfer-charging {}
+
+/* Container of wif connection */
+#connection-info {}
+
+/* Available Coins Container */
+#available-coins {}
+
+/* The span containing the text Available Coins */
+#available-coins > span {}
+
+/* Device Info Container - Mac and IP */
+#device-info {}
+
+/* Label for mac */
+#device-info .device-mac-label {}
+
+/* Mac Address */
+#device-info .device-mac {}
+
+/* Label for IP Address */
+#device-info .device-ip-label {}
+
+/* Ip Address */
+#device-info .device-ip {}
+
+/* Progress Bar, you can set it's height */
+#progress-bar {}
+
+/* The label with remaining time text */
+#progress-bar .progress-bar-label {}
+
+/* Options for wifi container */
+#connection-options {}
+
+.session-message {}
+
+/*expiration display for time go online option on insert coin*/
+#time-option-expiration {}
+
+/*expiration display for data go online option on insert coin*/
+#data-option-expiration {}
+
+/*expiration display for convert to wipass option on insert coin*/
+#wipass-option-expiration {}
+
+/*add to wallet button on portal*/
+#add-to-wallet {}
+
+/*session list drop down button including session table*/
+#sessions-dropdown {}
+
+/*sessions table only*/
+#tbl-sessions {}
+
+/* Pause Time Button */
+#btn-pause-time {}
+
+/* Wipass Conversion Button */
+#btn-convert-to-wipass {}
+
+/*promo packages and epins buttons*/
+.other-services-epins{}
+
+/* Live Transfer Button */
+#label-transfer-code {}
+
+/* Show Wifi Rates Button */
+#btn-show-rates {}
+
+/* Charging Container Group inside connection options */
+#charging-group {}
+
+/* Charging Rates Button */
+#btn-charging-rates {}
+
+/* Charging Stations Button */
+#btn-charging-stations {}
+
+/* Button options container, includes insert coin, use wipass, etc */
+#button-options {}
+
+/* Labels if wifi, charging, or eload is enabled */
+#service-labels {}
+
+/* Insert Coin Button */
+#btn-insert-coin {}
+
+/* Buy Eload Button */
+#btn-buy-eload {}
+
+/* Use Wipass Button */
+#btn-use-wipass {}
+
+/* Dropdown for other wipass options */
+#btn-use-voucher-options {}
+
+/* footer */
+footer {}
