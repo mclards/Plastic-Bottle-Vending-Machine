@@ -1,0 +1,14 @@
+[Unit]
+Description=Eco-Fi Reverse Vending Machine Hotspot Daemon
+After=network.target network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ecofi
+ExecStart=/usr/bin/python3 /opt/ecofi/daemon.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
