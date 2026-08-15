@@ -51,18 +51,15 @@ Comparing PisoFi to our current **Smart Eco-Fi Vendo**, we are already on the ri
 
 ---
 
-## 5. Sound & Audio Implementation in PisoFi
-PisoFi systems take a different approach to audio compared to our current Eco-Fi setup.
+## 5. Sound & Audio Design Paradigm
+Instead of relying on hardware speakers mounted on the vending machine cabinet, our Smart Eco-Fi system uses a personalized, software-driven approach.
 
-### How PisoFi Does Audio:
-- **Hardware-Driven MP3s:** PisoFi runs on full Linux boards (like Orange Pi/Raspberry Pi) which have built-in audio jacks or USB ports. Operators typically connect a physical amplifier and a speaker inside the vending machine cabinet.
-- **Voice Prompts:** The Python/Node.js daemon running on the board plays MP3 or WAV files directly to the speaker when physical events occur. 
-  - e.g., A coin drop triggers `aplay insert_coin.wav` which announces *"Please insert coin"* out loud for everyone nearby to hear.
-- **Customizability:** Vendo owners often swap out these MP3 files with custom, branded, or localized voiceovers by simply replacing the audio files via SSH or WinSCP.
+### The Portal Audio Approach (Smartphone-Driven):
+Because our design prioritizes a modern, non-intrusive user experience, all auditory feedback is streamed directly to the user's personal smartphone via the Captive Portal.
 
-### How Smart Eco-Fi Compares:
-1. **Hardware Alerts:** Our Eco-Fi machine currently relies on a simple **5V Active Buzzer (GPIO 33)** connected to the ESP32 for physical machine alerts (like a long beep for rejection). It doesn't announce voice prompts to the public.
-2. **Software/Portal Alerts:** Instead of a cabinet speaker, our system streams **Web Audio API** synthesized chimes and buzzes directly to the user's personal smartphone via the captive portal (as we recently implemented). This ensures low latency and a personalized UX without disturbing the physical environment.
-
-> [!NOTE]
-> **Potential Upgrade:** If we ever wanted the Eco-Fi machine to literally speak (e.g., *"Bottle Accepted!"*), we would need to either play audio out of the Orange Pi 3B's audio jack into a cabinet speaker (like PisoFi) or wire a **DFPlayer Mini** MP3 module to the ESP32.
+1. **Web Audio API Synthesis:** Rather than downloading heavy MP3 files over the local network (which consumes bandwidth and increases load times), the portal uses the browser's native Web Audio API to synthesize sounds on the fly.
+2. **Low-Latency Feedback:** 
+   - **Ticking Clock:** A synthetic blip plays every second during the 30-second drop window to convey urgency.
+   - **Success Chime:** A pleasant dual-tone chord plays the exact millisecond the ESP32 successfully validates a plastic bottle, providing instant gratification.
+   - **Error/Reject Buzz:** A harsh sawtooth wave alerts the user if an invalid item (metal, liquid, non-PET) is detected.
+3. **Personalized UX:** This approach guarantees zero latency and ensures that the audio cues are personalized to the user's device, eliminating the need for loud, disruptive cabinet speakers in the physical environment.
