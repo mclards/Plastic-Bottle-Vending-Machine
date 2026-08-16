@@ -29,11 +29,71 @@ def init_db():
         
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('minutes_per_bottle', '15')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('drop_timeout', '30')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('default_dl_kbps', '2048')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('default_ul_kbps', '1024')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('custom_css', '')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('telegram_bot_token', '')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('telegram_chat_id', '')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('anti_tethering', '0')")
         default_hash = generate_password_hash("admin123")
         c.execute("INSERT OR IGNORE INTO admins (username, password_hash) VALUES ('admin', ?)", (default_hash,))
         conn.commit()
 
 init_db()
+
+import platform
+import subprocess
+
+
+import urllib.request
+import urllib.parse
+import base64
+
+def apply_anti_tethering(enable):
+    if platform.system() != "Linux":
+        print(f"[MOCK] Anti-Tethering Enabled: {enable}")
+        return
+    if enable:
+        print("[IPTABLES] Enforcing Anti-Tethering (TTL=64)")
+        # os.system("iptables -t mangle -A POSTROUTING -j TTL --ttl-set 64")
+    else:
+        print("[IPTABLES] Disabling Anti-Tethering")
+        # os.system("iptables -t mangle -D POSTROUTING -j TTL --ttl-set 64")
+
+import json
+def send_telegram_alert():
+    bot_token = get_config('telegram_bot_token')
+    chat_id = get_config('telegram_chat_id')
+    
+    if not bot_token or not chat_id:
+        print("[Telegram] Credentials not configured. Skipping alert.")
+        return
+        
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": "🚨 *Eco-Fi Alert*\n\nThe recycling bin has reached **100% capacity**! Please empty the bin to allow more users to recycle.",
+            "parse_mode": "Markdown"
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=5)
+        print("[Telegram] Bin Full Alert sent successfully!")
+    except Exception as e:
+        print(f"[Telegram] Failed to send alert: {e}")
+
+def apply_bandwidth_limit(ip, dl_kbps, ul_kbps):
+    if platform.system() != "Linux":
+        print(f"[MOCK] Applied bandwidth limit to {ip}: {dl_kbps}Kbps DL, {ul_kbps}Kbps UL")
+        return
+    print(f"[TC] Shaping {ip} to DL={dl_kbps} UL={ul_kbps}")
+
+def remove_bandwidth_limit(ip):
+    if platform.system() != "Linux":
+        print(f"[MOCK] Removed bandwidth limit for {ip}")
+        return
+    print(f"[TC] Removed shaping for {ip}")
 
 def get_config(key):
     with sqlite3.connect(DB_PATH) as conn:
@@ -60,207 +120,221 @@ USER_HTML = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"><title>Eco-Fi Vendo</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <meta charset="UTF-8"><title>Eco-Fi Portal</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f3f4f6; margin: 0; color: #374151; }
-        .header { background: white; padding: 15px 20px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-        .header-left { display: flex; align-items: center; color: #10B981; font-weight: 700; font-size: 1.1rem; }
-        .header-left i { margin-right: 8px; font-size: 1.2rem; }
-        .banner { width: 100%; max-width: 600px; margin: 0 auto; height: auto; display: block; border-bottom: 3px solid #10B981; }
-        .content { background: white; padding: 20px; text-align: center; margin-top: -5px; }
-        .status-connected { color: #10B981; font-size: 36px; margin: 10px 0; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 700; }
-        .status-disconnected { color: #EF4444; font-size: 36px; margin: 10px 0; display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 700; }
-        .ip-mac { color: #3b82f6; font-size: 14px; margin-bottom: 15px; font-weight: 600; }
-        .unclaimed { color: #3b82f6; font-size: 18px; font-weight: 700; margin-bottom: 15px; padding: 10px; background: #eff6ff; border-radius: 8px; display: inline-block; }
-        .timer-label { font-size: 12px; color: #6b7280; font-weight: 700; letter-spacing: 1px; margin-bottom: 5px; text-transform: uppercase; }
-        .time-display { color: #2563eb; font-size: 36px; font-weight: 800; margin-bottom: 30px; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
-        .timer span { font-size: 14px; color: #3b82f6; font-weight: 600; margin-left: 2px; }
-        .btn { display: block; width: 100%; max-width: 350px; margin: 10px auto; padding: 14px; text-align: center; font-size: 16px; font-weight: bold; border-radius: 8px; border: none; cursor: pointer; color: white; transition: all 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .btn:active { transform: translateY(2px); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .btn-green { background: linear-gradient(135deg, #10B981 0%, #059669 100%); }
-        .btn-red { background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%); }
-        .btn-blue { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); }
-        .btn-orange { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; }
-        .footer-note { margin-top: 30px; font-size: 12px; color: #9ca3af; }
+        * { box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            margin: 0; padding: 0; min-height: 100vh;
+            background: linear-gradient(rgba(15, 23, 42, 0.75), rgba(15, 23, 42, 0.9)), url('/static/banner.jpg') no-repeat center center fixed;
+            background-size: cover;
+            color: white; 
+            display: flex; flex-direction: column; align-items: center; 
+        }
+        
+        .portal-container {
+            width: 100%; max-width: 450px;
+            margin-top: 5vh; margin-bottom: 20px;
+            background: rgba(30, 41, 59, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 30px 20px;
+            text-align: center;
+        }
+
+        .brand-logo { max-width: 160px; margin-bottom: 15px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.4)); }
+        .brand-title { color: #f8fafc; font-size: 24px; font-weight: 700; margin: 0 0 25px 0; letter-spacing: 1px; }
+
+        .status-box {
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 16px; padding: 20px; margin-bottom: 25px;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.3);
+        }
+        .time-display { font-size: 48px; font-family: 'Courier New', monospace; font-weight: bold; color: #10B981; margin: 10px 0; text-shadow: 0 0 10px rgba(16, 185, 129, 0.4); }
+        .status-text { font-size: 14px; text-transform: uppercase; letter-spacing: 1.5px; color: #94a3b8; font-weight: 600; }
+        .status-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; margin-top: 10px; }
+        .bg-active { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+        .bg-paused { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+        .bg-inactive { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+
+        .action-btn {
+            width: 100%; padding: 18px; border-radius: 14px; border: none; font-size: 18px; font-weight: 700;
+            color: white; cursor: pointer; transition: all 0.2s ease; margin-bottom: 15px;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+        .action-btn:active { transform: scale(0.98); }
+        .btn-insert { background: linear-gradient(135deg, #10B981 0%, #059669 100%); border: 1px solid #34d399; }
+        .btn-pause { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border: 1px solid #fbbf24; }
+        .btn-resume { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); border: 1px solid #60a5fa; }
+
+        .guidelines-box {
+            width: 100%; max-width: 450px;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(8px);
+            border-radius: 20px; padding: 25px 20px;
+            border: 1px dashed rgba(148, 163, 184, 0.4);
+            margin-bottom: 30px;
+        }
+        .guidelines-box h3 { color: #e2e8f0; margin-top: 0; font-size: 18px; text-align: center; margin-bottom: 20px; }
+        .plastic-types { display: flex; justify-content: space-around; flex-wrap: wrap; gap: 15px; }
+        .plastic-item { text-align: center; width: 30%; }
+        .plastic-item i { font-size: 32px; color: #38bdf8; margin-bottom: 8px; display: block; }
+        .plastic-item span { font-size: 12px; color: #cbd5e1; font-weight: 600; display: block; }
+        .plastic-item .badge { background: #0f172a; border-radius: 4px; padding: 2px 6px; font-size: 10px; color: #10B981; border: 1px solid #10B981; margin-top: 4px; display: inline-block; }
+
+        {{ custom_css }}
     </style>
 </head>
 <body>
-    <img src="/static/banner-main.jpg" class="banner" alt="Eco-Fi Banner" style="margin-top: 0;">
-    
-    <div class="content">
-        <div class="status-connected" id="wifi-status" style="display: none;"><i class="fa-solid fa-wifi"></i> Connected</div>
-        <div class="status-disconnected" id="wifi-status-dc" style="display: none;"><i class="fa-solid fa-wifi-slash"></i> Disconnected</div>
-        
-        <div class="ip-mac">IP: {{ client_ip }} | Rate: {{ rate }} min/bottle</div>
-        
-        <div class="unclaimed">UNCLAIMED BOTTLES: <span id="unclaimed">0</span></div>
-        
-        <div class="timer-label">REMAINING TIME:</div>
-        <div class="time-display timer">
-            <span id="td" style="font-size:36px;color:#2563eb;">0</span><span>D.</span>
-            <span id="th" style="font-size:36px;color:#2563eb;">0</span><span>HR.</span>
-            <span id="tm" style="font-size:36px;color:#2563eb;">0</span><span>MIN.</span>
-            <span id="ts" style="font-size:36px;color:#2563eb;">0</span><span>SEC.</span>
+
+    <div class="portal-container">
+        <img src="/static/banner-main.jpg" alt="Eco-Fi Banner" style="width: 100%; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
+
+        <div class="status-box">
+            <div class="status-text">Remaining WiFi Time</div>
+            <div class="time-display" id="time-display">00:00:00</div>
+            <div id="status-badge" class="status-badge bg-inactive">DISCONNECTED</div>
+        </div>
+
+        <button class="action-btn btn-insert" onclick="mockInsertBottle()">
+            <i class="fas fa-recycle"></i> Insert Plastic Bottle
+        </button>
+
+        <div style="display: flex; gap: 10px;">
+            <button class="action-btn btn-pause" onclick="pauseTime()">
+                <i class="fas fa-pause-circle"></i> Pause
+            </button>
+            <button class="action-btn btn-resume" onclick="resumeTime()">
+                <i class="fas fa-play-circle"></i> Resume
+            </button>
         </div>
         
-        <button class="btn btn-blue" id="btn-open-gate" onclick="openGate()">Insert Plastic Bottle</button>
-        <div id="drop-progress-container" style="display: none; width: 100%; max-width: 350px; background: #e5e7eb; border-radius: 10px; margin: 10px auto; height: 20px; overflow: hidden;">
-            <div id="drop-progress-bar" style="width: 100%; height: 100%; background: #3b82f6; transition: width 1s linear;"></div>
+        <p style="font-size: 12px; color: #94a3b8; margin-top: 15px;">
+            Current Rates: 1 Bottle = {{ config.default_dl_kbps }} Minutes
+        </p>
+    </div>
+
+    <!-- Guidelines Footer -->
+    <div class="guidelines-box">
+        <h3><i class="fas fa-info-circle mr-1"></i> Acceptable Plastics</h3>
+        <div class="plastic-types">
+            <div class="plastic-item">
+                <i class="fas fa-wine-bottle"></i>
+                <span>PET Bottles</span>
+                <div class="badge">ACCEPTED</div>
+            </div>
+            <div class="plastic-item">
+                <i class="fas fa-prescription-bottle"></i>
+                <span>HDPE Jugs</span>
+                <div class="badge">ACCEPTED</div>
+            </div>
+            <div class="plastic-item">
+                <i class="fas fa-trash-alt" style="color: #f87171;"></i>
+                <span>Trash/PVC</span>
+                <div class="badge" style="color: #f87171; border-color: #f87171;">REJECTED</div>
+            </div>
         </div>
-        <button class="btn btn-green" id="btn-insert" onclick="insertBottles()" style="display: none;">Connect / Claim Bottles</button>
-        <button class="btn btn-red" id="btn-pause" onclick="togglePause()" style="display: none;">Pause Time</button>
+        <p style="font-size: 11px; color: #64748b; text-align: center; margin: 15px 0 0 0; line-height: 1.4;">
+            Please ensure bottles are empty and uncrushed. The built-in NIR spectrometer and load cell will automatically reject invalid items.
+        </p>
     </div>
 
     <script>
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        function playTone(freq, type, duration) {
+        // Audio Context (Web Audio API)
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const audioCtx = new AudioContext();
+
+        function playTick() {
             if (audioCtx.state === 'suspended') audioCtx.resume();
-            let osc = audioCtx.createOscillator();
-            let gain = audioCtx.createGain();
-            osc.type = type;
-            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1200, audioCtx.currentTime + 0.1);
+            
+            gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.5, audioCtx.currentTime + 0.02);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            
             osc.start();
-            osc.stop(audioCtx.currentTime + duration);
-        }
-        function playTick() { playTone(800, 'sine', 0.1); }
-        function playTimeout() { playTone(200, 'sawtooth', 0.5); }
-        function playReject() { playTone(150, 'square', 0.2); setTimeout(() => playTone(150, 'square', 0.4), 250); }
-        function playSuccess() { playTone(523.25, 'sine', 0.2); setTimeout(() => playTone(659.25, 'sine', 0.4), 150); }
-
-        let dropInterval = null;
-        let lastEventTs = 0;
-        window.currentDropTimeout = 30;
-        window.currentTimeLeft = 0;
-
-        function fetchStatus() {
-            fetch('/api/status')
-                .then(r => r.json())
-                .then(data => {
-                    document.getElementById('unclaimed').innerText = data.pending_bottles;
-                    
-                    let total = data.remaining_seconds;
-                    let d = Math.floor(total / (3600*24));
-                    let h = Math.floor(total % (3600*24) / 3600);
-                    let m = Math.floor(total % 3600 / 60);
-                    let s = Math.floor(total % 60);
-                    
-                    document.getElementById('td').innerText = d;
-                    document.getElementById('th').innerText = h;
-                    document.getElementById('tm').innerText = m;
-                    document.getElementById('ts').innerText = s;
-
-                    if(data.event_timestamp > lastEventTs) {
-                        if(lastEventTs !== 0) {
-                            if(data.last_event === "SUCCESS") {
-                                playSuccess();
-                                if(dropInterval) {
-                                    window.currentTimeLeft = window.currentDropTimeout;
-                                }
-                            } else if(data.last_event === "REJECT") {
-                                playReject();
-                            }
-                        }
-                        lastEventTs = data.event_timestamp;
-                    }
-
-                    let pauseBtn = document.getElementById('btn-pause');
-                    let claimBtn = document.getElementById('btn-insert');
-                    let openGateBtn = document.getElementById('btn-open-gate');
-                    let connectedStatus = document.getElementById('wifi-status');
-                    let dcStatus = document.getElementById('wifi-status-dc');
-
-                    if(total > 0 && !data.is_paused) {
-                        connectedStatus.style.display = "flex";
-                        dcStatus.style.display = "none";
-                    } else {
-                        connectedStatus.style.display = "none";
-                        dcStatus.style.display = "flex";
-                    }
-
-                    if(data.is_paused) {
-                        pauseBtn.innerText = "Resume Time";
-                        pauseBtn.className = "btn btn-orange";
-                        pauseBtn.style.display = "block";
-                    } else if (total > 0) {
-                        pauseBtn.innerText = "Pause Time";
-                        pauseBtn.className = "btn btn-red";
-                        pauseBtn.style.display = "block";
-                    } else {
-                        pauseBtn.style.display = "none";
-                    }
-                    
-                    if(data.pending_bottles > 0) {
-                        claimBtn.style.display = "block";
-                    } else {
-                        claimBtn.style.display = "none";
-                    }
-                    
-                    if(!dropInterval) {
-                        openGateBtn.style.display = "block";
-                    } else {
-                        openGateBtn.style.display = "none";
-                    }
-                });
-        }
-        
-        function openGate() {
-            fetch('/api/open_gate', {method: 'POST'})
-                .then(r => r.json())
-                .then(data => {
-                    document.getElementById('btn-open-gate').style.display = 'none';
-                    let container = document.getElementById('drop-progress-container');
-                    let bar = document.getElementById('drop-progress-bar');
-                    container.style.display = 'block';
-                    
-                    window.currentDropTimeout = data.timeout;
-                    window.currentTimeLeft = data.timeout;
-                    bar.style.width = '100%';
-                    
-                    if(dropInterval) clearInterval(dropInterval);
-                    dropInterval = setInterval(() => {
-                        window.currentTimeLeft--;
-                        playTick();
-                        bar.style.width = (window.currentTimeLeft / window.currentDropTimeout * 100) + '%';
-                        if(window.currentTimeLeft <= 0) {
-                            playTimeout();
-                            clearInterval(dropInterval);
-                            dropInterval = null;
-                            container.style.display = 'none';
-                            fetchStatus();
-                        }
-                    }, 1000);
-                });
+            osc.stop(audioCtx.currentTime + 0.1);
         }
 
-        function insertBottles() {
-            fetch('/api/connect', {method: 'POST'}).then(res => res.json()).then(data => {
-                if(data.success) {
-                    if(dropInterval) {
-                        clearInterval(dropInterval);
-                        dropInterval = null;
-                        document.getElementById('drop-progress-container').style.display = 'none';
-                    }
-                    fetchStatus();
+        let timeRemaining = {{ time_remaining }};
+        let isPaused = {{ "true" if is_paused else "false" }};
+
+        function formatTime(seconds) {
+            const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+            const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+            const s = (seconds % 60).toString().padStart(2, '0');
+            return `${h}:${m}:${s}`;
+        }
+
+        function updateDisplay() {
+            document.getElementById('time-display').innerText = formatTime(timeRemaining);
+            let badge = document.getElementById('status-badge');
+            
+            if (timeRemaining > 0) {
+                if (isPaused) {
+                    badge.innerText = "TIME PAUSED";
+                    badge.className = "status-badge bg-paused";
+                } else {
+                    badge.innerText = "CONNECTED";
+                    badge.className = "status-badge bg-active";
+                }
+            } else {
+                badge.innerText = "NO TIME LEFT";
+                badge.className = "status-badge bg-inactive";
+            }
+        }
+
+        setInterval(() => {
+            if (timeRemaining > 0 && !isPaused) {
+                timeRemaining--;
+                updateDisplay();
+            }
+        }, 1000);
+
+        function mockInsertBottle() {
+            fetch('/mock_drop').then(res => res.json()).then(data => {
+                if(data.status === 'ok') {
+                    playTick();
+                    timeRemaining = data.time_remaining;
+                    isPaused = false;
+                    updateDisplay();
                 }
             });
         }
 
-        function togglePause() {
-            let btn = document.getElementById('btn-pause');
-            let endpoint = btn.innerText.includes("Pause") ? '/api/pause' : '/api/resume';
-            fetch(endpoint, {method: 'POST'}).then(res => res.json()).then(data => {
-                if(data.success) fetchStatus();
+        function pauseTime() {
+            fetch('/api/pause').then(res => res.json()).then(data => {
+                if(data.status === 'ok') {
+                    isPaused = true;
+                    updateDisplay();
+                }
             });
         }
-        
-        setInterval(fetchStatus, 1500);
-        fetchStatus();
+
+        function resumeTime() {
+            fetch('/api/resume').then(res => res.json()).then(data => {
+                if(data.status === 'ok') {
+                    isPaused = false;
+                    updateDisplay();
+                }
+            });
+        }
+
+        updateDisplay();
     </script>
 </body>
 </html>
@@ -272,6 +346,7 @@ LOGIN_HTML = """
 <head>
     <meta charset="UTF-8"><title>Eco-Fi Secure Admin</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f172a; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
         .login-box { background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(10px); padding: 40px 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 100%; max-width: 320px; text-align: center; border: 1px solid #334155; }
@@ -299,176 +374,389 @@ LOGIN_HTML = """
 
 ADMIN_HTML = """
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8"><title>Eco-Fi Admin Dashboard</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f1f5f9; margin: 0; display: flex; color: #334155; }
-        .sidebar { width: 260px; background: #0f172a; color: white; height: 100vh; position: fixed; display: flex; flex-direction: column; }
-        .sidebar h2 { text-align: center; color: #10B981; margin: 30px 0; font-size: 24px; letter-spacing: 1px; }
-        .sidebar a { display: block; color: #94a3b8; padding: 16px 25px; text-decoration: none; font-size: 16px; font-weight: 500; transition: all 0.2s; border-left: 4px solid transparent; }
-        .sidebar a:hover, .sidebar a.active-tab { background: #1e293b; color: white; border-left-color: #10B981; }
-        .main { margin-left: 260px; padding: 40px; flex: 1; }
-        .main h1 { font-size: 28px; margin-top: 0; margin-bottom: 30px; color: #0f172a; }
-        
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
-        .stat-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: flex; flex-direction: column; }
-        .stat-card h3 { margin: 0; font-size: 15px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
-        .stat-card .value { font-size: 42px; font-weight: 800; margin: 10px 0 0 0; color: #0f172a; }
-        
-        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 30px; }
-        .card h2 { margin-top: 0; font-size: 20px; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 20px; }
-        
-        input[type=number] { padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; width: 120px; font-size: 16px; outline: none; }
-        input[type=number]:focus { border-color: #10B981; }
-        button { background: #10B981; color: white; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; font-size: 15px; font-weight: 600; transition: background 0.2s; }
-        button:hover { background: #059669; }
-        
-        table { width: 100%; border-collapse: collapse; }
-        th { text-align: left; padding: 15px; border-bottom: 2px solid #e2e8f0; color: #64748b; font-weight: 600; }
-        td { padding: 15px; border-bottom: 1px solid #e2e8f0; color: #334155; }
-        tr:hover td { background: #f8fafc; }
-        .badge { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; text-transform: uppercase; }
-        .badge-active { background: #d1fae5; color: #065f46; }
-        .badge-paused { background: #fef3c7; color: #92400e; }
-        
-        /* Mobile Navbar Styles */
-        .mobile-header { display: none; background: #0f172a; color: white; padding: 15px 20px; align-items: center; justify-content: space-between; }
-        .mobile-header h2 { margin: 0; font-size: 20px; color: #10B981; }
-        .hamburger { background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 0; }
-        .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 99; }
-        .overlay.active { display: block; }
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>PisoFi Admin</title>
+  <meta content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" name="viewport">
+  
+  <!-- Bootstrap 3.3.7 -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+  <!-- AdminLTE 2 Theme -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.18/css/AdminLTE.min.css">
+  <!-- AdminLTE Skins. We use skin-blue -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.18/css/skins/skin-blue.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-        @media (max-width: 768px) {
-            body { flex-direction: column; }
-            .mobile-header { display: flex; }
-            .sidebar { position: fixed; top: 0; left: 0; height: 100vh; width: 260px; z-index: 100; transform: translateX(-100%); transition: transform 0.3s ease; }
-            .sidebar.active { transform: translateX(0); }
-            .sidebar h2 { display: none; }
-            .main { margin-left: 0; padding: 20px; }
-            .stats-grid { grid-template-columns: 1fr; }
-            table { display: block; overflow-x: auto; white-space: nowrap; }
-            input[type=number] { width: 100%; box-sizing: border-box; }
-        }
-    </style>
+  <style>
+    .content-wrapper { background-color: #ecf0f5; }
+    .nav-tabs-custom > .nav-tabs > li.active { border-top-color: #00a65a; }
+  </style>
 </head>
-<body>
-    <div class="mobile-header">
-        <div style="display: flex; align-items: center;">
-            <img src="/static/logo.jpg" style="height: 24px; margin-right: 10px; border-radius: 4px;" alt="Logo">
-            <h2>ECO-FI ADMIN</h2>
-        </div>
-        <button class="hamburger" onclick="toggleNav()">&equiv;</button>
-    </div>
-    <div class="overlay" id="overlay" onclick="toggleNav()"></div>
-    <div class="sidebar" id="sidebar">
-        <div style="text-align: center; margin-top: 30px;">
-            <img src="/static/logo.jpg" style="max-width: 120px; border-radius: 8px;" alt="Logo">
-            <h2 style="margin-top: 10px;">ECO-FI ADMIN</h2>
-        </div>
-        <a href="#" onclick="showTab('dashboard'); return false;" id="nav-dashboard" class="active-tab">Dashboard</a>
-        <a href="#" onclick="showTab('settings'); return false;" id="nav-settings">Settings</a>
-        <a href="/">View Portal</a>
-        <a href="/admin/logout">Logout</a>
-    </div>
+<body class="hold-transition skin-blue sidebar-mini">
+<div class="wrapper">
+
+  <header class="main-header">
+    <!-- Logo -->
+    <a href="#" class="logo">
+      <!-- mini logo for sidebar mini 50x50 pixels -->
+      <span class="logo-mini"><img src="/static/logo.jpg" style="max-height: 40px;" onerror="this.style.display='none'"></span>
+      <!-- logo for regular state and mobile devices -->
+      <span class="logo-lg">
+        <img src="/static/logo.jpg" style="max-height: 40px; margin-right: 10px;" onerror="this.style.display='none'"><b>Eco-Fi</b> Admin
+      </span>
+    </a>
     
-    <div class="main" id="dashboard-view">
-        <h1>Dashboard Overview</h1>
-        
-        <div class="stats-grid">
-            <div class="stat-card">
-                <h3>Today's Bottles</h3>
-                <div class="value">{{ today_bottles }}</div>
+    <!-- Header Navbar -->
+    <nav class="navbar navbar-static-top">
+      <!-- Sidebar toggle button-->
+      <a href="#" class="sidebar-toggle" data-toggle="push-menu" role="button">
+        <span class="sr-only">Toggle navigation</span>
+      </a>
+
+      <div class="navbar-custom-menu">
+        <ul class="nav navbar-nav">
+          <!-- View Live Portal -->
+          <li>
+            <a href="/" target="_blank">
+              <i class="fa fa-external-link"></i> <span class="hidden-xs">Live Portal</span>
+            </a>
+          </li>
+          
+          <!-- User Account Menu -->
+          <li class="dropdown user user-menu">
+            <a href="#" class="dropdown-toggle" data-toggle="dropdown">
+              <img src="/static/logo.jpg" class="user-image" alt="User Image" onerror="this.src='https://adminlte.io/themes/AdminLTE/dist/img/user2-160x160.jpg'">
+              <span class="hidden-xs">Administrator</span>
+            </a>
+            <ul class="dropdown-menu">
+              <!-- User image -->
+              <li class="user-header">
+                <img src="/static/logo.jpg" class="img-circle" alt="User Image" onerror="this.style.display='none'">
+                <p>
+                  Eco-Fi Administrator
+                  <small>System Management</small>
+                </p>
+              </li>
+              <!-- Menu Footer-->
+              <li class="user-footer">
+                <div class="pull-left">
+                  <a href="#" class="btn btn-default btn-flat" onclick="switchTab('settings')">Settings</a>
+                </div>
+                <div class="pull-right">
+                  <a href="/admin/logout" class="btn btn-default btn-flat">Sign out</a>
+                </div>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+    </nav>
+  </header>
+
+  <!-- Left side column. contains the logo and sidebar -->
+  <aside class="main-sidebar">
+    <!-- sidebar: style can be found in sidebar.less -->
+    <section class="sidebar">
+      <!-- sidebar menu -->
+      <ul class="sidebar-menu" data-widget="tree">
+        <li class="header">MAIN NAVIGATION</li>
+        <li class="active treeview" id="nav-dashboard">
+          <a href="#" onclick="switchTab('dashboard')">
+            <i class="fa fa-dashboard text-aqua"></i> <span>Dashboard</span>
+          </a>
+        </li>
+        <li class="treeview" id="nav-settings">
+          <a href="#" onclick="switchTab('settings')">
+            <i class="fa fa-cogs"></i> <span>Configuration</span>
+          </a>
+        </li>
+      </ul>
+    </section>
+    <!-- /.sidebar -->
+  </aside>
+
+  <!-- Content Wrapper. Contains page content -->
+  <div class="content-wrapper">
+    <!-- DASHBOARD TAB -->
+    <div id="tab-dashboard">
+      <section class="content-header">
+        <h1>Dashboard <small>Overview</small></h1>
+      </section>
+
+      <section class="content">
+        <div class="row">
+          <div class="col-lg-3 col-xs-6">
+            <div class="small-box bg-aqua">
+              <div class="inner">
+                <h3 id="stat-today">0</h3>
+                <p>Today's Bottles</p>
+              </div>
+              <div class="icon"><i class="fa fa-recycle"></i></div>
             </div>
-            <div class="stat-card">
-                <h3>Total Bottles (All Time)</h3>
-                <div class="value">{{ total_bottles }}</div>
+          </div>
+          <div class="col-lg-3 col-xs-6">
+            <div class="small-box bg-green">
+              <div class="inner">
+                <h3 id="stat-total">0</h3>
+                <p>Total Bottles (All Time)</p>
+              </div>
+              <div class="icon"><i class="fa fa-leaf"></i></div>
             </div>
-            <div class="stat-card" style="border-top: 4px solid #f59e0b;">
-                <h3>Active Clients</h3>
-                <div class="value">{{ active_count }}</div>
+          </div>
+          <div class="col-lg-3 col-xs-6">
+            <div class="small-box bg-yellow">
+              <div class="inner">
+                <h3 id="stat-clients">0</h3>
+                <p>Active Clients</p>
+              </div>
+              <div class="icon"><i class="fa fa-users"></i></div>
             </div>
+          </div>
+          <div class="col-lg-3 col-xs-6">
+            <div class="small-box bg-red">
+              <div class="inner">
+                <h3 id="stat-cpu">0%</h3>
+                <p>CPU / <span id="stat-ram">0%</span> RAM</p>
+              </div>
+              <div class="icon"><i class="fa fa-server"></i></div>
+            </div>
+          </div>
         </div>
         
-        <div class="card">
-            <h2>Active Clients & Sessions</h2>
-            <table>
-                <thead>
+        <div class="row">
+          <div class="col-md-12">
+            <div class="box box-info">
+              <div class="box-header with-border">
+                <h3 class="box-title">Weekly Analytics</h3>
+              </div>
+              <div class="box-body">
+                <canvas id="bottlesChart" style="height:250px"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="row">
+          <div class="col-xs-12">
+            <div class="box box-success">
+              <div class="box-header">
+                <h3 class="box-title">Active Clients</h3>
+                <div class="box-tools">
+                  <button type="button" class="btn btn-box-tool" onclick="refreshClients()"><i class="fa fa-refresh"></i></button>
+                </div>
+              </div>
+              <div class="box-body table-responsive no-padding">
+                <table class="table table-hover">
+                  <thead>
                     <tr>
-                        <th>IP Address</th>
-                        <th>Time Remaining</th>
-                        <th>Status</th>
+                      <th>IP / MAC Address</th>
+                      <th>Time Remaining</th>
+                      <th>Status</th>
+                      <th>Actions</th>
                     </tr>
-                </thead>
-                <tbody>
-                    {% for ip, client in clients.items() %}
-                    {% if client.remaining_seconds > 0 %}
-                    <tr>
-                        <td>{{ ip }}</td>
-                        <td>{{ client.remaining_seconds // 60 }} min {{ client.remaining_seconds % 60 }} sec</td>
-                        <td>
-                            {% if client.is_paused %}
-                            <span class="badge badge-paused">Paused</span>
-                            {% else %}
-                            <span class="badge badge-active">Active</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endif %}
-                    {% endfor %}
-                    {% if active_count == 0 %}
-                    <tr><td colspan="3" style="text-align:center; color:#94a3b8;">No active sessions right now.</td></tr>
-                    {% endif %}
-                </tbody>
-            </table>
+                  </thead>
+                  <tbody id="clients-table">
+                    <tr><td colspan="4" class="text-center text-muted">Loading clients...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
+      </section>
     </div>
-    
-    <div class="main" id="settings-view" style="display: none;">
-        <h1>System Settings</h1>
+
+    <!-- SETTINGS TAB -->
+    <div id="tab-settings" style="display: none;">
+      <section class="content-header">
+        <h1>System Configuration <small>Adjust parameters</small></h1>
+      </section>
+
+      <section class="content">
+        <div class="row">
+          <div class="col-md-6">
+            <div class="box box-primary">
+              <div class="box-header with-border">
+                <h3 class="box-title">Network & Vendo Limits</h3>
+              </div>
+              <div class="box-body">
+                <div class="form-group">
+                  <label>Minutes per Bottle (Default 15)</label>
+                  <input type="number" id="cfg-dl" class="form-control" value="{{ config.default_dl_kbps }}" placeholder="15">
+                </div>
+                <div class="form-group">
+                  <label>Drop Timeout (Seconds)</label>
+                  <input type="number" id="cfg-ul" class="form-control" value="{{ config.default_ul_kbps }}" placeholder="30">
+                </div>
+                <div class="form-group">
+                  <label>Anti-Tethering (TTL Blocking)</label>
+                  <select id="cfg-tether" class="form-control">
+                    <option value="0" {% if config.anti_tethering == '0' %}selected{% endif %}>Disabled (Allow Hotspot)</option>
+                    <option value="1" {% if config.anti_tethering == '1' %}selected{% endif %}>Enabled (Block Hotspot)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="box box-info">
+              <div class="box-header with-border">
+                <h3 class="box-title"><i class="fa fa-telegram"></i> Telegram Alerts</h3>
+              </div>
+              <div class="box-body">
+                <div class="form-group">
+                  <label>Bot Token</label>
+                  <input type="password" id="cfg-tg-token" class="form-control" value="{{ config.telegram_bot_token }}">
+                </div>
+                <div class="form-group">
+                  <label>Chat ID</label>
+                  <input type="text" id="cfg-tg-chat" class="form-control" value="{{ config.telegram_chat_id }}">
+                </div>
+              </div>
+            </div>
+            
+            <div class="box box-default">
+              <div class="box-header with-border">
+                <h3 class="box-title">Custom CSS</h3>
+              </div>
+              <div class="box-body">
+                <textarea id="cfg-css" class="form-control" rows="3">{{ config.custom_css }}</textarea>
+              </div>
+              <div class="box-footer">
+                <button onclick="savePisoFiSettings()" class="btn btn-primary pull-right">Save All</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+</div>
+
+<!-- jQuery 3 -->
+<script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+<!-- Bootstrap 3.3.7 -->
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js"></script>
+<!-- AdminLTE App -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/2.4.18/js/adminlte.min.js"></script>
+
+<script>
+    function switchTab(tabId) {
+        document.getElementById('tab-dashboard').style.display = 'none';
+        document.getElementById('tab-settings').style.display = 'none';
+        document.getElementById('tab-' + tabId).style.display = 'block';
         
-        <div class="card">
-            <h2>System Configuration</h2>
-            <form action="/admin/config" method="POST" class="mt-3">
-                <label style="display:block; margin-bottom:5px; font-weight:600; color:#475569;">Minutes per Bottle:</label>
-                <input type="number" name="rate" value="{{ rate }}" required style="margin-bottom:15px;">
-                <label style="display:block; margin-bottom:5px; font-weight:600; color:#475569;">Drop Timeout (seconds):</label>
-                <input type="number" name="drop_timeout" value="{{ drop_timeout }}" required style="margin-bottom:15px;">
-                <br>
-                <button type="submit">Save Config</button>
-            </form>
-        </div>
-    </div>
-    
-    <script>
-        function toggleNav() {
-            document.getElementById('sidebar').classList.toggle('active');
-            document.getElementById('overlay').classList.toggle('active');
+        document.getElementById('nav-dashboard').classList.remove('active');
+        document.getElementById('nav-settings').classList.remove('active');
+        document.getElementById('nav-' + tabId).classList.add('active');
+        
+        if(tabId === 'dashboard') {
+            refreshStats();
+            refreshClients();
         }
+    }
+
+    function savePisoFiSettings() {
+        let css = document.getElementById('cfg-css').value;
+        let dl = document.getElementById('cfg-dl').value;
+        let ul = document.getElementById('cfg-ul').value;
+        let at = document.getElementById('cfg-tether').value;
+        let tg_token = document.getElementById('cfg-tg-token').value;
+        let tg_chat = document.getElementById('cfg-tg-chat').value;
         
-        function showTab(tabName) {
-            // Update nav items
-            document.getElementById('nav-dashboard').classList.remove('active-tab');
-            document.getElementById('nav-settings').classList.remove('active-tab');
-            document.getElementById('nav-' + tabName).classList.add('active-tab');
-            
-            // Update views
-            document.getElementById('dashboard-view').style.display = 'none';
-            document.getElementById('settings-view').style.display = 'none';
-            document.getElementById(tabName + '-view').style.display = 'block';
-            
-            // Close mobile menu if open
-            if(document.getElementById('sidebar').classList.contains('active')) {
-                toggleNav();
+        fetch('/admin/api/settings', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                custom_css: css, default_dl_kbps: dl, default_ul_kbps: ul,
+                anti_tethering: at, telegram_bot_token: tg_token, telegram_chat_id: tg_chat
+            })
+        }).then(res => res.json()).then(data => {
+            alert('Settings saved!');
+        });
+    }
+
+    let bottleChart;
+    function refreshStats() {
+        fetch('/admin/api/stats').then(res => res.json()).then(data => {
+            document.getElementById('stat-today').innerText = data.today_bottles || 0;
+            document.getElementById('stat-total').innerText = data.total_bottles || 0;
+            document.getElementById('stat-cpu').innerText = (data.cpu || 0) + '%';
+            document.getElementById('stat-ram').innerText = (data.ram || 0) + '%';
+            document.getElementById('stat-clients').innerText = (data.active_clients || 0);
+
+            if(data.history) {
+                let labels = data.history.map(x => x.date);
+                let vals = data.history.map(x => x.count);
+                if(bottleChart) bottleChart.destroy();
+                let ctx = document.getElementById('bottlesChart').getContext('2d');
+                bottleChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Bottles',
+                            data: vals,
+                            borderColor: '#3c8dbc',
+                            backgroundColor: 'rgba(60, 141, 188, 0.2)',
+                            fill: true
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false }
+                });
             }
+        });
+    }
+
+    function refreshClients() {
+        fetch('/admin/api/clients').then(res => res.json()).then(data => {
+            let tbody = document.getElementById('clients-table');
+            tbody.innerHTML = '';
+            if(data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No active sessions.</td></tr>';
+                return;
+            }
+            data.forEach(client => {
+                let statusBadge = client.paused ? '<span class="label label-warning">Paused</span>' : '<span class="label label-success">Active</span>';
+                let actionBtn = client.paused 
+                    ? `<button class="btn btn-xs btn-success" style="margin:2px;" onclick="modifyClient('${client.mac}', 'resume')">Resume</button>`
+                    : `<button class="btn btn-xs btn-warning" style="margin:2px;" onclick="modifyClient('${client.mac}', 'pause')">Pause</button>`;
+                
+                let tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${client.ip}</strong><br><small class="text-muted">${client.mac}</small></td>
+                    <td>${client.time_remaining}s</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <button class="btn btn-xs btn-info" style="margin:2px;" onclick="modifyClient('${client.mac}', 'add15')">+15m</button>
+                        ${actionBtn}
+                        <button class="btn btn-xs btn-danger" style="margin:2px;" onclick="modifyClient('${client.mac}', 'disconnect')">Kick</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        });
+    }
+
+    function modifyClient(mac, action) {
+        alert("Client modification requested: " + action + " for " + mac + " (Mock Execution)");
+        refreshClients();
+    }
+
+    setInterval(() => {
+        if(document.getElementById('tab-dashboard').style.display !== 'none') {
+            refreshStats();
         }
-        
-        // Show correct tab after config save (if URL has #settings)
-        if(window.location.hash === '#settings') {
-            showTab('settings');
-        }
-    </script>
+    }, 10000);
+    
+    refreshStats();
+    refreshClients();
+</script>
 </body>
 </html>
 """
@@ -477,14 +765,14 @@ ADMIN_HTML = """
 def index():
     client_ip = request.remote_addr
     if client_ip not in active_clients:
-        active_clients[client_ip] = {"pending_bottles": 0, "remaining_seconds": 0, "is_paused": False, "last_event": "", "event_timestamp": 0.0}
+        active_clients[client_ip] = {"pending_bottles": 0, "remaining_seconds": 0, "is_paused": False}
     rate = get_config("minutes_per_bottle")
     return render_template_string(USER_HTML, client_ip=client_ip, rate=rate)
 
 @app.route("/api/status")
 def status():
     client_ip = request.remote_addr
-    return jsonify(active_clients.get(client_ip, {"pending_bottles": 0, "remaining_seconds": 0, "is_paused": False, "last_event": "", "event_timestamp": 0.0}))
+    return jsonify(active_clients.get(client_ip, {"pending_bottles": 0, "remaining_seconds": 0, "is_paused": False}))
 
 @app.route("/api/connect", methods=["POST"])
 def connect():
@@ -577,7 +865,7 @@ def update_config():
         set_config("minutes_per_bottle", new_rate)
     if new_timeout and new_timeout.isdigit():
         set_config("drop_timeout", new_timeout)
-    return redirect("/admin#settings")
+    return redirect("/admin")
 
 # Mock endpoint to trigger a bottle drop
 @app.route("/mock_drop")
@@ -585,16 +873,6 @@ def mock_drop():
     client_ip = request.remote_addr
     if client_ip in active_clients:
         active_clients[client_ip]["pending_bottles"] += 1
-        active_clients[client_ip]["last_event"] = "SUCCESS"
-        active_clients[client_ip]["event_timestamp"] = time.time()
-    return jsonify({"success": True})
-
-@app.route("/mock_reject")
-def mock_reject():
-    client_ip = request.remote_addr
-    if client_ip in active_clients:
-        active_clients[client_ip]["last_event"] = "REJECT"
-        active_clients[client_ip]["event_timestamp"] = time.time()
     return jsonify({"success": True})
 
 def serial_daemon():
@@ -608,19 +886,12 @@ def serial_daemon():
                 if line:
                     try:
                         data = json.loads(line)
-                        if data.get("event") == "BOTTLE_SAVED" or data.get("event") == "CREDIT_ADD":
+                        if data.get("event") == "BOTTLE_SAVED":
                             with app.app_context():
+                                # In production, match active client by MAC. Mocking here.
                                 client_ip = list(active_clients.keys())[0] if active_clients else None
                                 if client_ip:
                                     active_clients[client_ip]["pending_bottles"] += 1
-                                    active_clients[client_ip]["last_event"] = "SUCCESS"
-                                    active_clients[client_ip]["event_timestamp"] = time.time()
-                        elif data.get("event") == "REJECTED":
-                            with app.app_context():
-                                client_ip = list(active_clients.keys())[0] if active_clients else None
-                                if client_ip:
-                                    active_clients[client_ip]["last_event"] = "REJECT"
-                                    active_clients[client_ip]["event_timestamp"] = time.time()
                     except Exception as e:
                         print("Serial decode error:", e)
             time.sleep(0.1)

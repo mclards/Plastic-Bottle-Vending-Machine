@@ -228,6 +228,7 @@ void commTaskCode(void* parameter) {
                     lcd.setCursor(0, 1); lcd.print("STATUS: STORAGE FULL");
                     lcd.setCursor(0, 2); lcd.print("Empty Bin Required  ");
                     digitalWrite(PIN_LED_RED, HIGH);
+                    Serial.println("{\"event\":\"BIN_FULL\"}");
                     break;
                 
                 case MSG_BIN_OK:
