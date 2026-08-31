@@ -843,13 +843,6 @@ PORTAL_HTML = """
             <div class="status-text">Available Internet Time</div>
             <div class="time-display" id="time-display">0d 00h:00m:00s</div>
             <div id="status-badge" class="status-badge bg-inactive">DISCONNECTED</div>
-            
-            <div id="pause-expiry-box" style="display:none; margin-top:8px; font-size:11px; color:#fbbf24; background:rgba(245,158,11,0.12); padding:6px 10px; border-radius:8px; border:1px solid rgba(245,158,11,0.25); text-align:center;">
-                <i class="fas fa-hourglass-half"></i> Paused time valid until: <strong id="pause-expiry-time">--</strong>
-                <div style="font-size:10px; color:#94a3b8; margin-top:3px;">
-                    <i class="fas fa-shield-alt text-success"></i> Save to <a href="javascript:switchTab('tab-member')" style="color:#34d399; font-weight:700; text-decoration:underline;">Member Wallet</a> for 100% permanent zero-expiry storage.
-                </div>
-            </div>
         </div>
 
         <!-- MAIN ACTION: PULSING INSERT BOTTLE BUTTON -->
@@ -1147,8 +1140,6 @@ PORTAL_HTML = """
                     const btnResume = document.getElementById('btn-resume');
                     const btnInsert = document.getElementById('btn-insert');
                     const binBanner = document.getElementById('bin-full-banner');
-                    const expiryBox = document.getElementById('pause-expiry-box');
-                    const expiryTime = document.getElementById('pause-expiry-time');
 
                     // 1. Bin full handling
                     if (isSystemBinFull) {
@@ -1175,24 +1166,16 @@ PORTAL_HTML = """
                             badge.innerText = 'PAUSED';
                             btnPause.style.display = 'none';
                             btnResume.style.display = 'flex';
-                            if (data.expires_str) {
-                                expiryBox.style.display = 'block';
-                                expiryTime.innerText = `${data.expires_str} (${data.validity_hours}h validity)`;
-                            } else {
-                                expiryBox.style.display = 'none';
-                            }
                         } else {
                             badge.className = 'status-badge bg-active';
                             badge.innerText = 'CONNECTED';
                             btnPause.style.display = 'flex';
                             btnResume.style.display = 'none';
-                            expiryBox.style.display = 'none';
                         }
                     } else {
                         badge.className = 'status-badge bg-inactive';
                         badge.innerText = isSystemBinFull ? 'BIN FULL' : 'DISCONNECTED';
                         pauseBox.style.display = 'none';
-                        expiryBox.style.display = 'none';
                     }
 
                     // 3. Deposit modal sync
