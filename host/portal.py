@@ -96,7 +96,8 @@ def init_db():
 
         # Default promo rates
         c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (1, 10, '1 Bottle = 10 mins')")
-        c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (3, 45, '3 Bottles = 45 mins (15m Bonus!)')")
+        c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (3, 40, '3 Bottles = 40 mins (+10m Bonus)')")
+        c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (5, 75, '5 Bottles = 1h 15m (+25m Bonus)')")
         c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (10, 180, '10 Bottles = 3.0 Hours (Super Saver)')")
         
         # Default announcement
@@ -2037,12 +2038,12 @@ def admin_api_rates_apply_preset():
 
     PRESETS = {
         "standard": {
-            "label": "Standard Curve",
+            "label": "Standard Community Curve",
             "rates": [
-                (1, 15, "1 Bottle = 15 mins"),
-                (3, 50, "3 Bottles = 50 mins (+5m Bonus)"),
-                (5, 90, "5 Bottles = 1.5 Hours (+15m Bonus)"),
-                (10, 200, "10 Bottles = 3h 20m (Super Saver)"),
+                (1, 10, "1 Bottle = 10 mins"),
+                (3, 40, "3 Bottles = 40 mins (+10m Bonus)"),
+                (5, 75, "5 Bottles = 1h 15m (+25m Bonus)"),
+                (10, 180, "10 Bottles = 3.0 Hours (Super Saver)"),
             ]
         },
         "aggressive": {
@@ -2931,7 +2932,7 @@ ADMIN_HTML = """
           <div class="row align-items-center">
             <div class="col-12 col-md-8 form-group mb-md-0">
               <select id="rate-preset-select" class="form-control">
-                <option value="standard">🌟 Standard Community Tier (1b=15m, 3b=50m, 5b=90m, 10b=3h20m)</option>
+                <option value="standard">🌟 Standard Community Tier (1b=10m, 3b=40m, 5b=1h15m, 10b=3h)</option>
                 <option value="aggressive">⚡ Aggressive Reward Curve (1b=10m, 5b=1h10m, 10b=3h, 20b=7h)</option>
                 <option value="cafe">☕ Café / Study Hub Curve (1b=20m, 3b=1h15m, 6b=3h, 12b=7h)</option>
               </select>
