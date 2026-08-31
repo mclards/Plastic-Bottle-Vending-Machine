@@ -2183,9 +2183,8 @@ FORCE_PASS_HTML = """
 
 @app.before_request
 def check_default_password():
-    if request.path.startswith('/admin') and not request.path.startswith('/admin/login') and not request.path.startswith('/admin/logout') and not request.path.startswith('/admin/force_password_change') and not request.path.startswith('/static'):
-        if session.get('admin_logged_in') and session.get('must_change_password'):
-            return redirect('/admin/force_password_change')
+    if request.path == '/admin' and session.get('admin_logged_in') and session.get('must_change_password'):
+        return redirect('/admin/force_password_change')
 
 @app.route("/admin/force_password_change", methods=["GET", "POST"])
 def admin_force_password_change():
@@ -2934,6 +2933,8 @@ ADMIN_HTML = """
               <label>Drop Chute Timeout (Seconds):</label>
               <input type="number" id="rate-timeout" class="form-control" value="{{ config.drop_timeout }}" min="10" max="120">
             </div>
+            <div class="col-12 col-md-4 form-group">
+              <label class="d-none d-md-block">&nbsp;</label>
               <button class="btn btn-warning btn-block" onclick="saveRates()"><i class="fas fa-save"></i> Save Timing</button>
             </div>
           </div>
@@ -2947,7 +2948,27 @@ ADMIN_HTML = """
           <div class="row align-items-center">
             <div class="col-12 col-md-8 form-group mb-md-0">
               <select id="rate-preset-select" class="form-control">
-                <option value="standard">🌟 Standard Community Tier (1b=10m, 3b=45m, 10b=3h, 25b=10h)</option>
+                <option value="standard">🌟 Standard Community Tier (1b=15m, 3b=50m, 5b=90m, 10b=3h20m)</option>
+                <option value="aggressive">⚡ Aggressive Reward Curve (1b=10m, 5b=1h10m, 10b=3h, 20b=7h)</option>
+                <option value="cafe">☕ Café / Study Hub Curve (1b=20m, 3b=1h15m, 6b=3h, 12b=7h)</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-4">
+              <button class="btn btn-info btn-block" onclick="applyRatePreset()"><i class="fas fa-file-import"></i> Apply Template</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Add / Edit Custom Promo Rate Form -->
+      <div class="card card-success mt-3" id="promo-form-card">
+        <div class="card-header"><h3 class="card-title" id="promo-form-title"><i class="fas fa-plus-circle"></i> Add Custom Promo Rate Package</h3></div>
+        <div class="card-body">
+          <input type="hidden" id="edit-original-bottles" value="">
+          <div class="row">
+            <div class="col-12 col-md-3 form-group">
+              <label>Bottles Required:</label>
+              <div class="input-group">
                 <input type="number" id="new-rate-bottles" class="form-control" placeholder="e.g. 5" min="1" max="100" oninput="validatePromoFormMath()">
                 <div class="input-group-append">
                   <button type="button" class="btn btn-outline-secondary dropdown-toggle dropdown-toggle-split" data-toggle="dropdown"></button>
@@ -2956,15 +2977,53 @@ ADMIN_HTML = """
                     <a class="dropdown-item" href="javascript:setRateBottles(3)">3 Bottles</a>
                     <a class="dropdown-item" href="javascript:setRateBottles(5)">5 Bottles</a>
                     <a class="dropdown-item" href="javascript:setRateBottles(6)">6 Bottles</a>
+                    <a class="dropdown-item" href="javascript:setRateBottles(10)">10 Bottles</a>
+                    <a class="dropdown-item" href="javascript:setRateBottles(12)">12 Bottles</a>
+                    <a class="dropdown-item" href="javascript:setRateBottles(15)">15 Bottles</a>
+                    <a class="dropdown-item" href="javascript:setRateBottles(20)">20 Bottles</a>
+                    <a class="dropdown-item" href="javascript:setRateBottles(25)">25 Bottles</a>
+                    <a class="dropdown-item" href="javascript:setRateBottles(50)">50 Bottles</a>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="col-12 col-md-3 form-group">
+              <label>Time Credited:</label>
+              <div class="input-group">
+                <input type="number" id="new-rate-time-val" class="form-control" placeholder="e.g. 90" min="1" oninput="validatePromoFormMath()">
+                <div class="input-group-append">
+                  <select id="new-rate-time-unit" class="custom-select" style="max-width: 90px;" onchange="validatePromoFormMath()">
+                    <option value="mins" selected>Mins</option>
                     <option value="hours">Hours</option>
+                    <option value="days">Days</option>
                   </select>
                 </div>
               </div>
-            
+            </div>
+
+            <div class="col-12 col-md-4 form-group">
+              <label>Package Display Label:</label>
+              <div class="input-group">
+                <input type="text" id="new-rate-label" class="form-control" placeholder="Auto-generated if blank">
+                <div class="input-group-append">
+                  <button class="btn btn-outline-secondary" type="button" onclick="autoGenerateRateLabel()" title="Auto-generate friendly label">🪄</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12 col-md-2 form-group">
               <label class="d-none d-md-block">&nbsp;</label>
               <div class="d-flex">
                 <button class="btn btn-success btn-block mr-1" id="btn-save-promo" onclick="addPromoRate()"><i class="fas fa-plus"></i> Add Rate</button>
+                <button class="btn btn-secondary" id="btn-cancel-promo" onclick="cancelEditPromoRate()" style="display:none;" title="Cancel Edit"><i class="fas fa-times"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live Validator Feedback Box -->
           <div id="rate-validator-feedback" class="alert alert-info py-2 px-3 mb-0" style="display:none; font-size:12px; border-radius:8px;">
+            <div class="d-flex justify-content-between align-items-center">
               <span id="rate-validator-eff" class="font-weight-bold">📊 Efficiency: --</span>
               <span id="rate-validator-status" class="font-weight-bold">✔ Status: OK</span>
             </div>
@@ -2973,6 +3032,15 @@ ADMIN_HTML = """
         </div>
       </div>
 
+      <!-- Active Rate Packages Table -->
+      <div class="card card-dark mt-3">
+        <div class="card-header"><h3 class="card-title"><i class="fas fa-tags"></i> Active Rate Tiers & Promo Curves</h3></div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-striped table-hover mb-0">
+              <thead>
+                <tr>
+                  <th>Bottles Required</th>
                   <th>Time Credited</th>
                   <th>Rate Efficiency</th>
                   <th>Package Label</th>
@@ -2986,9 +3054,8 @@ ADMIN_HTML = """
       </div>
     </div>
 
+    <!-- 6. AUDIO CUSTOMIZER SECTION -->
     <div id="sec-audio" class="section-view">
-      <div class="card card-warning">
-      <!-- 6. AUDIO CUSTOMIZER SECTION -->
       <div class="card card-warning mb-3">
         <div class="card-header"><h3 class="card-title font-weight-bold"><i class="fas fa-volume-up"></i> Portal Audio & Event Chimes</h3></div>
         <div class="card-body p-0">
@@ -3614,15 +3681,24 @@ function loadRates() {
             const baseRate = parseInt(document.getElementById('rate-1').value) || 10;
             const bonusPct = Math.round(((eff - baseRate) / baseRate) * 100);
             const bonusTag = bonusPct > 0 ? `<span class="badge badge-success">+${bonusPct}% Bonus</span>` : `<span class="badge badge-secondary">Base Rate</span>`;
+            const safeLabel = encodeURIComponent(r.label || '');
+            html += `<tr>
+                <td><strong>${r.bottles} Bottle${r.bottles > 1 ? 's' : ''}</strong></td>
                 <td><strong>${r.minutes} Minutes</strong> (${hrs >= 1 ? hrs + ' Hours' : r.minutes + ' Mins'})</td>
                 <td><strong>${eff} m/bottle</strong> ${bonusTag}</td>
+                <td>${r.label || '-'}</td>
                 <td>
                     <button class="btn btn-xs btn-warning mr-1" onclick="editPromoRate(${r.bottles}, ${r.minutes}, '${safeLabel}')"><i class="fas fa-edit"></i> Edit</button>
+                    ${r.bottles > 1 ? `<button class="btn btn-xs btn-danger" onclick="deletePromoRate(${r.bottles})"><i class="fas fa-trash"></i> Delete</button>` : `<span class="text-muted" style="font-size:11px;">(Base tier)</span>`}
                 </td>
+            </tr>`;
+        });
+        document.getElementById('rates-table-body').innerHTML = html || '<tr><td colspan="5" class="text-center">No promo rates configured.</td></tr>';
     });
 }
 
 function setRateBottles(n) {
+    document.getElementById('new-rate-bottles').value = n;
     validatePromoFormMath();
     autoGenerateRateLabel();
 }
@@ -3631,32 +3707,156 @@ function getSelectedTotalMinutes() {
     const rawVal = parseFloat(document.getElementById('new-rate-time-val').value) || 0;
     const unit = document.getElementById('new-rate-time-unit').value;
     if (unit === 'hours') return Math.round(rawVal * 60);
+    if (unit === 'days') return Math.round(rawVal * 1440);
+    return Math.round(rawVal);
+}
+
+function onBaseRateInput() {
+    validatePromoFormMath();
+    loadRates();
 }
 
 function autoGenerateRateLabel() {
-    
+    const b = parseInt(document.getElementById('new-rate-bottles').value) || 0;
+    const m = getSelectedTotalMinutes();
+    if (!b || !m) return;
+    const hrs = (m / 60).toFixed(1);
+    const eff = (m / b).toFixed(1);
+    const baseRate = parseInt(document.getElementById('rate-1').value) || 10;
+    const bonusMins = Math.round(m - (b * baseRate));
+    let timeStr = (hrs >= 1 && m % 60 === 0) ? `${Math.round(m/60)}.0 Hours` : (hrs >= 1 ? `${hrs} Hours` : `${m} mins`);
+    let label = `${b} Bottle${b > 1 ? 's' : ''} = ${timeStr}`;
+    if (bonusMins > 0) {
+        label += ` (+${bonusMins}m Bonus)`;
+    } else if (b === 1) {
+        label += ` (Base Rate)`;
+    }
     document.getElementById('new-rate-label').value = label;
-    
+}
+
+function validatePromoFormMath() {
+    const b = parseInt(document.getElementById('new-rate-bottles').value) || 0;
+    const m = getSelectedTotalMinutes();
+    const origB = parseInt(document.getElementById('edit-original-bottles').value) || null;
+    const fb = document.getElementById('rate-validator-feedback');
+    const effSpan = document.getElementById('rate-validator-eff');
+    const statusSpan = document.getElementById('rate-validator-status');
+    const msgDiv = document.getElementById('rate-validator-msg');
+    const saveBtn = document.getElementById('btn-save-promo');
+
+    if (!b || !m) {
+        fb.style.display = 'none';
+        saveBtn.disabled = false;
+        return;
+    }
+
+    fb.style.display = 'block';
+    const eff = (m / b).toFixed(2);
+    effSpan.innerText = `📊 Efficiency: ${eff} mins/bottle (${m}m for ${b}B)`;
+
+    // Check invariants against currentRatesCache (excluding editing tier)
+    const existing = currentRatesCache.filter(r => r.bottles !== origB);
+    let conflict = null;
+
+    // Invariant 1: Monotonic Efficiency
+    for (let r of existing) {
+        const exEff = r.minutes / r.bottles;
+        if (r.bottles < b && exEff > (m / b)) {
+            conflict = `Efficiency conflict: ${r.bottles}B tier gives ${exEff.toFixed(1)} m/b, but this gives only ${eff} m/b. Larger bundles must be at least as rewarding.`;
+            break;
+        }
+        if (r.bottles > b && exEff < (m / b)) {
+            conflict = `Efficiency conflict: this tier gives ${eff} m/b, which exceeds the larger ${r.bottles}B tier (${exEff.toFixed(1)} m/b).`;
+            break;
+        }
+    }
+
+    // Invariant 2: Combination Floor
+    if (!conflict) {
+        const lowerTiers = existing.filter(r => r.bottles < b).sort((a,b) => b.bottles - a.bottles);
+        let comboMins = 0;
+        let rem = b;
+        for (let lt of lowerTiers) {
+            if (rem >= lt.bottles) {
+                comboMins += Math.floor(rem / lt.bottles) * lt.minutes;
+                rem %= lt.bottles;
+            }
+        }
+        if (comboMins > 0 && m < comboMins) {
+            conflict = `Combination conflict: Depositing ${b} bottles in smaller packages yields ${comboMins} mins, but this package gives only ${m} mins. Minimum required is ${comboMins} mins.`;
+        }
+    }
+
+    // Invariant 3: Higher-Tier Upper Bound
+    if (!conflict) {
+        const higherTiers = existing.filter(r => r.bottles > b);
+        if (higherTiers.length > 0) {
+            const minHigher = Math.min(...higherTiers.map(r => r.minutes));
+            if (m >= minHigher) {
+                conflict = `Upper bound conflict: ${m} mins equals or exceeds a larger tier (${minHigher} mins).`;
+            }
+        }
+    }
+
+    if (conflict) {
+        fb.className = 'alert alert-danger py-2 px-3 mb-0';
+        statusSpan.innerText = '❌ Conflict Detected';
+        msgDiv.innerText = conflict;
+        saveBtn.disabled = true;
+    } else {
+        fb.className = 'alert alert-success py-2 px-3 mb-0';
+        statusSpan.innerText = '✔ Mathematically Balanced';
+        msgDiv.innerText = 'No rate curve conflicts. Bundle incentivizes bulk deposit.';
+        saveBtn.disabled = false;
+    }
+}
+
+function editPromoRate(bottles, minutes, encLabel) {
+    const label = decodeURIComponent(encLabel || '');
+    document.getElementById('edit-original-bottles').value = bottles;
+    document.getElementById('new-rate-bottles').value = bottles;
+    document.getElementById('new-rate-time-val').value = minutes;
+    document.getElementById('new-rate-time-unit').value = 'mins';
+    document.getElementById('new-rate-label').value = label;
+
     document.getElementById('promo-form-title').innerHTML = `<i class="fas fa-edit text-warning"></i> Edit Promo Rate Tier (${bottles} Bottles)`;
     document.getElementById('btn-save-promo').innerHTML = `<i class="fas fa-save"></i> Update Rate`;
+    document.getElementById('btn-save-promo').className = 'btn btn-warning btn-block mr-1';
+    document.getElementById('btn-cancel-promo').style.display = 'inline-block';
+
+    validatePromoFormMath();
+    document.getElementById('promo-form-card').scrollIntoView({ behavior: 'smooth' });
+}
+
+function cancelEditPromoRate() {
+    document.getElementById('edit-original-bottles').value = '';
+    document.getElementById('new-rate-bottles').value = '';
+    document.getElementById('new-rate-time-val').value = '';
+    document.getElementById('new-rate-time-unit').value = 'mins';
     document.getElementById('new-rate-label').value = '';
     document.getElementById('rate-validator-feedback').style.display = 'none';
-    
+
     document.getElementById('promo-form-title').innerHTML = `<i class="fas fa-plus-circle"></i> Add Custom Promo Rate Package`;
     document.getElementById('btn-save-promo').innerHTML = `<i class="fas fa-plus"></i> Add Rate`;
-    document.getElementById('btn-save-promo').className = `btn btn-success btn-block mr-1`;
+    document.getElementById('btn-save-promo').className = 'btn btn-success btn-block mr-1';
+    document.getElementById('btn-save-promo').disabled = false;
     document.getElementById('btn-cancel-promo').style.display = 'none';
+}
 
 function addPromoRate() {
     const b = parseInt(document.getElementById('new-rate-bottles').value);
     const m = getSelectedTotalMinutes();
     const origB = document.getElementById('edit-original-bottles').value;
     let l = document.getElementById('new-rate-label').value.trim();
-    if (!l) {
-    }
+
     if (!b || !m || isNaN(b) || isNaN(m)) {
         Swal.fire('Input Error', 'Please enter valid numbers for Bottles and Duration.', 'warning');
         return;
+    }
+
+    if (!l) {
+        autoGenerateRateLabel();
+        l = document.getElementById('new-rate-label').value.trim();
     }
 
     fetch('/admin/api/rates/add', {
@@ -3665,10 +3865,45 @@ function addPromoRate() {
         body: JSON.stringify({bottles: b, minutes: m, label: l, orig_bottles: origB ? parseInt(origB) : null})
     }).then(r=>r.json()).then(d=>{
         if (d.success) {
+            cancelEditPromoRate();
             loadRates();
+            Swal.fire('Saved!', 'Promo rate tier saved successfully.', 'success');
+        } else {
+            Swal.fire('Conflict Error', d.error || 'Failed to save rate.', 'error');
+        }
+    }).catch(e=>{
+        Swal.fire('Error', 'Server error while saving promo rate.', 'error');
+    });
+}
+
+function deletePromoRate(b) {
+    Swal.fire({
+        title: `Delete Rate Tier?`,
+        text: `Delete package for ${b} bottle(s)?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Yes, delete it!'
+    }).then((res) => {
+        if (res.isConfirmed) {
+            fetch('/admin/api/rates/delete', {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({bottles: b})
+            }).then(r=>r.json()).then(d=>{
+                if (d.success) {
+                    loadRates();
+                    Swal.fire('Deleted!', 'Rate tier removed.', 'success');
+                } else {
+                    Swal.fire('Error', d.error || 'Could not delete rate.', 'error');
+                }
+            });
+        }
+    });
 }
 
 function applyRatePreset() {
+    const p = document.getElementById('rate-preset-select').value;
     Swal.fire({
         title: 'Apply Rate Template?',
         text: 'This will replace all active promo rates with the selected conflict-free curve template.',
@@ -3684,13 +3919,30 @@ function applyRatePreset() {
                 body: JSON.stringify({preset: p})
             }).then(r=>r.json()).then(d=>{
                 if (d.success) {
+                    loadRates();
                     Swal.fire('Applied!', d.message, 'success');
                 } else {
-                    Swal.fire('Error', d.error, 'error');
+                    Swal.fire('Error', d.error || 'Could not apply template.', 'error');
                 }
-        title: `Delete Rate Tier?`,
-        text: `Delete package for ${b} bottle(s)?`,
-        icon: 'warning',
+            });
+        }
+    });
+}
+
+function saveRates() {
+    const minPerBottle = document.getElementById('rate-1').value;
+    const dropTimeout = document.getElementById('rate-timeout').value;
+    fetch('/admin/api/settings/save', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({minutes_per_bottle: minPerBottle, drop_timeout: dropTimeout})
+    }).then(r=>r.json()).then(d=>{
+        if (d.success) {
+            loadRates();
+            Swal.fire('Saved!', 'Base timing settings updated.', 'success');
+        } else {
+            Swal.fire('Error', d.error || 'Failed to save settings.', 'error');
+        }
     });
 }
 
