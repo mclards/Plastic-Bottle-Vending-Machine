@@ -3735,7 +3735,7 @@ ADMIN_HTML = """
                 <tr>
                   <th style="padding: 10px 14px;">Bottles Required</th>
                   <th style="padding: 10px 14px;">Time Credited</th>
-                  <th style="padding: 10px 14px;">Rate Efficiency</th>
+                  <th style="padding: 10px 14px;">Rate Efficiency (Mins/Bottle)</th>
                   <th style="padding: 10px 14px;">Package Label</th>
                   <th style="padding: 10px 14px; width: 170px; min-width: 170px; text-align: right; white-space: nowrap;">Actions</th>
                 </tr>
@@ -4385,7 +4385,7 @@ function loadRates() {
             html += `<tr>
                 <td style="padding: 10px 14px;"><strong class="text-success"><i class="fas fa-wine-bottle mr-1"></i>${r.bottles} Bottle${r.bottles > 1 ? 's' : ''}</strong></td>
                 <td style="padding: 10px 14px;"><strong>${timeStr}</strong></td>
-                <td style="padding: 10px 14px;"><code>${eff} m/b</code> ${bonusTag}</td>
+                <td style="padding: 10px 14px;"><span class="text-light">${eff} mins/bottle</span> ${bonusTag}</td>
                 <td style="padding: 10px 14px;"><span class="text-light">${r.label || '-'}</span></td>
                 <td style="padding: 10px 14px; text-align: right; white-space: nowrap;">
                     <div class="d-inline-flex align-items-center justify-content-end" style="gap: 6px; white-space: nowrap; flex-wrap: nowrap;">
