@@ -1,157 +1,216 @@
-# Smart Eco-Fi Vendo System - Builder Manual
+# Smart Eco-Fi Vendo System — Comprehensive Builder Manual
+**Version:** 2.0 (Production-Hardened) · **Architecture:** Hybrid ESP32 + Orange Pi Gateway
 
 > [!NOTE]
-> This manual serves as the comprehensive guide for assembling, wiring, programming, and deploying the Smart Eco-Fi Reverse Vending Machine. The system trades plastic bottles for Wi-Fi hotspot access.
+> This manual is the definitive engineering and deployment guide for assembling, wiring, programming, and deploying the **Smart Eco-Fi Reverse Vending Machine (PBVM)**. The system accepts recyclable PET plastic bottles and trades them for high-speed Wi-Fi hotspot access.
+
+---
 
 ## 1. System Architecture
 
-The machine uses a **Distributed Hybrid Architecture** to guarantee precise, real-time hardware control while providing robust network management.
+The system utilizes a **Distributed Hybrid Architecture**:
+- **ESP32 DevKit V1 (Sub-Controller):** Real-time hardware control, anti-cheat sensor array (NIR Spectrometer, Inductive Metal, Capacitive Proximity, Dual Optical IR), 3-Servo motorized airlock, and I2C LCD.
+- **Orange Pi One / Zero 3 / 3B (Core Gateway):** Linux networking, Nginx reverse proxy, Flask web engine, SQLite session accounting, dynamic `ipset` firewall, Linux `tc` HTB per-client bandwidth shaping, Silicon HWID licensing, and Excel reporting.
 
 ```mermaid
 flowchart TD
-    subgraph Hardware Sub-Controller
-    A[ESP32 DevKit V1] --> B[Optical Drop Detection]
-    A --> C[Inductive Metal Rejection]
-    A --> D[Weight Validation HX711]
-    A --> L[Capacitive Plastic Sensor]
-    A --> M[AS7263 NIR Spectrometer]
-    A --> E[Sorting & Reject Actuators]
-    A --> N[Entrance Gate Servo]
+    subgraph Hardware Sub-Controller [ESP32 DevKit V1]
+        IR1[Top Optical IR Sensor] --> DET[Intake Detection]
+        IND[Inductive Metal Proximity] --> VAL[Anti-Fraud Validation]
+        CAP[Capacitive Plastic Proximity] --> VAL
+        NIR[AS7263 NIR Spectrometer] --> VAL
+        IR2[Bottom Optical IR Sensor] --> DROP[Drop Confirmation]
+        
+        VAL -->|Valid PET Bottle| S_SUC[Success Gate Servo]
+        VAL -->|Metal / Non-PET / Fraud| S_REJ[Reject Gate Servo]
+        DET --> S_ENT[Entrance Gate Servo]
     end
 
-    subgraph Core Gateway & Server
-    F[Orange Pi 3B] --> G[Network DHCP / DNS]
-    F --> H[Captive Portal Engine]
-    F --> I[SQLite Accounting]
-    F --> J[Dynamic ipset Firewall]
+    subgraph Core Gateway [Orange Pi - Armbian / Linux]
+        NGINX[Nginx Reverse Proxy :80] --> FLASK[ECO-Fi Web Engine :5000]
+        FLASK --> DB[(SQLite: vendo_sessions.db)]
+        FLASK --> FW[Dynamic ipset & iptables Firewall]
+        FLASK --> TC[Traffic Control: 3 Mbps Bandwidth Shaper]
+        FLASK --> LIC[Silicon HWID Anti-Cloning Engine]
     end
     
-    A -- "JSON UART Frame\n(115200 Baud)" --> F
-    F -- "Cat6 / AP" --> K((Wi-Fi Clients))
+    Hardware Sub-Controller -- "JSON UART (115200 Baud)" --> Core Gateway
+    Core Gateway -- "Ethernet / TP-Link AP" --> CLIENTS((Connected Wi-Fi Clients))
 ```
+
+---
 
 ## 2. Bill of Materials (BOM)
 
 ### Computing & Networking
 | Component | Qty | Engineering Purpose |
 |---|---|---|
-| **Orange Pi Zero 3 / 3B** | 1 | Linux routing, captive portal, iptables firewall |
-| **ESP32 DevKit V1** | 1 | Real-time anti-cheat sensing, motor control |
+| **Orange Pi One / Zero 3 / 3B** | 1 | Linux gateway, captive portal, SQLite accounting, dynamic firewall |
+| **ESP32 DevKit V1 (30-Pin)** | 1 | Real-time sensor processing, anti-fraud pipeline, servo motor control |
+| **MicroSD Card (32GB / 64GB Class 10)** | 1 | Operating system storage, SQLite database, offline cache |
+| **TP-Link Outdoor Access Point (EAP110/225)** | 1 | Long-range Wi-Fi hotspot coverage |
+| **USB-to-UART Serial Cable / Direct UART** | 1 | 115200 Baud JSON frame link between ESP32 and Orange Pi |
 
 ### Actuators & Mechanics
 | Component | Qty | Engineering Purpose |
 |---|---|---|
-| **MG995 Servo Motor** | 2 | 1x Sorting Hatch Gate (GPIO 13), 1x Entrance Gate (GPIO 21) |
-| **MicroSD Card (32GB)** | 1 | OS storage, SQLite DB, system logs |
-| **Outdoor AP (TP-Link)**| 1 | Long-range Wi-Fi broadcasting |
+| **MG996R High-Torque Servo Motor** | 3 | Ch 0: Entrance Gate; Ch 1: Success Gate; Ch 2: Reject Gate |
+| **PCA9685 16-Channel 12-Bit PWM Driver** | 1 | Dedicated I2C servo pulse generator (isolates microcontrollers from PWM jitter) |
+| **Acrylic / 3D Printed Airlock Chute** | 1 | Mechanical gravity chute housing sensors and servo trapdoors |
 
-### Sensors, Actuation & UI
+### Sensors & User Feedback
 | Component | Qty | Engineering Purpose |
 |---|---|---|
-| **E18-D80NK IR Sensor** | 2 | Dual optical beam-break to verify complete drop |
-| **1kg-5kg Load Cell** | 1 | Mass validation (10g–65g empty PET threshold) |
-| **LJ12A3-4-Z/BX Sensor**| 1 | Inductive proximity to reject metal/tin cans |
-| **Capacitive Proximity**| 1 | Rejects empty air / ensures non-metal object presence |
-| **AS7263 NIR Sensor**   | 1 | Near-Infrared spectrometer to verify PET plastic signature |
-| **MG996R Servo** | 1 | Actuates drop hatch trapdoor |
-| **12V Solenoid** | 1 | Push-Pull open frame to eject rejected items |
-| **20x4 I2C LCD** | 1 | System status prompts |
-| **Feedback Elements** | 1 | 5V Buzzer, Green/Red LEDs |
+| **E18-D80NK Optical IR Sensors** | 2 | Top intake trigger (IR #1) and bottom chute drop confirmation (IR #2) |
+| **LJ12A3-4-Z/BX Inductive Proximity Sensor** | 1 | Rejects tin cans, aluminum, and metallic objects (NPN-NO, 6–36V) |
+| **Capacitive Proximity Sensor (LJC18A3)** | 1 | Verifies non-metallic mass presence (NPN-NO, 6–36V) |
+| **AS7263 NIR 6-Channel Spectrometer** | 1 | Near-Infrared optical absorption verification of PET polymer signature |
+| **JSN-SR04T Waterproof Ultrasonic Sensor** | 1 | Real-time bin capacity & fill level monitoring |
+| **20x4 I2C Character LCD** | 1 | On-machine customer guidance and bottle count display |
+| **Active 5V Buzzer & Status LEDs** | 1 | Audible chimes and visual green/red feedback |
+| **Push Button (Stainless Steel)** | 1 | Session finish button (held during power-on triggers Config Mode) |
 
-### Power Distribution
+### Power Distribution & Protection
 | Component | Qty | Engineering Purpose |
 |---|---|---|
-| **12V 5A SMPS** | 1 | Main system power supply |
-| **XL4015 Buck (5A)** | 1 | Steps down to 5.1V for logic rails |
-| **LM2596 Buck (3A)** | 1 | Steps down to 5.0V for isolated motor power |
+| **12V 5A Industrial SMPS Power Supply** | 1 | Main AC-to-DC system power source |
+| **XL4015 5A Step-Down Buck Converter** | 1 | Regulates 5.1V logic rail for Orange Pi, ESP32, sensors, and LCD |
+| **LM2596 3A Step-Down Buck Converter** | 1 | **Isolated 5.0V motor rail** for MG996R servos (prevents logic brownouts) |
+| **10kΩ & 4.7kΩ Resistor Dividers** | 3 | Level-shifts 12V sensor outputs to safe 3.3V ESP32 GPIO logic |
 
 ---
 
-## 3. Hardware Assembly & Wiring
+## 3. Hardware Wiring & Pin Mapping
 
 > [!WARNING]
-> Do not mix the **Logic Rail** (5.1V) and **Motor Rail** (5.0V). The MG996R servo must be strictly isolated to the LM2596 buck converter to prevent brownouts on the ESP32.
+> **Strict Power Isolation:** Never connect the MG996R servo power wires to the ESP32 or Orange Pi 5V logic pins. Servos must draw current strictly from the dedicated LM2596 motor buck converter. Ground (GND) must be common across all rails.
 
-### Detailed ESP32 Wiring & Pin-to-Pin Connections
+### ESP32 Pin Assignment Table
 
-| Module | ESP32 Pin | Module Pin | Power Supply | Special Notes |
+| Module / Signal | ESP32 GPIO | Module Pin | Power Rail | Electrical Notes |
 |---|---|---|---|---|
-| **Top IR (E18-D80NK #1)** | GPIO 18 | OUT (Black) | 5V Rail (Brown), GND (Blue) | Use `INPUT_PULLUP`. |
-| **Bottom IR (E18-D80NK #2)**| GPIO 19 | OUT (Black) | 5V Rail (Brown), GND (Blue) | Use `INPUT_PULLUP`. |
-| **Inductive Metal (LJ12A3)**| GPIO 23 | OUT (Black) | 12V Rail (Brown), GND (Blue) | **CRITICAL:** Use 10kΩ/10kΩ voltage divider from OUT to drop 12V signal to 3.3V logic! |
-| **Capacitive Proximity** | GPIO 15 | OUT (Black) | 5V Rail (Brown), GND (Blue) | NPN Normally Open. Use `INPUT_PULLUP`. |
-| **Load Cell (HX711)** | GPIO 4 (DT), GPIO 5 (SCK) | DOUT, PD_SCK | 3.3V (VCC), GND | Ensure load cell arrows point down. |
-| **Bin Ultrasonic (JSN)** | GPIO 14 (Trig), GPIO 12 (Echo)| Trig, Echo | 5V Rail (VCC), GND | Level-shift the Echo pin to 3.3V logic (or use voltage divider). |
-| **Hatch Servo (MG996R)** | GPIO 13 (PWM) | Signal (Orange) | 5.0V Motor Buck (Red), GND | **CRITICAL:** Servo power must come from isolated LM2596 motor rail. Tie grounds together. |
-| **Reject Solenoid (12V)** | GPIO 32 | Gate of IRLZ44N | 12V Rail | Use IRLZ44N MOSFET. Source to GND, Drain to Solenoid(-). Solenoid(+) to 12V. Add 1N4007 flyback diode. |
-| **20x4 LCD (I2C)** | GPIO 21 (SDA), GPIO 22 (SCL)| SDA, SCL | 5V Rail (VCC), GND | ESP32 is 3.3V logic, but LCD is 5V. I2C pullups usually work, but a logic level shifter is safer. |
-| **AS7263 NIR Sensor** | GPIO 21 (SDA), GPIO 22 (SCL)| SDA, SCL | 3.3V (VIN), GND | Daisy-chained with LCD. |
-| **Feedback Buzzer** | GPIO 33 | SIG / IN | 5V Rail (VCC), GND | Active low/high depending on module. |
-| **Status LEDs** | GPIO 25 (Green), GPIO 26 (Red)| Anode | ESP32 GND | Use 220Ω series resistors for each. |
+| **Top Optical IR (E18-D80NK #1)** | **GPIO 18** | OUT (Black) | 5.1V Logic (Brown), GND (Blue) | Configured with `INPUT_PULLUP`. Low = Beam Broken. |
+| **Bottom Optical IR (E18-D80NK #2)**| **GPIO 19** | OUT (Black) | 5.1V Logic (Brown), GND (Blue) | Configured with `INPUT_PULLUP`. Low = Beam Broken. |
+| **Inductive Metal (LJ12A3)** | **GPIO 23** | OUT (Black) | 12V Main (Brown), GND (Blue) | **CRITICAL:** Use 10kΩ / 4.7kΩ voltage divider to drop 12V output to 3.3V! Idle = HIGH, Metal Detected = LOW. |
+| **Capacitive Proximity** | **GPIO 15** | OUT (Black) | 12V Main (Brown), GND (Blue) | Voltage divider to 3.3V. Idle = HIGH, Object Detected = LOW. |
+| **Ultrasonic Bin Sensor (JSN)** | **GPIO 14** (Trig), **GPIO 12** (Echo) | Trig, Echo | 5.1V Logic (VCC), GND | Level-shift Echo output to 3.3V logic. |
+| **PCA9685 PWM Driver** | **GPIO 21** (SDA), **GPIO 22** (SCL) | SDA, SCL | 5.1V Logic (VCC), GND | I2C Address `0x40`. Servos powered via V+ terminal block. |
+| **20x4 I2C LCD Display** | **GPIO 21** (SDA), **GPIO 22** (SCL) | SDA, SCL | 5.1V Logic (VCC), GND | I2C Address `0x27` (or `0x3F`). |
+| **AS7263 NIR Spectrometer** | **GPIO 21** (SDA), **GPIO 22** (SCL) | SDA, SCL | 3.3V Logic (VIN), GND | I2C Address `0x49`. |
+| **Feedback Buzzer** | **GPIO 33** | Signal | 5.1V Logic (VCC), GND | Active buzzer driver. |
+| **Status LEDs (Green / Red)** | **GPIO 25** (Green), **GPIO 26** (Red) | Anode | ESP32 GND (via 220Ω resistor) | Visual feedback indicators. |
+| **Finish / Config Button** | **GPIO 34** | Terminal 1 | ESP32 GND | Input-only pin with external pull-up. Hold at boot for Config Portal! |
 
 ---
 
-## 4. Software Setup: ESP32 (Sub-Controller)
+## 4. Sub-Controller Firmware (ESP32)
 
-The ESP32 is managed via PlatformIO. It handles the anti-fraud pipeline (Intake Scan -> Retention & Drop -> Validation -> Transmission).
+The ESP32 firmware is developed in C++ using **PlatformIO**. It executes a dual-core FreeRTOS pipeline:
+- **Core 0:** Sensor sampling, NIR spectroscopy, and 3-servo airlock control.
+- **Core 1:** UART JSON messaging with the Orange Pi host and on-board LCD display.
 
-1. Install **VSCode** and the **PlatformIO** extension.
-2. Open the `d:\PROJECTS_IO\Plastic-Bottle-Vending-Machine` workspace.
-3. The configuration is ready in [`platformio.ini`](file:///d:/PROJECTS_IO/Plastic-Bottle-Vending-Machine/platformio.ini).
-4. Connect the ESP32 and click **Upload** in PlatformIO.
+### Flash Firmware via PlatformIO
+1. Open the project in VSCode with PlatformIO installed.
+2. Connect the ESP32 via Micro-USB.
+3. Build and upload firmware:
+   ```bash
+   pio run --target upload
+   ```
+
+### UART Protocol Specification (115200 Baud, 8N1)
+* **Outbound Events (ESP32 $\rightarrow$ Host):**
+  * `{"event":"CREDIT_ADD", "bottles":1, "sessionTotal":3}` — Valid PET bottle accepted and dropped into bin.
+  * `{"event":"REJECTED", "reason":"METAL_DETECTED"}` — Metal object rejected.
+  * `{"event":"REJECTED", "reason":"NIR_MISMATCH"}` — Non-PET plastic rejected.
+  * `{"event":"BIN_FULL", "distance":5}` — Storage bin capacity exceeded.
+  * `{"event":"BIN_OK"}` — Storage bin emptied.
+  * `{"event":"CONFIG_SAVED"}` — Calibration settings saved to NVS.
+* **Inbound Commands (Host $\rightarrow$ ESP32):**
+  * `{"cmd":"OPEN_GATE", "timeout":30}` — Opens entrance gate for customer insertion session.
+  * `{"cmd":"CLOSE_GATE"}` — Closes entrance gate immediately.
+  * `{"cmd":"SET_CONFIG", ...}` — Calibrates servo angles and sensor thresholds dynamically from Admin Panel.
+  * `{"cmd":"TRIGGER_CONFIG"}` — Reboots ESP32 into on-board SoftAP Config Mode.
 
 ---
 
-## 5. Software Setup: Orange Pi (Core Gateway)
+## 5. Orange Pi Firmware & OS Image Builder
 
-The Orange Pi handles network authorization. When a valid drop occurs, the ESP32 sends `{"event":"CREDIT_ADD","bottles":1}`.
+We provide an automated, reproducible builder script (`build_ecofi_img.sh` / `build_ecofi_img.bat`) that transforms a base Armbian image into a production-hardened **ECO-Fi OS Image**.
 
-### Prerequisites
-Install Armbian or OpenWrt. Then install the required packages:
+### Automated Image Build (WSL / Linux)
 ```bash
-sudo apt update
-sudo apt install python3-pip ipset iptables sqlite3
-pip3 install flask pyserial
+# Run from repository root in WSL or native Linux:
+sudo bash build_ecofi_img.sh
 ```
 
-### Deploying the Network & Portal Daemon
-1. The unified portal script is located at [`host/portal.py`](file:///d:/PROJECTS_IO/Plastic-Bottle-Vending-Machine/host/portal.py). Ensure the `static` folder containing the banner image is also copied over.
-2. Register the Systemd service (update `ExecStart` to point to `portal.py` instead of `daemon.py`):
-```bash
-sudo cp host/ecofi.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now ecofi.service
-```
+### What the Build Script Executes:
+1. **Purges Legacy Services & Backdoors:** Strips old PHP daemons, MySQL, Zerotier, Ngrok, and legacy phone-home binaries.
+2. **Installs High-Performance Nginx Reverse Proxy:** Captive portal trigger intercepts on Port 80 (`/generate_204`, `/gen_204`, `/connecttest.txt`, `ncsi.txt`) with zero-latency proxy pass to Python Flask on Port 5000.
+3. **Static Subnet & Network Configuration:** Assigns static IP `10.0.0.1/19` (pool `10.0.0.2` – `10.0.31.254`), updates `dnsmasq`, enables kernel IP forwarding (`net.ipv4.ip_forward=1`), and sets up WAN NAT masquerade.
+4. **Installs System Dependencies:** Automatically installs `flask`, `werkzeug`, `pyserial`, and `openpyxl`.
+5. **Registers Systemd Services:**
+   * `ecofi_firewall.service` — Automatic `ipset` creation, NAT masquerade, and drop-first firewall rules.
+   * `ecofi_portal.service` — Daemonized captive portal running `/opt/ecofi/portal.py`.
+   * `ecofi_firstboot.service` — Single-run dependency installer that disables itself upon success.
 
 ---
 
-## 6. Captive Portal (Wi-Fi Portal Page)
+## 6. Captive Portal & Network Engine
 
-> [!TIP]
-> The captive portal is how users pair their devices to the machine before depositing bottles.
+### Bandwidth Management (3 Mbps Default)
+* **Standard Speed:** **3072 Kbps (3 Mbps) Download / 1536 Kbps (1.5 Mbps) Upload** applied automatically to all authorized users via Linux `tc` Hierarchical Token Bucket (HTB).
+* **Per-Client Speed Customization:** Administrators can adjust bandwidth per connected client in real-time from the Admin Panel; speeds persist across restarts in `active_sessions`.
+* **Anti-Tethering:** Automatically sets outgoing TTL to `64` (`iptables -t mangle -A POSTROUTING -j TTL --ttl-set 64`) to prevent unauthorized hotspot sharing.
 
-### How it Works
-1. When a user connects to the AP, they are redirected to the Portal Page.
-2. The user lands on the portal endpoint which writes their IP address to `/tmp/current_active_client.txt`.
-3. When the user drops a bottle, the background serial thread in `portal.py` reads the active IP file and increments the "Unclaimed Bottles" for that user.
-4. When the user clicks the "Insert Plastic Bottles" button on the portal, it executes the `ipset` rule to grant them unrestricted internet access based on their bottle count.
+### Dynamic Session Validity & Pause Math
+When users pause their Wi-Fi time, the session expiration is computed mathematically based on their remaining balance:
+$$\text{Validity}(T) = \min\left(720\text{h},\ \max\left(24\text{h},\ 12\text{h} + 1.2\sqrt{\text{Mins}} + 0.025\times\text{Mins}\right)\right)$$
+* **Short sessions (< 1h):** 24-hour expiration window.
+* **Large balances (10+ hours):** Up to 30 days expiration window.
 
-### Setting up the Portal
-A complete, mobile-responsive Flask portal imitating the Piso Wi-Fi interface has been generated in [`host/portal.py`](file:///d:/PROJECTS_IO/Plastic-Bottle-Vending-Machine/host/portal.py). 
-Run it via Systemd, ensuring it binds to port 80:
-```bash
-sudo python3 /opt/ecofi/portal.py
-```
-
-### Captive DNS Redirection
-To force the portal to pop up on phones, use `dnsmasq` and `iptables` to hijack port 80 traffic for unauthenticated users, routing them to the Flask server.
+### Rates & Promo Curves
+* Clean, plain 2-column mobile layout:
+  * **1 Bottle** = `10 mins` (Base Rate)
+  * **3 Bottles** = `40 mins` (+33% bonus yield)
+  * **5 Bottles** = `1h 15m` (+50% bonus yield)
+  * **10 Bottles** = `3 Hours` (+80% bonus yield)
+* Strict monotonic rate validation prevents pricing conflicts or loopholes.
 
 ---
 
-## 7. Calibration & Testing
+## 7. Master Admin Control Panel (`/admin`)
 
-1. **HX711 Calibration**: Place a 20g calibration weight on the intake cradle. Adjust `scale.set_scale(420.0);` in `main.cpp` until the reading accurately reflects 20.00g.
-2. **Inductive Trimming**: Adjust the rear potentiometer on the LJ12A3-4-Z/BX sensor so that metal cans trigger detection at a 4mm–6mm distance.
-3. **Capacitive Trimming**: Adjust the rear potentiometer on the capacitive proximity sensor so it triggers exactly when a plastic bottle is placed, but does *not* trigger falsely on the plastic walls of the intake chute.
-4. **AS7263 NIR Calibration**: Place several standard PET bottles into the machine, record the 6-channel NIR absorption baseline via the Serial Monitor, and hardcode these thresholds into the validation logic.
-5. **IR Distance Setup**: Turn the multi-turn screw on both E18-D80NK sensors until the rear LED indicates triggering exactly at the inner wall boundary of the chute (~15cm).
+* **Access:** Navigate to `http://10.0.0.1/admin` (or `http://localhost:5000/admin`).
+* **Authentication Guard:** Global session-based authentication blocks unauthenticated direct access to all API routes and data exports.
+* **Operations & Accounting Excel Export (`/admin/api/export_xlsx`):**
+  * Downloads professional `.xlsx` workbook formatted with 4 dedicated sheets:
+    1. *Daily Collections & Environmental Impact* (Bottles recycled, plastics diverted, estimated weight).
+    2. *Voucher Inventory* (Codes, duration, status, creation date, redemption user).
+    3. *Member Wallets* (Registered usernames, current minute balances, registration timestamps).
+    4. *Promo Rate Curves* (Active packages, efficiency rates, and bonus yields).
+* **ESP32 Hardware Calibration:** Configure servo travel angles (Entrance, Success, Reject), NIR spectral window, and ultrasonic bin distance with live UART push to hardware NVS.
+
+---
+
+## 8. Calibration & Deployment Checklist
+
+1. **Power Supply Validation:**
+   * Verify Logic Rail outputs **5.10V ± 0.05V**.
+   * Verify Motor Rail outputs **5.00V ± 0.05V**.
+2. **Inductive Metal Sensor (LJ12A3):**
+   * Adjust rear trimmer pot until metal bottle caps trigger at 4–6 mm.
+3. **Capacitive Proximity Sensor (LJC18A3):**
+   * Adjust sensitivity so plastic bottles trigger consistently while avoiding false triggers from the chute frame.
+4. **AS7263 NIR Spectrometer Calibration:**
+   * Insert sample PET bottles, review W-channel spectral readings in the Admin Hardware tab, and set upper/lower limits.
+5. **Optical IR Sensors (E18-D80NK):**
+   * Adjust distance screws until beam breaks cleanly on bottle passage.
+6. **System Verification Test:**
+   * Run full test suite:
+     ```bash
+     python scratch/run_full_system_test.py
+     ```
+   * Ensure **19/19 system tests PASS**.
+
+---
+*Smart Eco-Fi Reverse Vending Machine — Built for Sustainability, Performance, and Security.*

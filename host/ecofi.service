@@ -1,14 +1,17 @@
 [Unit]
-Description=Eco-Fi Reverse Vending Machine Hotspot Daemon
-After=network.target network-online.target
+Description=ECO-Fi Reverse Vending Machine Captive Portal & Web Engine
+After=network.target network-online.target nginx.service ecofi_firewall.service
 
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/opt/ecofi
-ExecStart=/usr/bin/python3 /opt/ecofi/daemon.py
+ExecStart=/usr/bin/python3 /opt/ecofi/portal.py
+StandardOutput=append:/opt/ecofi/portal.log
+StandardError=append:/opt/ecofi/portal.log
 Restart=always
 RestartSec=3
+Environment=PORT=5000
 
 [Install]
 WantedBy=multi-user.target
