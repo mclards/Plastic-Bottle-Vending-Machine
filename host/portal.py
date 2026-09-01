@@ -88,8 +88,9 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('telegram_alert_bin', '1')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('telegram_alert_daily', '1')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('anti_tethering', '1')")
-        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vendo_name', 'ECO-Fi Hotspot')")
-        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vendo_subtitle', 'Smart Reverse Vending WiFi')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vendo_name', 'ECO-Fi Vendo')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vendo_subtitle', 'Recycle Bottles for Fast WiFi')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('announcement', '')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_bg', '/static/audio/eco_loop.wav')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_insert', '/static/audio/eco_chime.wav')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_success', '/static/audio/eco_success.wav')")
@@ -107,9 +108,6 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (3, 40, '3 Bottles = 40 mins')")
         c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (5, 75, '5 Bottles = 1h 15m')")
         c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (10, 180, '10 Bottles = 3 Hours')")
-        
-        # Default announcement
-        c.execute("INSERT OR IGNORE INTO announcements (id, message, active) VALUES (1, '♻️ Welcome to ECO-Fi! Deposit clean PET plastic bottles to earn high-speed Wi-Fi access.', 1)")
 
         # Default walled garden free sites
         c.execute("INSERT OR IGNORE INTO walled_garden (domain, note) VALUES ('connectivitycheck.gstatic.com', 'Android Captive Probe')")
@@ -1530,8 +1528,8 @@ def index():
         PORTAL_HTML,
         client_ip=client_ip,
         client_mac=session_data.get("mac", "00:00:00:00:00:00"),
-        vendo_name=get_config("vendo_name", "ECO-Fi Hotspot"),
-        vendo_subtitle=get_config("vendo_subtitle", "Smart Reverse Vending WiFi"),
+        vendo_name=get_config("vendo_name", "ECO-Fi Vendo"),
+        vendo_subtitle=get_config("vendo_subtitle", "Recycle Bottles for Fast WiFi"),
         promo_rates=promos,
         announcement=announcement,
         walled_sites=walled_sites,
@@ -3914,16 +3912,16 @@ ADMIN_HTML = """
           <div class="row">
             <div class="col-12 col-md-6 form-group">
               <label>Hotspot Vendo Name:</label>
-              <input type="text" id="cfg-vendo-name" class="form-control" value="{{ config.get('vendo_name', 'ECO-Fi Hotspot') }}">
+              <input type="text" id="cfg-vendo-name" class="form-control" value="{{ config.get('vendo_name', 'ECO-Fi Vendo') }}">
             </div>
             <div class="col-12 col-md-6 form-group">
               <label>Subtitle / Tagline:</label>
-              <input type="text" id="cfg-vendo-sub" class="form-control" value="{{ config.get('vendo_subtitle', 'Smart Reverse Vending WiFi') }}">
+              <input type="text" id="cfg-vendo-sub" class="form-control" value="{{ config.get('vendo_subtitle', 'Recycle Bottles for Fast WiFi') }}">
             </div>
           </div>
           <div class="form-group">
             <label>Announcement Banner Message:</label>
-            <textarea id="cfg-announcement" class="form-control" rows="3" placeholder="Enter announcement text to display on customer portal...">{{ config.get('announcement', '♻️ Welcome to ECO-Fi! Deposit clean PET plastic bottles to earn high-speed Wi-Fi access.') }}</textarea>
+            <textarea id="cfg-announcement" class="form-control" rows="3" placeholder="Enter announcement text to display on customer portal...">{{ config.get('announcement', '') }}</textarea>
             <small class="text-muted">This announcement banner is displayed at the top of the client portal page in real-time.</small>
           </div>
           <div class="mt-3">
