@@ -3514,10 +3514,19 @@ ADMIN_HTML = """
     <div id="sec-clients" class="section-view">
       <div class="card card-primary">
         <div class="card-header"><h3 class="card-title"><i class="fas fa-users"></i> Connected Client Sessions</h3></div>
-        <div class="card-body">
+        <div class="card-body p-0">
           <div class="table-responsive">
-            <table class="table table-bordered table-striped">
-              <thead><tr><th>IP Address</th><th>MAC Address</th><th>Remaining Time</th><th>Status</th><th>Speed (DL/UL)</th><th>Actions</th></tr></thead>
+            <table class="table table-striped table-hover mb-0">
+              <thead>
+                <tr>
+                  <th style="padding: 10px 14px;">IP Address</th>
+                  <th style="padding: 10px 14px;">MAC Address</th>
+                  <th style="padding: 10px 14px;">Remaining Time</th>
+                  <th style="padding: 10px 14px;">Status</th>
+                  <th style="padding: 10px 14px;">Speed (DL/UL)</th>
+                  <th style="padding: 10px 14px; text-align: right; min-width: 240px; white-space: nowrap;">Actions</th>
+                </tr>
+              </thead>
               <tbody id="clients-table-body"></tbody>
             </table>
           </div>
@@ -4653,16 +4662,17 @@ function loadClients() {
         d.forEach(c=>{
             const mins = Math.floor(c.remaining_seconds / 60);
             html += `<tr>
-                <td>${c.ip}</td>
-                <td><code>${c.mac}</code></td>
-                <td><strong>${mins}m</strong> (${c.remaining_seconds}s)</td>
-                <td><span class="badge ${c.is_paused ? 'badge-warning' : 'badge-success'}">${c.is_paused ? 'PAUSED' : 'ACTIVE'}</span></td>
+                <td style="padding: 10px 14px;"><strong>${c.ip}</strong></td>
+                <td style="padding: 10px 14px;"><code>${c.mac}</code></td>
+                <td style="padding: 10px 14px;"><strong>${mins}m</strong> <small class="text-muted">(${c.remaining_seconds}s)</small></td>
+                <td style="padding: 10px 14px;"><span class="badge ${c.is_paused ? 'badge-warning' : 'badge-success'}">${c.is_paused ? 'PAUSED' : 'ACTIVE'}</span></td>
+                <td style="padding: 10px 14px;"><span class="text-info font-weight-bold">${c.dl_kbps || 3072} / ${c.ul_kbps || 1536}</span> <small class="text-muted">Kbps</small></td>
                 <td style="padding: 10px 14px; text-align: right; white-space: nowrap;">
                     <div class="d-inline-flex align-items-center justify-content-end" style="gap: 5px; white-space: nowrap; flex-wrap: nowrap;">
-                        <button class="btn btn-xs btn-success text-nowrap" onclick="clientAction('${c.ip}', 'add15')">+15m</button>
-                        <button class="btn btn-xs btn-warning text-nowrap" onclick="clientAction('${c.ip}', '${c.is_paused ? 'resume' : 'pause'}')">${c.is_paused ? 'Resume' : 'Pause'}</button>
-                        <button class="btn btn-xs btn-info text-nowrap" onclick="openEditClientModal('${c.ip}', '${c.mac}', ${c.remaining_seconds}, ${c.dl_kbps}, ${c.ul_kbps})"><i class="fas fa-edit"></i> Edit</button>
-                        <button class="btn btn-xs btn-danger text-nowrap" onclick="clientAction('${c.ip}', 'kick')">Kick</button>
+                        <button class="btn btn-xs btn-outline-success text-nowrap" onclick="clientAction('${c.ip}', 'add15')"><i class="fas fa-plus mr-1"></i>15m</button>
+                        <button class="btn btn-xs btn-outline-warning text-nowrap" onclick="clientAction('${c.ip}', '${c.is_paused ? 'resume' : 'pause'}')">${c.is_paused ? '<i class="fas fa-play mr-1"></i>Resume' : '<i class="fas fa-pause mr-1"></i>Pause'}</button>
+                        <button class="btn btn-xs btn-outline-info text-nowrap" onclick="openEditClientModal('${c.ip}', '${c.mac}', ${c.remaining_seconds}, ${c.dl_kbps || 3072}, ${c.ul_kbps || 1536})"><i class="fas fa-edit mr-1"></i>Edit</button>
+                        <button class="btn btn-xs btn-outline-danger text-nowrap" onclick="clientAction('${c.ip}', 'kick')"><i class="fas fa-user-slash mr-1"></i>Kick</button>
                     </div>
                 </td>
             </tr>`;
