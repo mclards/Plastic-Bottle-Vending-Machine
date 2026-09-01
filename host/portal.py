@@ -79,7 +79,7 @@ def init_db():
 
         # Default configs
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('minutes_per_bottle', '10')")
-        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('drop_timeout', '30')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('drop_timeout', '60')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('default_dl_kbps', '3072')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('default_ul_kbps', '1536')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('custom_css', '')")
@@ -221,12 +221,12 @@ def on_esp32_uart_output(raw_msg):
             record_bottle_drop(1)
             # Send OPEN_GATE again for continuous dropping if session is still active
             if active_depositor_ip:
-                timeout = int(get_config("drop_timeout", "30") or 30)
+                timeout = int(get_config("drop_timeout", "60") or 60)
                 transmit_to_esp32({"cmd": "OPEN_GATE", "timeout": timeout})
         elif event == "REJECTED":
             # Give the user another chance if session is still active
             if active_depositor_ip:
-                timeout = int(get_config("drop_timeout", "30") or 30)
+                timeout = int(get_config("drop_timeout", "60") or 60)
                 transmit_to_esp32({"cmd": "OPEN_GATE", "timeout": timeout})
         elif event == "BIN_FULL":
             set_config("hw_bin_full", "1")
@@ -1115,8 +1115,8 @@ PORTAL_HTML = """
 
         let depositActive = false;
         let depositTimer = null;
-        let depositSec = 30;
-        let initialDepositTimeout = 30;
+        let depositSec = 60;
+        let initialDepositTimeout = 60;
         let lastBottleCount = 0;
         let localRemainingSeconds = 0;
         let isClientPaused = false;
@@ -1264,7 +1264,7 @@ PORTAL_HTML = """
                         return;
                     }
                     depositActive = true;
-                    initialDepositTimeout = data.timeout || 30;
+                    initialDepositTimeout = data.timeout || 60;
                     depositSec = initialDepositTimeout;
                     lastBottleCount = 0;
                     document.getElementById('deposit-modal').style.display = 'flex';
@@ -1586,7 +1586,7 @@ def api_open_gate():
             if time.time() < active_depositor_timeout:
                 return jsonify({"success": False, "error": "Another user is currently depositing bottles. Please wait."})
         
-        timeout = int(get_config("drop_timeout", "30") or 30)
+        timeout = int(get_config("drop_timeout", "60") or 60)
         active_depositor_ip = client_ip
         active_depositor_timeout = time.time() + timeout + 5
         
@@ -3507,7 +3507,7 @@ ADMIN_HTML = """
             </div>
             <div class="col-md-4 form-group">
               <label>Entrance Timeout (sec):</label>
-              <input type="number" id="esp-ent-tout" class="form-control" value="{{ config.get('esp_entrance_gate_timeout', 30) }}">
+              <input type="number" id="esp-ent-tout" class="form-control" value="{{ config.get('esp_entrance_gate_timeout', 60) }}">
             </div>
             <div class="col-md-4 form-group">
               <label>Bottle Settle Time (ms):</label>

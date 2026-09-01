@@ -11,7 +11,7 @@ class ESP32Simulator:
         self.bin_full_threshold_cm = 15
         self.pet_nir_w_min = 200
         self.pet_nir_w_max = 5000
-        self.entrance_gate_timeout = 30
+        self.entrance_gate_timeout = 60
         
         # Hardware Timings (ms)
         self.settle_time_ms = 500
@@ -141,7 +141,7 @@ class ESP32Simulator:
             elif '"CLOSE_GATE"' in raw_str:
                 self.close_entrance_gate()
 
-    def open_entrance_gate(self, timeout=30):
+    def open_entrance_gate(self, timeout=60):
         with self.lock:
             self.entrance_gate_timeout = timeout
             self.entrance_gate_requested = True
@@ -1444,7 +1444,7 @@ function injectLcdPreset(preset) {
     } else if (preset === 'gate') {
         document.getElementById('test-l0').value = '=== ECO-Fi VENDO ===';
         document.getElementById('test-l1').value = 'GATE OPEN: INSERT...';
-        document.getElementById('test-l2').value = 'Drop within 30s     ';
+        document.getElementById('test-l2').value = 'Drop within 60s     ';
         document.getElementById('test-l3').value = 'Session Bottles: 0  ';
     } else if (preset === 'reject') {
         document.getElementById('test-l0').value = '=== ECO-Fi VENDO ===';

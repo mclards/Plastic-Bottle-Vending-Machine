@@ -45,7 +45,7 @@ struct MachineConfig {
     int bin_full_threshold_cm = 15;
     int pet_nir_w_min = 200;
     int pet_nir_w_max = 5000;
-    int entrance_gate_timeout = 30;
+    int entrance_gate_timeout = 60;
     
     // Hardware Timings
     int settle_time_ms = 500;
@@ -124,7 +124,7 @@ void loadPreferences() {
     config.bin_full_threshold_cm = preferences.getInt("bin_cm", 15);
     config.pet_nir_w_min = preferences.getInt("nir_min", 200);
     config.pet_nir_w_max = preferences.getInt("nir_max", 5000);
-    config.entrance_gate_timeout = preferences.getInt("ent_tout", 30);
+    config.entrance_gate_timeout = preferences.getInt("ent_tout", 60);
     config.settle_time_ms = preferences.getInt("stl_ms", 500);
     config.success_drop_tout_ms = preferences.getInt("suc_tout", 3000);
     config.reject_drop_time_ms = preferences.getInt("rej_time", 2000);
