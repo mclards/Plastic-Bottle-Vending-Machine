@@ -3243,7 +3243,7 @@ ADMIN_HTML = """
       <li class="nav-item"><a href="/" target="_blank" class="nav-link"><i class="fas fa-wifi text-success"></i> <span class="d-none d-sm-inline">Portal</span></a></li>
     </ul>
     <ul class="navbar-nav ml-auto">
-      <li class="nav-item"><a href="/admin/api/export_xlsx" class="btn btn-sm btn-success mr-2 shadow-sm"><i class="fas fa-file-excel"></i> <span class="d-none d-sm-inline">Export Excel (.xlsx)</span></a></li>
+      <li class="nav-item"><a href="/admin/api/export_xlsx" class="btn btn-sm btn-success mr-2 shadow-sm"><i class="fas fa-file-excel mr-1"></i> <span class="d-none d-sm-inline">Export Data</span></a></li>
       <li class="nav-item"><a href="/admin/logout" class="btn btn-sm btn-danger"><i class="fas fa-sign-out-alt"></i> <span class="d-none d-sm-inline">Logout</span></a></li>
     </ul>
   </nav>
