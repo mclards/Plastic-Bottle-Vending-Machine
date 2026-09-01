@@ -3737,7 +3737,7 @@ ADMIN_HTML = """
                   <th style="padding: 10px 14px;">Time Credited</th>
                   <th style="padding: 10px 14px;">Rate Efficiency</th>
                   <th style="padding: 10px 14px;">Package Label</th>
-                  <th style="padding: 10px 14px; width: 140px; text-align: right;">Actions</th>
+                  <th style="padding: 10px 14px; width: 170px; min-width: 170px; text-align: right; white-space: nowrap;">Actions</th>
                 </tr>
               </thead>
               <tbody id="rates-table-body"></tbody>
@@ -4265,9 +4265,11 @@ function loadMacs() {
                 <td><code>${m.mac}</code></td>
                 <td><span class="badge ${m.type==='whitelist'?'badge-success':'badge-danger'}">${m.type.toUpperCase()}</span></td>
                 <td>${m.note || '-'}</td>
-                <td>
-                    <button class="btn btn-xs btn-warning mr-1" onclick="editMacControl('${m.mac}', '${m.type}', '${safeNote}')"><i class="fas fa-edit"></i> Edit</button>
-                    <button class="btn btn-xs btn-danger" onclick="deleteMacControl('${m.mac}')"><i class="fas fa-trash"></i> Delete</button>
+                <td style="padding: 10px 14px; text-align: right; white-space: nowrap;">
+                    <div class="d-inline-flex align-items-center justify-content-end" style="gap: 6px; white-space: nowrap; flex-wrap: nowrap;">
+                        <button class="btn btn-xs btn-outline-warning text-nowrap" onclick="editMacControl('${m.mac}', '${m.type}', '${safeNote}')"><i class="fas fa-edit mr-1"></i>Edit</button>
+                        <button class="btn btn-xs btn-outline-danger text-nowrap" onclick="deleteMacControl('${m.mac}')"><i class="fas fa-trash mr-1"></i>Delete</button>
+                    </div>
                 </td>
             </tr>`;
         });
@@ -4385,9 +4387,11 @@ function loadRates() {
                 <td style="padding: 10px 14px;"><strong>${timeStr}</strong></td>
                 <td style="padding: 10px 14px;"><code>${eff} m/b</code> ${bonusTag}</td>
                 <td style="padding: 10px 14px;"><span class="text-light">${r.label || '-'}</span></td>
-                <td style="padding: 10px 14px; text-align: right;">
-                    <button class="btn btn-xs btn-outline-warning mr-1" onclick="editPromoRate(${r.bottles}, ${r.minutes}, '${safeLabel}')"><i class="fas fa-edit"></i> Edit</button>
-                    ${r.bottles > 1 ? `<button class="btn btn-xs btn-outline-danger" onclick="deletePromoRate(${r.bottles})"><i class="fas fa-trash"></i> Delete</button>` : `<span class="text-muted" style="font-size:11px;">(Base)</span>`}
+                <td style="padding: 10px 14px; text-align: right; white-space: nowrap;">
+                    <div class="d-inline-flex align-items-center justify-content-end" style="gap: 6px; white-space: nowrap; flex-wrap: nowrap;">
+                        <button class="btn btn-xs btn-outline-warning text-nowrap" onclick="editPromoRate(${r.bottles}, ${r.minutes}, '${safeLabel}')"><i class="fas fa-edit mr-1"></i>Edit</button>
+                        ${r.bottles > 1 ? `<button class="btn btn-xs btn-outline-danger text-nowrap" onclick="deletePromoRate(${r.bottles})"><i class="fas fa-trash mr-1"></i>Delete</button>` : `<span class="text-muted small ml-1 text-nowrap">(Base)</span>`}
+                    </div>
                 </td>
             </tr>`;
         });
@@ -4653,12 +4657,13 @@ function loadClients() {
                 <td><code>${c.mac}</code></td>
                 <td><strong>${mins}m</strong> (${c.remaining_seconds}s)</td>
                 <td><span class="badge ${c.is_paused ? 'badge-warning' : 'badge-success'}">${c.is_paused ? 'PAUSED' : 'ACTIVE'}</span></td>
-                <td>${c.dl_kbps} / ${c.ul_kbps} Kbps</td>
-                <td>
-                    <button class="btn btn-xs btn-success" onclick="clientAction('${c.ip}', 'add15')">+15m</button>
-                    <button class="btn btn-xs btn-warning" onclick="clientAction('${c.ip}', '${c.is_paused ? 'resume' : 'pause'}')">${c.is_paused ? 'Resume' : 'Pause'}</button>
-                    <button class="btn btn-xs btn-info" onclick="openEditClientModal('${c.ip}', '${c.mac}', ${c.remaining_seconds}, ${c.dl_kbps}, ${c.ul_kbps})"><i class="fas fa-edit"></i> Edit</button>
-                    <button class="btn btn-xs btn-danger" onclick="clientAction('${c.ip}', 'kick')">Kick</button>
+                <td style="padding: 10px 14px; text-align: right; white-space: nowrap;">
+                    <div class="d-inline-flex align-items-center justify-content-end" style="gap: 5px; white-space: nowrap; flex-wrap: nowrap;">
+                        <button class="btn btn-xs btn-success text-nowrap" onclick="clientAction('${c.ip}', 'add15')">+15m</button>
+                        <button class="btn btn-xs btn-warning text-nowrap" onclick="clientAction('${c.ip}', '${c.is_paused ? 'resume' : 'pause'}')">${c.is_paused ? 'Resume' : 'Pause'}</button>
+                        <button class="btn btn-xs btn-info text-nowrap" onclick="openEditClientModal('${c.ip}', '${c.mac}', ${c.remaining_seconds}, ${c.dl_kbps}, ${c.ul_kbps})"><i class="fas fa-edit"></i> Edit</button>
+                        <button class="btn btn-xs btn-danger text-nowrap" onclick="clientAction('${c.ip}', 'kick')">Kick</button>
+                    </div>
                 </td>
             </tr>`;
         });
@@ -4769,9 +4774,11 @@ function loadMembers() {
                 <td><strong>${m.username}</strong></td>
                 <td><span class="badge badge-info">${m.wallet_minutes} Mins (${hrs} Hrs)</span></td>
                 <td>${m.created_at}</td>
-                <td>
-                    <button class="btn btn-xs btn-success mr-1" onclick="openMemberTopupModal('${m.username}')"><i class="fas fa-coins"></i> Adjust</button>
-                    <button class="btn btn-xs btn-danger" onclick="deleteMember('${m.username}')"><i class="fas fa-trash"></i> Delete</button>
+                <td style="padding: 10px 14px; text-align: right; white-space: nowrap;">
+                    <div class="d-inline-flex align-items-center justify-content-end" style="gap: 6px; white-space: nowrap; flex-wrap: nowrap;">
+                        <button class="btn btn-xs btn-outline-success text-nowrap" onclick="openMemberTopupModal('${m.username}')"><i class="fas fa-coins mr-1"></i>Adjust</button>
+                        <button class="btn btn-xs btn-outline-danger text-nowrap" onclick="deleteMember('${m.username}')"><i class="fas fa-trash mr-1"></i>Delete</button>
+                    </div>
                 </td>
             </tr>`;
         });
