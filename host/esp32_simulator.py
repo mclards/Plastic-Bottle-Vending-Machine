@@ -443,135 +443,163 @@ class ESP32Simulator:
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             min-height: 100vh;
         }
-        
-        /* Realistic Physical 2004A 20x4 I2C LCD Module Styling */
-        .lcd-pcb-container {
-            background: #0f2744;
-            border: 4px solid #08182b;
-            border-radius: 14px;
-            padding: 20px 22px 16px;
-            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.75), inset 0 0 15px rgba(0, 0, 0, 0.6);
+
+        /* ========================================================================= */
+        /* AUTHENTIC 2004A 20x4 I2C CHARACTER LCD MODULE (PHYSICAL SCALE & RATIO)    */
+        /* ========================================================================= */
+
+        /* Outer FR4 Industrial Green PCB */
+        .lcd-module-wrapper {
+            max-width: 680px;
+            margin: 0 auto 20px;
+        }
+
+        .lcd-pcb {
+            background-color: #0d6e38;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(255,255,255,0.05) 0%, transparent 40%),
+                linear-gradient(135deg, #13773e 0%, #0d6834 50%, #085227 100%);
+            border: 2px solid #06401e;
+            border-radius: 6px;
+            padding: 14px 18px;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.8), inset 0 1px 1px rgba(255,255,255,0.25);
             position: relative;
             user-select: none;
-            margin-bottom: 20px;
         }
 
-        /* Screw Mounting Holes in 4 Corners */
-        .pcb-screw {
+        /* 4 Plated Mounting Holes in PCB Corners */
+        .pcb-hole {
             position: absolute;
-            width: 15px;
-            height: 15px;
+            width: 14px;
+            height: 14px;
             border-radius: 50%;
-            background: radial-gradient(circle, #f59e0b 25%, #78350f 85%, #451a03 100%);
-            border: 1.5px solid #d97706;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.8), 0 1px 2px rgba(0,0,0,0.5);
+            background: #050b07;
+            border: 2px solid #b4cbb7;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.9), 0 0 1px rgba(255,255,255,0.4);
         }
-        .screw-tl { top: 7px; left: 7px; }
-        .screw-tr { top: 7px; right: 7px; }
-        .screw-bl { bottom: 7px; left: 7px; }
-        .screw-br { bottom: 7px; right: 7px; }
+        .hole-tl { top: 8px; left: 8px; }
+        .hole-tr { top: 8px; right: 8px; }
+        .hole-bl { bottom: 8px; left: 8px; }
+        .hole-br { bottom: 8px; right: 8px; }
 
-        .lcd-silkscreen-top {
+        /* Top Gold 16-Pin Header Strip (1 ... 16) */
+        .pin-strip-top {
             display: flex;
-            justify-content: space-between;
+            justify-content: flex-start;
             align-items: center;
+            margin-left: 28px;
+            margin-bottom: 6px;
+            gap: 5px;
+        }
+        .pin-strip-bottom {
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            margin-left: 28px;
+            margin-top: 6px;
+            gap: 5px;
+        }
+        .gold-pad {
+            width: 9px;
+            height: 14px;
+            background: linear-gradient(180deg, #fef08a 0%, #ca8a04 100%);
+            border: 1px solid #78350f;
+            border-radius: 1.5px;
+            box-shadow: inset 0 1px 1px rgba(255,255,255,0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .gold-pad::after {
+            content: '';
+            width: 3.5px;
+            height: 3.5px;
+            background: #111;
+            border-radius: 50%;
+        }
+        .pin-num-label {
             font-family: 'Consolas', monospace;
-            font-size: 11px;
-            color: #94a3b8;
+            font-size: 10px;
             font-weight: 700;
-            letter-spacing: 0.8px;
-            margin-bottom: 8px;
-            text-transform: uppercase;
+            color: #dcfce7;
+            margin: 0 4px;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
         }
 
-        .lcd-metal-bezel {
-            background: #1e293b;
-            border: 3px solid #334155;
-            border-radius: 8px;
-            padding: 10px;
-            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.9), 0 3px 6px rgba(0, 0, 0, 0.5);
+        /* Stamped Metal Bezel (Black / Steel Frame) */
+        .lcd-metal-frame {
+            background: linear-gradient(180deg, #222626 0%, #151818 40%, #0d0f0f 100%);
+            border: 3px solid #323838;
+            border-top-color: #454d4d;
+            border-bottom-color: #1a1e1e;
+            border-radius: 4px;
+            padding: 12px 14px;
+            box-shadow: 
+                0 4px 15px rgba(0,0,0,0.9), 
+                inset 0 1px 2px rgba(255,255,255,0.2), 
+                inset 0 -1px 2px rgba(0,0,0,0.8);
             position: relative;
         }
 
-        /* Classic Blue Backlight (Default) */
-        .lcd-glass.theme-blue {
-            background-color: #002244;
-            background-image: 
-                linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
-            background-size: 100% 32px, 14px 100%;
-            border-radius: 4px;
-            box-shadow: inset 0 0 25px rgba(2, 132, 199, 0.45);
-            padding: 14px 16px;
-            transition: all 0.3s ease;
+        /* Metal Bezel Stamping Notches (Top & Bottom Crimp Tabs) */
+        .bezel-tab-top, .bezel-tab-bottom {
+            position: absolute;
+            left: 20px;
+            right: 20px;
+            height: 2px;
+            background: rgba(255, 255, 255, 0.08);
+            border-bottom: 1px solid rgba(0,0,0,0.6);
         }
-        .lcd-glass.theme-blue .lcd-row {
-            color: #f0fdf4;
-            text-shadow: 0 0 6px #38bdf8, 0 0 12px #0284c7;
-        }
+        .bezel-tab-top { top: 4px; }
+        .bezel-tab-bottom { bottom: 4px; }
 
-        /* Classic Industrial Yellow-Green Backlight */
-        .lcd-glass.theme-yellow {
-            background-color: #8bb300;
-            background-image: 
-                linear-gradient(rgba(0,0,0,0.08) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(0,0,0,0.08) 1px, transparent 1px);
-            background-size: 100% 32px, 14px 100%;
-            border-radius: 4px;
-            box-shadow: inset 0 0 25px rgba(101, 133, 0, 0.7);
-            padding: 14px 16px;
-            transition: all 0.3s ease;
-        }
-        .lcd-glass.theme-yellow .lcd-row {
-            color: #132600;
-            text-shadow: 0 0 1px #223f00;
-        }
-
-        /* LCD Backlight OFF State */
-        .lcd-glass.theme-off {
-            background: #111827 !important;
-            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.95) !important;
-        }
-        .lcd-glass.theme-off .lcd-row {
-            color: #1f2937 !important;
-            text-shadow: none !important;
-        }
-
-        .lcd-row {
-            font-family: 'Consolas', 'Courier New', 'VT323', monospace;
-            font-size: 19px;
-            font-weight: 700;
-            letter-spacing: 3.5px;
-            line-height: 1.55;
-            height: 30px;
-            white-space: pre;
+        /* Liquid Crystal Active Glass Screen */
+        .lcd-glass-viewport {
+            border: 3px solid #000;
+            border-radius: 2px;
+            background: #002266;
+            box-shadow: inset 0 0 18px rgba(0,0,0,0.9);
+            position: relative;
             overflow: hidden;
-            display: block;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px 10px;
         }
 
-        .lcd-silkscreen-bottom {
+        /* Active HD44780 Canvas */
+        #lcd-matrix-canvas {
+            width: 100%;
+            height: auto;
+            display: block;
+            image-rendering: pixelated;
+            filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.35));
+        }
+
+        /* I2C Backpack Silkscreen Banner */
+        .lcd-backpack-bar {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-family: 'Consolas', monospace;
-            font-size: 10.5px;
-            color: #64748b;
-            font-weight: 700;
             margin-top: 10px;
+            padding: 0 4px;
+            font-family: 'Consolas', monospace;
+            font-size: 11px;
+            color: #d1fae5;
+            font-weight: 700;
             letter-spacing: 0.5px;
         }
-
         .i2c-pins {
             display: flex;
-            gap: 8px;
+            gap: 6px;
         }
         .i2c-pin-badge {
-            background: rgba(15, 23, 42, 0.8);
-            border: 1px solid #334155;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255,255,255,0.25);
             padding: 2px 6px;
-            border-radius: 4px;
-            color: #cbd5e1;
-            font-size: 10px;
+            border-radius: 3px;
+            color: #fef08a;
+            font-size: 10.5px;
         }
 
         /* Actuator and status indicators */
@@ -607,7 +635,7 @@ class ESP32Simulator:
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 pb-2 border-bottom border-secondary">
         <div>
             <h3 class="font-weight-bold text-success mb-0"><i class="fas fa-microchip mr-2"></i> ECO-Fi ESP32 Hardware Simulator</h3>
-            <p class="text-muted mb-0 small">Live Actuator Physics, 20x4 I2C Character LCD (HD44780), Spectrometer & Multi-Sensor Chute</p>
+            <p class="text-muted mb-0 small">Authentic 2004A 20x4 I2C Character LCD (HD44780), PCA9685 Chute Servos & Multi-Sensor Airlock</p>
         </div>
         <div class="mt-2 mt-md-0">
             <button class="btn btn-sm btn-outline-warning mr-2" onclick="resetSimSession()"><i class="fas fa-redo mr-1"></i> Reset Session</button>
@@ -619,48 +647,73 @@ class ESP32Simulator:
     <div class="row">
         <!-- LEFT COLUMN: 20x4 LCD & PCA9685 SERVO ACTUATORS -->
         <div class="col-12 col-xl-6">
-            <!-- 1. REALISTIC 20x4 I2C CHARACTER LCD MODULE -->
+            <!-- 1. REALISTIC 2004A 20x4 I2C CHARACTER LCD MODULE -->
             <div class="card">
                 <div class="card-header bg-dark d-flex justify-content-between align-items-center">
                     <h3 class="card-title font-weight-bold text-light" style="font-size:14px;">
-                        <i class="fas fa-desktop text-info mr-1"></i> 20x4 I2C Character LCD (HD44780 + PCF8574T @ 0x27)
+                        <i class="fas fa-desktop text-info mr-1"></i> 2004A 20x4 Character LCD (HD44780 + PCF8574T @ 0x27)
                     </h3>
                     <div class="d-flex align-items-center">
-                        <select id="lcd-theme-select" class="custom-select custom-select-sm mr-2" style="width:130px;" onchange="changeLcdTheme(this.value)">
-                            <option value="theme-blue">🟦 Blue LED</option>
-                            <option value="theme-yellow">🟨 Yellow-Green</option>
-                            <option value="theme-off">⬛ Backlight Off</option>
+                        <select id="lcd-theme-select" class="custom-select custom-select-sm" style="width:145px;" onchange="changeLcdTheme(this.value)">
+                            <option value="blue">🟦 Blue LED (Default)</option>
+                            <option value="yellow">🟨 Yellow-Green</option>
+                            <option value="off">⬛ Backlight Off</option>
                         </select>
                     </div>
                 </div>
                 <div class="card-body p-3">
-                    <div class="lcd-pcb-container">
-                        <div class="pcb-screw screw-tl"></div>
-                        <div class="pcb-screw screw-tr"></div>
-                        <div class="pcb-screw screw-bl"></div>
-                        <div class="pcb-screw screw-br"></div>
+                    
+                    <!-- PHYSICAL 2004A MODULE WRAPPER -->
+                    <div class="lcd-module-wrapper">
+                        <div class="lcd-pcb">
+                            <!-- 4 Corner Mounting Holes -->
+                            <div class="pcb-hole hole-tl"></div>
+                            <div class="pcb-hole hole-tr"></div>
+                            <div class="pcb-hole hole-bl"></div>
+                            <div class="pcb-hole hole-br"></div>
 
-                        <div class="lcd-silkscreen-top">
-                            <span><i class="fas fa-microchip mr-1"></i> 2004A 20x4 I2C LCD</span>
-                            <span>ADDR: 0x27 | HD44780</span>
-                        </div>
-
-                        <div class="lcd-metal-bezel">
-                            <div id="lcd-screen" class="lcd-glass theme-blue">
-                                <div class="lcd-row" id="lcd-row-0">=== ECO-Fi VENDO ===</div>
-                                <div class="lcd-row" id="lcd-row-1">Ready for Deposit   </div>
-                                <div class="lcd-row" id="lcd-row-2">Rate: 1 Bottle = 10m</div>
-                                <div class="lcd-row" id="lcd-row-3">Session Bottles: 0  </div>
+                            <!-- Top Gold Pin Header Strip -->
+                            <div class="pin-strip-top">
+                                <span class="pin-num-label">1</span>
+                                <div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div>
+                                <div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div>
+                                <div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div>
+                                <div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div>
+                                <span class="pin-num-label">16</span>
                             </div>
-                        </div>
 
-                        <div class="lcd-silkscreen-bottom">
-                            <span>ESP32 I2C BUS (100kHz)</span>
-                            <div class="i2c-pins">
-                                <span class="i2c-pin-badge">GND</span>
-                                <span class="i2c-pin-badge">VCC (5V)</span>
-                                <span class="i2c-pin-badge">SDA: GPIO21</span>
-                                <span class="i2c-pin-badge">SCL: GPIO22</span>
+                            <!-- Black Stamped Steel Metal Frame -->
+                            <div class="lcd-metal-frame">
+                                <div class="bezel-tab-top"></div>
+                                
+                                <!-- Active Dot Matrix LCD Glass Screen -->
+                                <div class="lcd-glass-viewport" id="lcd-viewport">
+                                    <!-- Canvas Aspect Ratio 3.2:1 (672x210px for crisp 5x8 pixel matrix rendering) -->
+                                    <canvas id="lcd-matrix-canvas" width="672" height="210"></canvas>
+                                </div>
+
+                                <div class="bezel-tab-bottom"></div>
+                            </div>
+
+                            <!-- Bottom Gold Pin Header Strip -->
+                            <div class="pin-strip-bottom">
+                                <span class="pin-num-label">1</span>
+                                <div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div>
+                                <div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div>
+                                <div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div>
+                                <div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div>
+                                <span class="pin-num-label">16</span>
+                            </div>
+
+                            <!-- I2C Bus Silkscreen Details -->
+                            <div class="lcd-backpack-bar">
+                                <span><i class="fas fa-microchip mr-1"></i> I2C ADDR: 0x27</span>
+                                <div class="i2c-pins">
+                                    <span class="i2c-pin-badge">GND</span>
+                                    <span class="i2c-pin-badge">VCC (5V)</span>
+                                    <span class="i2c-pin-badge">SDA: GPIO21</span>
+                                    <span class="i2c-pin-badge">SCL: GPIO22</span>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -789,6 +842,204 @@ class ESP32Simulator:
 </div>
 
 <script>
+// Complete HD44780 ROM 5x8 Dot Matrix Font Table
+const HD44780_FONT = {
+    ' ': [0, 0, 0, 0, 0, 0, 0, 0],
+    '!': [4, 4, 4, 4, 0, 0, 4, 0],
+    '"': [10, 10, 0, 0, 0, 0, 0, 0],
+    '#': [10, 10, 31, 10, 31, 10, 10, 0],
+    '$': [4, 15, 20, 14, 5, 30, 4, 0],
+    '%': [24, 25, 2, 4, 8, 19, 3, 0],
+    '&': [12, 18, 20, 8, 21, 18, 13, 0],
+    "'": [4, 4, 0, 0, 0, 0, 0, 0],
+    '(': [2, 4, 8, 8, 8, 4, 2, 0],
+    ')': [8, 4, 2, 2, 2, 4, 8, 0],
+    '*': [0, 4, 21, 14, 21, 4, 0, 0],
+    '+': [0, 4, 4, 31, 4, 4, 0, 0],
+    ',': [0, 0, 0, 0, 4, 4, 8, 0],
+    '-': [0, 0, 0, 31, 0, 0, 0, 0],
+    '.': [0, 0, 0, 0, 0, 6, 6, 0],
+    '/': [0, 1, 2, 4, 8, 16, 0, 0],
+    '0': [14, 17, 19, 21, 25, 17, 14, 0],
+    '1': [4, 12, 4, 4, 4, 4, 14, 0],
+    '2': [14, 17, 1, 2, 4, 8, 31, 0],
+    '3': [31, 2, 4, 2, 1, 17, 14, 0],
+    '4': [2, 6, 10, 18, 31, 2, 2, 0],
+    '5': [31, 16, 30, 1, 1, 17, 14, 0],
+    '6': [6, 8, 16, 30, 17, 17, 14, 0],
+    '7': [31, 1, 2, 4, 8, 8, 8, 0],
+    '8': [14, 17, 17, 14, 17, 17, 14, 0],
+    '9': [14, 17, 17, 15, 1, 2, 12, 0],
+    ':': [0, 6, 6, 0, 6, 6, 0, 0],
+    ';': [0, 6, 6, 0, 4, 4, 8, 0],
+    '<': [2, 4, 8, 16, 8, 4, 2, 0],
+    '=': [0, 31, 0, 31, 0, 0, 0, 0],
+    '>': [8, 4, 2, 1, 2, 4, 8, 0],
+    '?': [14, 17, 1, 2, 4, 0, 4, 0],
+    '@': [14, 17, 1, 13, 21, 21, 14, 0],
+    'A': [14, 17, 17, 31, 17, 17, 17, 0],
+    'B': [30, 17, 17, 30, 17, 17, 30, 0],
+    'C': [14, 17, 16, 16, 16, 17, 14, 0],
+    'D': [28, 18, 17, 17, 17, 18, 28, 0],
+    'E': [31, 16, 16, 30, 16, 16, 31, 0],
+    'F': [31, 16, 16, 30, 16, 16, 16, 0],
+    'G': [14, 17, 16, 23, 17, 17, 14, 0],
+    'H': [17, 17, 17, 31, 17, 17, 17, 0],
+    'I': [14, 4, 4, 4, 4, 4, 14, 0],
+    'J': [7, 2, 2, 2, 2, 18, 12, 0],
+    'K': [17, 18, 20, 24, 20, 18, 17, 0],
+    'L': [16, 16, 16, 16, 16, 16, 31, 0],
+    'M': [17, 27, 21, 21, 17, 17, 17, 0],
+    'N': [17, 17, 25, 21, 19, 17, 17, 0],
+    'O': [14, 17, 17, 17, 17, 17, 14, 0],
+    'P': [30, 17, 17, 30, 16, 16, 16, 0],
+    'Q': [14, 17, 17, 17, 21, 18, 13, 0],
+    'R': [30, 17, 17, 30, 20, 18, 17, 0],
+    'S': [14, 17, 16, 14, 1, 17, 14, 0],
+    'T': [31, 4, 4, 4, 4, 4, 4, 0],
+    'U': [17, 17, 17, 17, 17, 17, 14, 0],
+    'V': [17, 17, 17, 17, 17, 10, 4, 0],
+    'W': [17, 17, 17, 21, 21, 21, 10, 0],
+    'X': [17, 17, 10, 4, 10, 17, 17, 0],
+    'Y': [17, 17, 10, 4, 4, 4, 4, 0],
+    'Z': [31, 1, 2, 4, 8, 16, 31, 0],
+    '[': [14, 8, 8, 8, 8, 8, 14, 0],
+    '\\': [0, 16, 8, 4, 2, 1, 0, 0],
+    ']': [14, 2, 2, 2, 2, 2, 14, 0],
+    '^': [4, 10, 17, 0, 0, 0, 0, 0],
+    '_': [0, 0, 0, 0, 0, 0, 31, 0],
+    'a': [0, 0, 14, 1, 15, 17, 15, 0],
+    'b': [16, 16, 22, 25, 17, 17, 30, 0],
+    'c': [0, 0, 14, 17, 16, 17, 14, 0],
+    'd': [1, 1, 13, 19, 17, 17, 15, 0],
+    'e': [0, 0, 14, 17, 31, 16, 14, 0],
+    'f': [6, 9, 8, 28, 8, 8, 8, 0],
+    'g': [0, 15, 17, 17, 15, 1, 14, 0],
+    'h': [16, 16, 22, 25, 17, 17, 17, 0],
+    'i': [4, 0, 12, 4, 4, 4, 14, 0],
+    'j': [2, 0, 6, 2, 2, 18, 12, 0],
+    'k': [16, 16, 18, 20, 24, 20, 18, 0],
+    'l': [12, 4, 4, 4, 4, 4, 14, 0],
+    'm': [0, 0, 26, 21, 21, 17, 17, 0],
+    'n': [0, 0, 22, 25, 17, 17, 17, 0],
+    'o': [0, 0, 14, 17, 17, 17, 14, 0],
+    'p': [0, 0, 30, 17, 30, 16, 16, 0],
+    'q': [0, 0, 15, 17, 15, 1, 1, 0],
+    'r': [0, 0, 22, 25, 16, 16, 16, 0],
+    's': [0, 0, 14, 16, 14, 1, 30, 0],
+    't': [8, 8, 28, 8, 8, 9, 6, 0],
+    'u': [0, 0, 17, 17, 17, 19, 13, 0],
+    'v': [0, 0, 17, 17, 17, 10, 4, 0],
+    'w': [0, 0, 17, 17, 21, 21, 10, 0],
+    'x': [0, 0, 17, 10, 4, 10, 17, 0],
+    'y': [0, 0, 17, 17, 15, 1, 14, 0],
+    'z': [0, 0, 31, 2, 4, 8, 31, 0]
+};
+
+let currentLcdTheme = 'blue';
+let lastLcdLines = ["", "", "", ""];
+
+const LCD_THEMES = {
+    blue: {
+        bg: '#002bb0',
+        bgGrad: '#001a70',
+        pixelOff: 'rgba(0, 25, 95, 0.45)',
+        pixelOn: '#ffffff',
+        pixelGlow: 'rgba(255, 255, 255, 0.7)'
+    },
+    yellow: {
+        bg: '#8bb300',
+        bgGrad: '#769900',
+        pixelOff: 'rgba(100, 130, 0, 0.35)',
+        pixelOn: '#122400',
+        pixelGlow: 'rgba(18, 36, 0, 0.4)'
+    },
+    off: {
+        bg: '#141818',
+        bgGrad: '#0e1111',
+        pixelOff: 'rgba(25, 30, 30, 0.6)',
+        pixelOn: 'rgba(40, 48, 48, 0.8)',
+        pixelGlow: 'transparent'
+    }
+};
+
+function changeLcdTheme(t) {
+    currentLcdTheme = t;
+    const vp = document.getElementById('lcd-viewport');
+    if (t === 'blue') vp.style.background = '#002bb0';
+    else if (t === 'yellow') vp.style.background = '#8bb300';
+    else vp.style.background = '#141818';
+    drawLcdCanvas(lastLcdLines);
+}
+
+function drawLcdCanvas(lines) {
+    lastLcdLines = lines;
+    const canvas = document.getElementById('lcd-matrix-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width;
+    const H = canvas.height;
+    const theme = LCD_THEMES[currentLcdTheme] || LCD_THEMES.blue;
+
+    // 1. Draw LCD Background with subtle gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, theme.bg);
+    grad.addColorStop(1, theme.bgGrad);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Exact 20 columns and 4 rows sizing
+    const cols = 20;
+    const rows = 4;
+    const cellW = W / cols;       // 672 / 20 = 33.6px
+    const cellH = H / rows;       // 210 / 4 = 52.5px
+
+    const padX = cellW * 0.08;
+    const padY = cellH * 0.08;
+    const usableW = cellW - (padX * 2);
+    const usableH = cellH - (padY * 2);
+
+    const dotCols = 5;
+    const dotRows = 8;
+    const dotGapX = 1.0;
+    const dotGapY = 1.0;
+    const dotW = (usableW - ((dotCols - 1) * dotGapX)) / dotCols;
+    const dotH = (usableH - ((dotRows - 1) * dotGapY)) / dotRows;
+
+    for (let r = 0; r < rows; r++) {
+        const rawLine = lines[r] || "";
+        const lineStr = rawLine.padEnd(20, ' ').substring(0, 20);
+
+        for (let c = 0; c < cols; c++) {
+            const char = lineStr[c] || ' ';
+            const glyph = HD44780_FONT[char] || HD44780_FONT[' '] || [0,0,0,0,0,0,0,0];
+
+            const startX = (c * cellW) + padX;
+            const startY = (r * cellH) + padY;
+
+            for (let gr = 0; gr < dotRows; gr++) {
+                const bitmask = glyph[gr] || 0;
+                for (let gc = 0; gc < dotCols; gc++) {
+                    const isBitOn = (bitmask & (1 << (4 - gc))) !== 0;
+                    const px = startX + (gc * (dotW + dotGapX));
+                    const py = startY + (gr * (dotH + dotGapY));
+
+                    if (isBitOn) {
+                        ctx.fillStyle = theme.pixelOn;
+                        ctx.shadowColor = theme.pixelGlow;
+                        ctx.shadowBlur = (currentLcdTheme === 'blue') ? 2 : 0;
+                        ctx.fillRect(px, py, dotW, dotH);
+                        ctx.shadowBlur = 0; // reset
+                    } else {
+                        ctx.fillStyle = theme.pixelOff;
+                        ctx.fillRect(px, py, dotW, dotH);
+                    }
+                }
+            }
+        }
+    }
+}
+
 function syncSimulator() {
     fetch('/simulator/api/state').then(r=>r.json()).then(d=>{
         // Actuators
@@ -810,11 +1061,8 @@ function syncSimulator() {
         document.getElementById('ind-led-red').className = 'actuator-indicator ' + (d.led_red ? 'indicator-red' : 'indicator-off');
         document.getElementById('ind-led-red').innerText = d.led_red ? 'ON (RED)' : 'OFF';
 
-        // 20x4 I2C LCD Display
-        document.getElementById('lcd-row-0').innerText = d.lcd_lines[0] || '';
-        document.getElementById('lcd-row-1').innerText = d.lcd_lines[1] || '';
-        document.getElementById('lcd-row-2').innerText = d.lcd_lines[2] || '';
-        document.getElementById('lcd-row-3').innerText = d.lcd_lines[3] || '';
+        // Draw 20x4 LCD Canvas
+        drawLcdCanvas(d.lcd_lines || []);
 
         // Sensors
         document.getElementById('val-metal').className = 'badge ' + (d.prox_metal ? 'badge-danger' : 'badge-success');
@@ -843,11 +1091,6 @@ function syncSimulator() {
 }
 setInterval(syncSimulator, 500);
 syncSimulator();
-
-function changeLcdTheme(themeClass) {
-    const el = document.getElementById('lcd-screen');
-    el.className = 'lcd-glass ' + themeClass;
-}
 
 function triggerDrop(type) {
     fetch('/simulator/api/trigger', {
