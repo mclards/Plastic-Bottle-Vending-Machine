@@ -132,7 +132,11 @@ def get_all_config():
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute("SELECT key, value FROM config")
-        return {row[0]: row[1] for row in c.fetchall()}
+        cfg = {row[0]: row[1] for row in c.fetchall()}
+        c.execute("SELECT message FROM announcements WHERE active = 1 ORDER BY id DESC LIMIT 1")
+        row = c.fetchone()
+        cfg["announcement"] = row[0] if row else cfg.get("announcement", "")
+        return cfg
 
 def set_config(key, value):
     with sqlite3.connect(DB_PATH) as conn:
@@ -2617,6 +2621,13 @@ def admin_api_settings_save():
     data = request.get_json() or {}
     for k, v in data.items():
         set_config(k, v)
+        if k == "announcement":
+            with sqlite3.connect(DB_PATH) as conn:
+                c = conn.cursor()
+                c.execute("UPDATE announcements SET message = ? WHERE id = 1", (str(v),))
+                if c.rowcount == 0:
+                    c.execute("INSERT INTO announcements (id, message, active) VALUES (1, ?, 1)", (str(v),))
+                conn.commit()
     return jsonify({"success": True})
 
 @app.route("/admin/api/mac_control/list")
@@ -3898,23 +3909,26 @@ ADMIN_HTML = """
     <!-- 7. PORTAL & BANNERS SECTION -->
     <div id="sec-portal-custom" class="section-view">
       <div class="card card-primary">
-        <div class="card-header"><h3 class="card-title"><i class="fas fa-palette"></i> Portal Branding & Announcements</h3></div>
+        <div class="card-header"><h3 class="card-title text-info"><i class="fas fa-palette mr-1"></i> Portal Branding & Announcements</h3></div>
         <div class="card-body">
           <div class="row">
             <div class="col-12 col-md-6 form-group">
               <label>Hotspot Vendo Name:</label>
-              <input type="text" id="cfg-vendo-name" class="form-control" value="{{ config.vendo_name }}">
+              <input type="text" id="cfg-vendo-name" class="form-control" value="{{ config.get('vendo_name', 'ECO-Fi Hotspot') }}">
             </div>
             <div class="col-12 col-md-6 form-group">
               <label>Subtitle / Tagline:</label>
-              <input type="text" id="cfg-vendo-sub" class="form-control" value="{{ config.vendo_subtitle }}">
+              <input type="text" id="cfg-vendo-sub" class="form-control" value="{{ config.get('vendo_subtitle', 'Smart Reverse Vending WiFi') }}">
             </div>
           </div>
           <div class="form-group">
             <label>Announcement Banner Message:</label>
-            <textarea id="cfg-announcement" class="form-control" rows="2">♻️ Welcome to ECO-Fi! Deposit clean PET plastic bottles to earn high-speed Wi-Fi access.</textarea>
+            <textarea id="cfg-announcement" class="form-control" rows="3" placeholder="Enter announcement text to display on customer portal...">{{ config.get('announcement', '♻️ Welcome to ECO-Fi! Deposit clean PET plastic bottles to earn high-speed Wi-Fi access.') }}</textarea>
+            <small class="text-muted">This announcement banner is displayed at the top of the client portal page in real-time.</small>
           </div>
-          <button class="btn btn-primary" onclick="savePortalCustom()"><i class="fas fa-save"></i> Update Portal Branding</button>
+          <div class="mt-3">
+            <button class="btn btn-primary font-weight-bold px-4" onclick="savePortalCustom()"><i class="fas fa-save mr-1"></i> Update Portal Branding</button>
+          </div>
         </div>
       </div>
     </div>
@@ -4959,14 +4973,20 @@ function deleteWalledDomain(domain) {
 }
 
 function savePortalCustom() {
-    const n = document.getElementById('cfg-vendo-name').value;
-    const sub = document.getElementById('cfg-vendo-sub').value;
-    const ann = document.getElementById('cfg-announcement').value;
+    const n = document.getElementById('cfg-vendo-name').value.trim();
+    const sub = document.getElementById('cfg-vendo-sub').value.trim();
+    const ann = document.getElementById('cfg-announcement').value.trim();
     fetch('/admin/api/settings/save', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({vendo_name: n, vendo_subtitle: sub})
-    }).then(()=>Swal.fire('Saved!', 'Portal branding updated.', 'success'));
+        body: JSON.stringify({vendo_name: n, vendo_subtitle: sub, announcement: ann})
+    }).then(r=>r.json()).then(d=>{
+        if (d.success) {
+            Swal.fire('Saved!', 'Portal branding & announcement updated.', 'success');
+        } else {
+            Swal.fire('Error', d.error || 'Failed to save settings.', 'error');
+        }
+    });
 }
 
 function saveBandwidth() {
