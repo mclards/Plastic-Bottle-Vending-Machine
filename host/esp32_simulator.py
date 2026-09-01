@@ -46,6 +46,11 @@ class ESP32Simulator:
         self.prox_capacitive_plastic = True
         self.nir_spectrometer_val = 1450 # normal PET NIR reading
         
+        # Live Physical Pipe Flow Tracking
+        self.pipe_item_type = "none"    # "pet", "metal", "paper", "pvc", "stuck", "none"
+        self.pipe_item_stage = "idle"   # "idle", "intake", "airlock", "scanning", "success_drop", "reject_drop", "stuck_chute"
+        self.pipe_scan_active = False
+
         self.current_session_bottles = 0
         self.entrance_gate_requested = False
         self.force_gate_close = False
@@ -207,6 +212,7 @@ class ESP32Simulator:
             self.force_gate_close = False
             self.led_green = False
             self.led_red = False
+            self.pipe_item_stage = "intake"
         
         self.set_lcd(
             line0="=== ECO-Fi VENDO ===",
@@ -229,13 +235,20 @@ class ESP32Simulator:
         with self.lock:
             self.entrance_servo_angle = self.ent_close_angle
             self.force_gate_close = False
+            self.pipe_item_stage = "airlock" if dropped else "idle"
 
         if not dropped:
             # Drop timeout
+            self.pipe_item_stage = "idle"
+            self.pipe_item_type = "none"
             self._handle_reject("Drop / Sensor Error ", "REJECTED")
             return
 
-        # Settle in airlock
+        # Settle & Scan in Inspection Airlock
+        with self.lock:
+            self.pipe_item_stage = "scanning"
+            self.pipe_scan_active = True
+
         self.set_lcd(
             line0="=== ECO-Fi VENDO ===",
             line1="STATUS: SCANNING... ",
@@ -243,6 +256,9 @@ class ESP32Simulator:
             line3=f"Session Bottles: {self.current_session_bottles:<3}"
         )
         time.sleep(self.settle_time_ms / 1000.0)
+
+        with self.lock:
+            self.pipe_scan_active = False
 
         # 2. Validation Pipeline (Metal -> Capacitive -> AS7263 NIR Spectrometer)
         is_valid = True
@@ -262,15 +278,17 @@ class ESP32Simulator:
         if is_valid:
             # Success Sequence: Open Success Gate (Ch 1)
             self.led_green = True
+            with self.lock:
+                self.pipe_item_stage = "success_drop"
+                self.bottom_ir_triggered = False
+                self.success_servo_angle = self.suc_open_angle
+
             self.set_lcd(
                 line0="=== ECO-Fi VENDO ===",
                 line1="STATUS: VERIFIED OK ",
                 line2="Dropping to bin...  ",
                 line3=f"Session Bottles: {self.current_session_bottles:<3}"
             )
-            with self.lock:
-                self.bottom_ir_triggered = False
-                self.success_servo_angle = self.suc_open_angle
 
             gate_open_time = time.time()
             passed_drop = False
@@ -305,6 +323,10 @@ class ESP32Simulator:
                 )
                 time.sleep(1.2)
                 self.led_green = False
+                with self.lock:
+                    self.pipe_item_stage = "idle"
+                    self.pipe_item_type = "none"
+
                 self.set_lcd(
                     line0="=== ECO-Fi VENDO ===",
                     line1="Ready for Deposit   ",
@@ -313,9 +335,13 @@ class ESP32Simulator:
                 )
             else:
                 # Bottle stuck in chute
+                with self.lock:
+                    self.pipe_item_stage = "stuck_chute"
                 self._handle_reject("Drop / Sensor Error ", "REJECTED")
         else:
             # Reject Sequence: Open Reject Gate (Ch 2)
+            with self.lock:
+                self.pipe_item_stage = "reject_drop"
             self._handle_reject(reject_display, "REJECTED")
 
     def _handle_reject(self, display_msg, uart_event):
@@ -337,6 +363,8 @@ class ESP32Simulator:
         time.sleep(self.reject_drop_time_ms / 1000.0)
         with self.lock:
             self.reject_servo_angle = self.rej_close_angle
+            self.pipe_item_stage = "idle"
+            self.pipe_item_type = "none"
             
         time.sleep(1.5)
         self.led_red = False
@@ -349,6 +377,14 @@ class ESP32Simulator:
 
     # High-level simulation triggers for frontend/tests
     def simulate_insert(self, item_type="valid_pet"):
+        with self.lock:
+            if item_type == "valid_pet": self.pipe_item_type = "pet"
+            elif item_type == "metal_can": self.pipe_item_type = "metal"
+            elif item_type == "non_plastic": self.pipe_item_type = "paper"
+            elif item_type == "invalid_polymer": self.pipe_item_type = "pvc"
+            elif item_type == "stuck_bottle": self.pipe_item_type = "stuck"
+            else: self.pipe_item_type = "pet"
+
         if not self.entrance_gate_requested and self.entrance_servo_angle == self.ent_close_angle:
             self.open_entrance_gate(timeout=15)
             time.sleep(0.1)
@@ -401,6 +437,8 @@ class ESP32Simulator:
     def reset_session(self):
         with self.lock:
             self.current_session_bottles = 0
+            self.pipe_item_stage = "idle"
+            self.pipe_item_type = "none"
             self.set_lcd(line3="Session Bottles: 0  ")
 
     def get_state(self):
@@ -421,6 +459,9 @@ class ESP32Simulator:
                 "prox_metal": self.prox_metal_detected,
                 "prox_capacitive": self.prox_capacitive_plastic,
                 "nir_val": self.nir_spectrometer_val,
+                "pipe_item_type": self.pipe_item_type,
+                "pipe_item_stage": self.pipe_item_stage,
+                "pipe_scan_active": self.pipe_scan_active,
                 "session_bottles": self.current_session_bottles,
                 "gate_requested": self.entrance_gate_requested,
                 "serial_logs": list(self.serial_logs)
@@ -463,7 +504,6 @@ class ESP32Simulator:
             user-select: none;
         }
 
-        /* 4 Plated Mounting Holes in PCB Corners */
         .pcb-hole {
             position: absolute;
             width: 14px;
@@ -478,23 +518,16 @@ class ESP32Simulator:
         .hole-bl { bottom: 8px; left: 8px; }
         .hole-br { bottom: 8px; right: 8px; }
 
-        /* Top Gold 16-Pin Header Strip */
-        .pin-strip-top {
+        .pin-strip-top, .pin-strip-bottom {
             display: flex;
             justify-content: flex-start;
             align-items: center;
             margin-left: 28px;
-            margin-bottom: 6px;
             gap: 5px;
         }
-        .pin-strip-bottom {
-            display: flex;
-            justify-content: flex-start;
-            align-items: center;
-            margin-left: 28px;
-            margin-top: 6px;
-            gap: 5px;
-        }
+        .pin-strip-top { margin-bottom: 6px; }
+        .pin-strip-bottom { margin-top: 6px; }
+
         .gold-pad {
             width: 9px;
             height: 14px;
@@ -522,7 +555,6 @@ class ESP32Simulator:
             text-shadow: 0 1px 2px rgba(0,0,0,0.8);
         }
 
-        /* Stamped Metal Bezel (Black / Steel Frame) */
         .lcd-metal-frame {
             background: linear-gradient(180deg, #222626 0%, #151818 40%, #0d0f0f 100%);
             border: 3px solid #323838;
@@ -548,7 +580,6 @@ class ESP32Simulator:
         .bezel-tab-top { top: 4px; }
         .bezel-tab-bottom { bottom: 4px; }
 
-        /* Liquid Crystal Active Glass Screen */
         .lcd-glass-viewport {
             border: 3px solid #000;
             border-radius: 2px;
@@ -569,7 +600,6 @@ class ESP32Simulator:
             image-rendering: pixelated;
         }
 
-        /* I2C Backpack Silkscreen Banner */
         .lcd-backpack-bar {
             display: flex;
             justify-content: space-between;
@@ -595,6 +625,49 @@ class ESP32Simulator:
             font-size: 10.5px;
         }
 
+        /* ========================================================================= */
+        /* CUTAWAY MECHANICAL PIPE & CHUTE FLOW SCHEMATIC STYLES                     */
+        /* ========================================================================= */
+        .pipe-schematic-box {
+            background: radial-gradient(circle at 50% 30%, #0e1726 0%, #030712 100%);
+            border: 2px solid #1f2937;
+            border-radius: 12px;
+            position: relative;
+            height: 480px;
+            overflow: hidden;
+            box-shadow: inset 0 0 30px rgba(0,0,0,0.9);
+        }
+
+        /* SVG Pipe Diagram Layer */
+        #pipe-svg-diagram {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Pipe Status Bar Overlay */
+        .pipe-status-overlay {
+            position: absolute;
+            top: 10px;
+            left: 14px;
+            right: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            pointer-events: none;
+        }
+        .flow-stage-badge {
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid #3b82f6;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #60a5fa;
+            letter-spacing: 0.5px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+
         /* Actuator and status indicators */
         .actuator-indicator {
             padding: 8px 12px; border-radius: 8px; font-weight: 700; font-size: 12px;
@@ -606,7 +679,7 @@ class ESP32Simulator:
 
         .serial-console {
             background: #020617; border: 1px solid #1e293b; border-radius: 8px;
-            font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; height: 260px;
+            font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; height: 200px;
             overflow-y: auto; padding: 8px; color: #94a3b8;
         }
 
@@ -628,7 +701,7 @@ class ESP32Simulator:
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 pb-2 border-bottom border-secondary">
         <div>
             <h3 class="font-weight-bold text-success mb-0"><i class="fas fa-microchip mr-2"></i> ECO-Fi ESP32 Hardware Simulator</h3>
-            <p class="text-muted mb-0 small">Authentic 2004A 20x4 I2C Character LCD (HD44780), PCA9685 Chute Servos & Multi-Sensor Airlock</p>
+            <p class="text-muted mb-0 small">Authentic 2004A 20x4 I2C Character LCD, Acrylic Chute Fluid Flow & PCA9685 Airlock Physics</p>
         </div>
         <div class="mt-2 mt-md-0">
             <button class="btn btn-sm btn-outline-warning mr-2" onclick="resetSimSession()"><i class="fas fa-redo mr-1"></i> Reset Session</button>
@@ -637,9 +710,11 @@ class ESP32Simulator:
         </div>
     </div>
 
+    <!-- MAIN TWO-COLUMN SYSTEM VIEW -->
     <div class="row">
-        <!-- LEFT COLUMN: 20x4 LCD & PCA9685 SERVO ACTUATORS -->
-        <div class="col-12 col-xl-6">
+        
+        <!-- LEFT COLUMN: 2004A 20x4 I2C CHARACTER LCD MODULE & TEST CONTROLS -->
+        <div class="col-12 col-xl-5">
             <!-- 1. REALISTIC 2004A 20x4 I2C CHARACTER LCD MODULE -->
             <div class="card">
                 <div class="card-header bg-dark d-flex justify-content-between align-items-center">
@@ -655,7 +730,6 @@ class ESP32Simulator:
                     </div>
                 </div>
                 <div class="card-body p-3">
-                    
                     <!-- PHYSICAL 2004A MODULE WRAPPER -->
                     <div class="lcd-module-wrapper">
                         <div class="lcd-pcb">
@@ -678,12 +752,9 @@ class ESP32Simulator:
                             <!-- Black Stamped Steel Metal Frame -->
                             <div class="lcd-metal-frame">
                                 <div class="bezel-tab-top"></div>
-                                
-                                <!-- Active Dot Matrix LCD Glass Screen -->
                                 <div class="lcd-glass-viewport" id="lcd-viewport">
                                     <canvas id="lcd-matrix-canvas" width="672" height="210"></canvas>
                                 </div>
-
                                 <div class="bezel-tab-bottom"></div>
                             </div>
 
@@ -733,50 +804,10 @@ class ESP32Simulator:
                 </div>
             </div>
 
-            <!-- 2. PCA9685 CHUTE SERVOS & INDICATORS -->
+            <!-- 2. PHYSICAL DROP SIMULATION CONTROLS -->
             <div class="card">
-                <div class="card-header bg-dark"><h3 class="card-title font-weight-bold text-light" style="font-size:14px;"><i class="fas fa-tachometer-alt text-success mr-1"></i> PCA9685 3-Servo Airlock & Status LEDs</h3></div>
+                <div class="card-header bg-dark"><h3 class="card-title font-weight-bold text-light" style="font-size:14px;"><i class="fas fa-gamepad text-primary mr-1"></i> Trigger Physical Bottle Insertions</h3></div>
                 <div class="card-body p-3">
-                    <div class="row text-center mb-2">
-                        <div class="col-4">
-                            <div class="small text-muted font-weight-bold">Entrance Gate (Ch 0)</div>
-                            <span id="ind-gate" class="actuator-indicator indicator-off">CLOSED (0°)</span>
-                        </div>
-                        <div class="col-4">
-                            <div class="small text-muted font-weight-bold">Success Gate (Ch 1)</div>
-                            <span id="ind-success" class="actuator-indicator indicator-off">CLOSED (0°)</span>
-                        </div>
-                        <div class="col-4">
-                            <div class="small text-muted font-weight-bold">Reject Gate (Ch 2)</div>
-                            <span id="ind-reject" class="actuator-indicator indicator-off">CLOSED (0°)</span>
-                        </div>
-                    </div>
-
-                    <div class="row text-center">
-                        <div class="col-4">
-                            <div class="small text-muted font-weight-bold">Active Buzzer (GPIO33)</div>
-                            <span id="ind-buzzer" class="actuator-indicator indicator-off">SILENT</span>
-                        </div>
-                        <div class="col-4">
-                            <div class="small text-muted font-weight-bold">🟢 Green LED (GPIO25)</div>
-                            <span id="ind-led-green" class="actuator-indicator indicator-off">OFF</span>
-                        </div>
-                        <div class="col-4">
-                            <div class="small text-muted font-weight-bold">🔴 Red LED (GPIO26)</div>
-                            <span id="ind-led-red" class="actuator-indicator indicator-off">OFF</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- RIGHT COLUMN: DROP CONTROLS, SENSORS & SERIAL CONSOLE -->
-        <div class="col-12 col-xl-6">
-            <!-- 3. PHYSICAL DROP SIMULATION CONTROLS -->
-            <div class="card">
-                <div class="card-header bg-dark"><h3 class="card-title font-weight-bold text-light" style="font-size:14px;"><i class="fas fa-gamepad text-primary mr-1"></i> Simulate Physical Bottle Insertions</h3></div>
-                <div class="card-body p-3">
-                    <p class="text-muted small mb-2">Trigger authentic multi-sensor validation cycles against the ESP32 firmware logic:</p>
                     <div class="btn-group-vertical w-100">
                         <button class="btn btn-success mb-2 font-weight-bold text-left" onclick="triggerDrop('valid_pet')">
                             <i class="fas fa-wine-bottle mr-1"></i> Drop 1x Valid PET Plastic Bottle (NIR: 1450, Capacitive OK) <span class="badge badge-light float-right">ACCEPT</span>
@@ -804,31 +835,198 @@ class ESP32Simulator:
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- 4. REAL-TIME SENSOR BUS TELEMETRY -->
+        <!-- RIGHT COLUMN: CUTAWAY PIPE & CHUTE FLOW SCHEMATIC & TELEMETRY -->
+        <div class="col-12 col-xl-7">
+            
+            <!-- 3. INTERACTIVE CUTAWAY 2D MECHANICAL PIPE FLOW SCHEMATIC -->
             <div class="card">
-                <div class="card-header bg-dark"><h3 class="card-title font-weight-bold text-light" style="font-size:14px;"><i class="fas fa-wave-square text-info mr-1"></i> Real-time Sensor Bus Telemetry</h3></div>
-                <div class="card-body p-0">
-                    <table class="table table-sm table-striped mb-0 text-light" style="font-size:12px;">
-                        <tbody>
-                            <tr><td style="width:50%;" class="font-weight-bold">Inductive Metal Sensor (LJ18A3):</td><td><span id="val-metal" class="badge badge-success">NO METAL (HIGH)</span></td></tr>
-                            <tr><td class="font-weight-bold">Capacitive Proximity (LJC18A3):</td><td><span id="val-cap" class="badge badge-success">PLASTIC PRESENT (LOW)</span></td></tr>
-                            <tr><td class="font-weight-bold">AS7263 NIR Spectrometer (W-Ch):</td><td><strong id="val-nir" class="text-info">1450</strong> <small class="text-muted">(PET Range: 200 - 5000)</small></td></tr>
-                            <tr><td class="font-weight-bold">Top IR Chute Sensor (E18-D80NK):</td><td><span id="val-top-ir" class="badge badge-secondary">CLEAR (HIGH)</span></td></tr>
-                            <tr><td class="font-weight-bold">Bottom IR Bin Sensor (E18-D80NK):</td><td><span id="val-bot-ir" class="badge badge-secondary">CLEAR (HIGH)</span></td></tr>
-                            <tr><td class="font-weight-bold">Ultrasonic Bin Level (JSN-SR04T):</td><td><strong id="val-dist">60 cm</strong> <span class="badge badge-success ml-1">OK</span></td></tr>
-                        </tbody>
-                    </table>
+                <div class="card-header bg-dark d-flex justify-content-between align-items-center">
+                    <h3 class="card-title font-weight-bold text-light" style="font-size:14px;">
+                        <i class="fas fa-project-diagram text-warning mr-1"></i> Cutaway Mechanical Pipe & Bifurcated Airlock Chute Flow
+                    </h3>
+                    <span class="badge badge-info" style="font-size:11px;">110mm Clear Inspection Tube</span>
                 </div>
-            </div>
-
-            <!-- 5. UART SERIAL CONSOLE -->
-            <div class="card">
-                <div class="card-header bg-dark"><h3 class="card-title font-weight-bold text-light" style="font-size:14px;"><i class="fas fa-terminal text-warning mr-1"></i> UART Serial Bridge (/dev/ttyS1 @ 115200 Baud)</h3></div>
                 <div class="card-body p-2">
-                    <div class="serial-console" id="serial-box"></div>
+                    <div class="pipe-schematic-box">
+                        <!-- Top Flow Status Overlay -->
+                        <div class="pipe-status-overlay">
+                            <span id="pipe-stage-badge" class="flow-stage-badge"><i class="fas fa-spinner fa-spin mr-1"></i> STAGE: STANDBY / READY</span>
+                            <span id="pipe-item-badge" class="badge badge-secondary p-2">CHUTE CLEAR</span>
+                        </div>
+
+                        <!-- Full Cutaway SVG Diagram -->
+                        <svg id="pipe-svg-diagram" viewBox="0 0 700 480" preserveAspectRatio="xMidYMid meet">
+                            <defs>
+                                <linearGradient id="pipeWallGrad" x1="0" y1="0" x2="1" y2="0">
+                                    <stop offset="0%" stop-color="rgba(148, 163, 184, 0.25)" />
+                                    <stop offset="15%" stop-color="rgba(255, 255, 255, 0.08)" />
+                                    <stop offset="85%" stop-color="rgba(255, 255, 255, 0.08)" />
+                                    <stop offset="100%" stop-color="rgba(148, 163, 184, 0.25)" />
+                                </linearGradient>
+                                <linearGradient id="laserBeamGrad" x1="0" y1="0" x2="1" y2="0">
+                                    <stop offset="0%" stop-color="rgba(236, 72, 153, 0.9)" />
+                                    <stop offset="50%" stop-color="rgba(168, 85, 247, 0.7)" />
+                                    <stop offset="100%" stop-color="rgba(59, 130, 246, 0.9)" />
+                                </linearGradient>
+                                <filter id="glowEffect" x="-20%" y="-20%" width="140%" height="140%">
+                                    <feGaussianBlur stdDeviation="3" result="blur" />
+                                    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                                </filter>
+                            </defs>
+
+                            <!-- ================= BACKGROUND STRUCTURE ================= -->
+                            <!-- Machine Cabinet Frame Outline -->
+                            <rect x="20" y="30" width="660" height="430" rx="8" fill="#080d1a" stroke="#1e293b" stroke-width="2" stroke-dasharray="4 4" />
+                            <text x="35" y="55" fill="#475569" font-family="monospace" font-size="11" font-weight="700">ECO-Fi INTERNAL AIRLOCK CABINET (GRAVITY FEED)</text>
+
+                            <!-- 1. Top Intake Funnel (Entry Throat) -->
+                            <path d="M 280 40 L 420 40 L 380 90 L 320 90 Z" fill="url(#pipeWallGrad)" stroke="#38bdf8" stroke-width="2" />
+                            <text x="350" y="60" fill="#93c5fd" font-family="sans-serif" font-size="10" font-weight="700" text-anchor="middle">INTAKE FUNNEL (Ø110mm)</text>
+
+                            <!-- Top IR Sensor (E18-D80NK) Probes -->
+                            <rect x="285" y="70" width="30" height="14" rx="2" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5" />
+                            <text x="300" y="66" fill="#f59e0b" font-family="monospace" font-size="8.5" font-weight="700" text-anchor="middle">TOP IR</text>
+                            <!-- Top IR Beam -->
+                            <line id="svg-top-ir-beam" x1="315" y1="77" x2="385" y2="77" stroke="#ef4444" stroke-width="2" stroke-dasharray="3 3" />
+                            <rect x="385" y="70" width="12" height="14" rx="2" fill="#334155" />
+
+                            <!-- 2. Main Sensing / Inspection Tube Chamber -->
+                            <rect x="320" y="90" width="60" height="150" fill="url(#pipeWallGrad)" stroke="#38bdf8" stroke-width="2" />
+                            
+                            <!-- Servo 0: Entrance Flap (PCA Ch 0) -->
+                            <g id="svg-servo-ent" transform="translate(320, 95)">
+                                <circle cx="0" cy="0" r="5" fill="#e2e8f0" stroke="#0f172a" stroke-width="1.5" />
+                                <rect id="svg-ent-flap" x="0" y="-3" width="58" height="6" rx="2" fill="#38bdf8" transform="rotate(0)" />
+                            </g>
+                            <text x="255" y="100" fill="#38bdf8" font-family="monospace" font-size="9" font-weight="700">SERVO 0 (ENTRANCE)</text>
+
+                            <!-- Sensor 1: Inductive Metal Proximity Sensor LJ18A3 (Left Wall) -->
+                            <g id="svg-metal-sensor" transform="translate(265, 130)">
+                                <rect x="0" y="0" width="55" height="20" rx="3" fill="#1e293b" stroke="#64748b" stroke-width="1.5" />
+                                <rect x="45" y="2" width="10" height="16" fill="#3b82f6" />
+                                <text x="25" y="14" fill="#cbd5e1" font-family="monospace" font-size="8" font-weight="700" text-anchor="middle">LJ18A3 (Fe)</text>
+                            </g>
+                            <circle id="svg-metal-field" cx="320" cy="140" r="14" fill="none" stroke="rgba(59,130,246,0.5)" stroke-width="1.5" stroke-dasharray="2 2" />
+
+                            <!-- Sensor 2: Capacitive Proximity Sensor LJC18A3 (Right Wall) -->
+                            <g id="svg-cap-sensor" transform="translate(380, 130)">
+                                <rect x="0" y="0" width="55" height="20" rx="3" fill="#1e293b" stroke="#64748b" stroke-width="1.5" />
+                                <rect x="0" y="2" width="10" height="16" fill="#10b981" />
+                                <text x="28" y="14" fill="#cbd5e1" font-family="monospace" font-size="8" font-weight="700" text-anchor="middle">LJC18 (Cap)</text>
+                            </g>
+                            <circle id="svg-cap-field" cx="380" cy="140" r="14" fill="none" stroke="rgba(16,185,129,0.5)" stroke-width="1.5" stroke-dasharray="2 2" />
+
+                            <!-- Sensor 3: AS7263 NIR Spectrometer (SparkFun I2C @ 0x49) -->
+                            <g id="svg-nir-sensor" transform="translate(255, 175)">
+                                <rect x="0" y="0" width="65" height="24" rx="4" fill="#1e1b4b" stroke="#a855f7" stroke-width="1.5" />
+                                <text x="32" y="15" fill="#e9d5ff" font-family="monospace" font-size="8.5" font-weight="700" text-anchor="middle">AS7263 (NIR)</text>
+                            </g>
+                            <!-- NIR Scanning Cone -->
+                            <polygon id="svg-nir-beam" points="320,187 380,172 380,202" fill="url(#laserBeamGrad)" opacity="0" filter="url(#glowEffect)" />
+
+                            <!-- 3. Bifurcated Y-Diverter Chute -->
+                            <!-- Left Branch (Reject Exit Chute to Return Tray) -->
+                            <path d="M 320 240 L 220 340 L 160 340 L 160 380 L 240 380 L 350 270 Z" fill="url(#pipeWallGrad)" stroke="#ef4444" stroke-width="1.8" />
+                            
+                            <!-- Servo 2: Reject Diverter Flap (PCA Ch 2) -->
+                            <g id="svg-servo-rej" transform="translate(325, 245)">
+                                <circle cx="0" cy="0" r="5" fill="#fecaca" stroke="#991b1b" stroke-width="1.5" />
+                                <rect id="svg-rej-flap" x="0" y="-3" width="36" height="6" rx="2" fill="#ef4444" transform="rotate(0)" />
+                            </g>
+                            <text x="210" y="275" fill="#f87171" font-family="monospace" font-size="8.5" font-weight="700">SERVO 2 (REJECT)</text>
+
+                            <!-- Customer Rejection Return Tray -->
+                            <rect x="50" y="360" width="130" height="85" rx="6" fill="#1e293b" stroke="#ef4444" stroke-width="2" />
+                            <text x="115" y="385" fill="#fca5a5" font-family="sans-serif" font-size="11" font-weight="700" text-anchor="middle"><tspan fill="#ef4444">⮌</tspan> RETURN TRAY</text>
+                            <text x="115" y="405" fill="#94a3b8" font-family="monospace" font-size="9" text-anchor="middle">Customer Eject Slot</text>
+
+                            <!-- Right Branch (Success Collection Chute to Storage Bin) -->
+                            <path d="M 380 240 L 480 340 L 480 380 L 420 380 L 350 310 L 350 240 Z" fill="url(#pipeWallGrad)" stroke="#22c55e" stroke-width="1.8" />
+
+                            <!-- Servo 1: Success Gate Flap (PCA Ch 1) -->
+                            <g id="svg-servo-suc" transform="translate(375, 245)">
+                                <circle cx="0" cy="0" r="5" fill="#bbf7d0" stroke="#166534" stroke-width="1.5" />
+                                <rect id="svg-suc-flap" x="-36" y="-3" width="36" height="6" rx="2" fill="#22c55e" transform="rotate(0)" />
+                            </g>
+                            <text x="410" y="275" fill="#4ade80" font-family="monospace" font-size="8.5" font-weight="700">SERVO 1 (SUCCESS)</text>
+
+                            <!-- Bottom IR Sensor (E18-D80NK) Probes -->
+                            <rect x="420" y="335" width="12" height="16" fill="#334155" />
+                            <rect x="480" y="335" width="26" height="16" rx="2" fill="#1e293b" stroke="#22c55e" stroke-width="1.5" />
+                            <line id="svg-bot-ir-beam" x1="432" y1="343" x2="480" y2="343" stroke="#22c55e" stroke-width="2" stroke-dasharray="3 3" />
+                            <text x="515" y="332" fill="#86efac" font-family="monospace" font-size="8" font-weight="700">BOTTOM IR</text>
+
+                            <!-- Secure Storage Bin Section -->
+                            <rect x="420" y="375" width="240" height="75" rx="6" fill="#0f2e1b" stroke="#22c55e" stroke-width="2" />
+                            <text x="540" y="398" fill="#86efac" font-family="sans-serif" font-size="11" font-weight="700" text-anchor="middle"><tspan fill="#22c55e">✔</tspan> STORAGE BIN</text>
+                            
+                            <!-- Ultrasonic Sensor JSN-SR04T on Bin Lid -->
+                            <rect x="610" y="358" width="40" height="16" rx="2" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5" />
+                            <text x="630" y="352" fill="#38bdf8" font-family="monospace" font-size="8" font-weight="700" text-anchor="middle">JSN-SR04T</text>
+                            <path d="M 620 375 Q 630 395 640 375" fill="none" stroke="rgba(56,189,248,0.7)" stroke-width="1.5" />
+                            <path d="M 615 385 Q 630 410 645 385" fill="none" stroke="rgba(56,189,248,0.4)" stroke-width="1.5" />
+
+                            <!-- ================= ANIMATED BOTTLE / ITEM ELEMENT ================= -->
+                            <g id="svg-moving-bottle" transform="translate(332, 45)" opacity="0">
+                                <!-- Default Bottle Shape (PET Bottle) -->
+                                <rect x="4" y="0" width="12" height="6" rx="1" fill="#38bdf8" stroke="#0284c7" />
+                                <rect x="0" y="6" width="20" height="34" rx="4" fill="#7dd3fc" stroke="#0284c7" stroke-width="1.5" />
+                                <line x1="2" y1="18" x2="18" y2="18" stroke="#0369a1" stroke-width="1" />
+                                <line x1="2" y1="24" x2="18" y2="24" stroke="#0369a1" stroke-width="1" />
+                                <text id="svg-bottle-label" x="10" y="23" fill="#0369a1" font-family="sans-serif" font-size="6" font-weight="700" text-anchor="middle">PET</text>
+                            </g>
+                        </svg>
+                    </div>
+
+                    <!-- Sensor & Servo State Badges Bar -->
+                    <div class="row text-center mt-2 no-gutters">
+                        <div class="col-3 px-1">
+                            <span id="ind-gate" class="actuator-indicator indicator-off" style="font-size:11px; padding:4px 6px;">ENTRANCE: CLOSED</span>
+                        </div>
+                        <div class="col-3 px-1">
+                            <span id="ind-success" class="actuator-indicator indicator-off" style="font-size:11px; padding:4px 6px;">SUCCESS: CLOSED</span>
+                        </div>
+                        <div class="col-3 px-1">
+                            <span id="ind-reject" class="actuator-indicator indicator-off" style="font-size:11px; padding:4px 6px;">REJECT: CLOSED</span>
+                        </div>
+                        <div class="col-3 px-1">
+                            <span id="ind-buzzer" class="actuator-indicator indicator-off" style="font-size:11px; padding:4px 6px;">BUZZER: SILENT</span>
+                        </div>
+                    </div>
                 </div>
             </div>
+
+            <!-- 4. REAL-TIME SENSOR BUS TELEMETRY & UART CONSOLE -->
+            <div class="row">
+                <div class="col-12 col-md-6">
+                    <div class="card mb-3">
+                        <div class="card-header bg-dark"><h3 class="card-title font-weight-bold text-light" style="font-size:13px;"><i class="fas fa-wave-square text-info mr-1"></i> Sensor Bus Telemetry</h3></div>
+                        <div class="card-body p-0">
+                            <table class="table table-sm table-striped mb-0 text-light" style="font-size:11.5px;">
+                                <tbody>
+                                    <tr><td class="font-weight-bold">Inductive Metal (LJ18A3):</td><td><span id="val-metal" class="badge badge-success">NO METAL</span></td></tr>
+                                    <tr><td class="font-weight-bold">Capacitive (LJC18A3):</td><td><span id="val-cap" class="badge badge-success">PLASTIC OK</span></td></tr>
+                                    <tr><td class="font-weight-bold">AS7263 NIR W-Ch:</td><td><strong id="val-nir" class="text-info">1450</strong></td></tr>
+                                    <tr><td class="font-weight-bold">Top IR Chute:</td><td><span id="val-top-ir" class="badge badge-secondary">CLEAR</span></td></tr>
+                                    <tr><td class="font-weight-bold">Bottom IR Bin:</td><td><span id="val-bot-ir" class="badge badge-secondary">CLEAR</span></td></tr>
+                                    <tr><td class="font-weight-bold">Bin Level (Ultrasonic):</td><td><strong id="val-dist">60 cm</strong> <span class="badge badge-success ml-1">OK</span></td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12 col-md-6">
+                    <div class="card mb-3">
+                        <div class="card-header bg-dark"><h3 class="card-title font-weight-bold text-light" style="font-size:13px;"><i class="fas fa-terminal text-warning mr-1"></i> UART Serial Bridge</h3></div>
+                        <div class="card-body p-1">
+                            <div class="serial-console" id="serial-box"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 </div>
@@ -886,18 +1084,16 @@ function drawLcdCanvas(lines) {
     const H = canvas.height;
     const theme = LCD_THEMES[currentLcdTheme] || LCD_THEMES.blue;
 
-    // 1. Draw LCD Background with subtle gradient
     const grad = ctx.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, theme.bg);
     grad.addColorStop(1, theme.bgGrad);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, W, H);
 
-    // Exact 20 columns and 4 rows sizing
     const cols = 20;
     const rows = 4;
-    const cellW = W / cols;       // 672 / 20 = 33.6px
-    const cellH = H / rows;       // 210 / 4 = 52.5px
+    const cellW = W / cols;
+    const cellH = H / rows;
 
     const padX = cellW * 0.08;
     const padY = cellH * 0.08;
@@ -934,7 +1130,7 @@ function drawLcdCanvas(lines) {
                         ctx.shadowColor = theme.pixelGlow;
                         ctx.shadowBlur = (currentLcdTheme === 'blue') ? 2 : 0;
                         ctx.fillRect(px, py, dotW, dotH);
-                        ctx.shadowBlur = 0; // reset
+                        ctx.shadowBlur = 0;
                     } else {
                         ctx.fillStyle = theme.pixelOff;
                         ctx.fillRect(px, py, dotW, dotH);
@@ -945,51 +1141,134 @@ function drawLcdCanvas(lines) {
     }
 }
 
+// Pipe Flow Visualizer Updater
+function updatePipeVisualizer(d) {
+    // 1. Servo Flap Angles
+    const entFlap = document.getElementById('svg-ent-flap');
+    if (entFlap) {
+        // 0 deg closed (horizontal), 90 deg open (swung down 90)
+        entFlap.setAttribute('transform', 'rotate(' + (d.entrance_servo || 0) + ')');
+    }
+    const sucFlap = document.getElementById('svg-suc-flap');
+    if (sucFlap) {
+        sucFlap.setAttribute('transform', 'rotate(' + (-(d.success_servo || 0)) + ')');
+    }
+    const rejFlap = document.getElementById('svg-rej-flap');
+    if (rejFlap) {
+        rejFlap.setAttribute('transform', 'rotate(' + (d.reject_servo || 0) + ')');
+    }
+
+    // 2. Beams & Scanning Visuals
+    const topBeam = document.getElementById('svg-top-ir-beam');
+    if (topBeam) {
+        topBeam.setAttribute('stroke', d.top_ir ? '#f59e0b' : '#ef4444');
+        topBeam.setAttribute('stroke-width', d.top_ir ? '3' : '1.5');
+    }
+    const botBeam = document.getElementById('svg-bot-ir-beam');
+    if (botBeam) {
+        botBeam.setAttribute('stroke', d.bottom_ir ? '#f59e0b' : '#22c55e');
+        botBeam.setAttribute('stroke-width', d.bottom_ir ? '3' : '1.5');
+    }
+
+    const nirBeam = document.getElementById('svg-nir-beam');
+    if (nirBeam) {
+        nirBeam.setAttribute('opacity', d.pipe_scan_active ? '0.85' : '0');
+    }
+
+    // 3. Stage & Item Badges
+    const stageBadge = document.getElementById('pipe-stage-badge');
+    if (stageBadge) {
+        let label = 'STAGE: STANDBY / READY';
+        let badgeCol = '#60a5fa';
+        if (d.pipe_item_stage === 'intake') { label = 'STAGE 1: GATE OPEN (INSERTING)'; badgeCol = '#38bdf8'; }
+        else if (d.pipe_item_stage === 'airlock') { label = 'STAGE 2: AIRLOCK CLOSED (SETTLING)'; badgeCol = '#818cf8'; }
+        else if (d.pipe_item_stage === 'scanning') { label = 'STAGE 3: MULTI-SENSOR & NIR SCAN'; badgeCol = '#a855f7'; }
+        else if (d.pipe_item_stage === 'success_drop') { label = 'STAGE 4: VERIFIED OK -> DROPPING TO BIN'; badgeCol = '#22c55e'; }
+        else if (d.pipe_item_stage === 'reject_drop') { label = 'STAGE 4: REJECTED -> RETURNING ITEM'; badgeCol = '#ef4444'; }
+        else if (d.pipe_item_stage === 'stuck_chute') { label = 'ALERT: ITEM JAMMED IN CHUTE'; badgeCol = '#f59e0b'; }
+        stageBadge.innerText = label;
+        stageBadge.style.color = badgeCol;
+        stageBadge.style.borderColor = badgeCol;
+    }
+
+    const itemBadge = document.getElementById('pipe-item-badge');
+    if (itemBadge) {
+        let text = 'CHUTE CLEAR';
+        let cls = 'badge badge-secondary p-2';
+        if (d.pipe_item_type === 'pet') { text = 'ITEM: PET PLASTIC BOTTLE'; cls = 'badge badge-success p-2'; }
+        else if (d.pipe_item_type === 'metal') { text = 'ITEM: ALUMINUM / TIN CAN'; cls = 'badge badge-warning p-2'; }
+        else if (d.pipe_item_type === 'paper') { text = 'ITEM: CARDBOARD / PAPER'; cls = 'badge badge-warning p-2'; }
+        else if (d.pipe_item_type === 'pvc') { text = 'ITEM: NON-PET POLYMER (PVC)'; cls = 'badge badge-danger p-2'; }
+        else if (d.pipe_item_type === 'stuck') { text = 'ITEM: JAMMED BOTTLE'; cls = 'badge badge-danger p-2'; }
+        itemBadge.innerText = text;
+        itemBadge.className = cls;
+    }
+
+    // 4. Moving Bottle Animation Position
+    const bottleEl = document.getElementById('svg-moving-bottle');
+    const bottleLabel = document.getElementById('svg-bottle-label');
+    if (bottleEl) {
+        if (d.pipe_item_stage === 'idle' || d.pipe_item_type === 'none') {
+            bottleEl.setAttribute('opacity', '0');
+        } else {
+            bottleEl.setAttribute('opacity', '1');
+            let posX = 340;
+            let posY = 50;
+            if (d.pipe_item_stage === 'intake') { posX = 340; posY = 65; }
+            else if (d.pipe_item_stage === 'airlock') { posX = 340; posY = 115; }
+            else if (d.pipe_item_stage === 'scanning') { posX = 340; posY = 160; }
+            else if (d.pipe_item_stage === 'success_drop') { posX = 440; posY = 350; }
+            else if (d.pipe_item_stage === 'reject_drop') { posX = 170; posY = 355; }
+            else if (d.pipe_item_stage === 'stuck_chute') { posX = 360; posY = 260; }
+
+            bottleEl.setAttribute('transform', 'translate(' + posX + ', ' + posY + ')');
+            if (bottleLabel) {
+                let lbl = 'PET';
+                if (d.pipe_item_type === 'metal') lbl = 'CAN';
+                else if (d.pipe_item_type === 'paper') lbl = 'PPR';
+                else if (d.pipe_item_type === 'pvc') lbl = 'PVC';
+                bottleLabel.innerText = lbl;
+            }
+        }
+    }
+}
+
 function syncSimulator() {
     fetch('/simulator/api/state').then(r=>r.json()).then(d=>{
-        // Actuators
+        // 1. Actuator text badges
         const elGate = document.getElementById('ind-gate');
         if (elGate) {
             elGate.className = 'actuator-indicator ' + (d.entrance_servo > 45 ? 'indicator-on' : 'indicator-off');
-            elGate.innerText = d.entrance_servo > 45 ? 'OPEN (' + d.entrance_servo + '°)' : 'CLOSED (' + d.entrance_servo + '°)';
+            elGate.innerText = d.entrance_servo > 45 ? 'ENTRANCE: OPEN (' + d.entrance_servo + '°)' : 'ENTRANCE: CLOSED';
         }
 
         const elSuc = document.getElementById('ind-success');
         if (elSuc) {
             elSuc.className = 'actuator-indicator ' + (d.success_servo > 45 ? 'indicator-on' : 'indicator-off');
-            elSuc.innerText = d.success_servo > 45 ? 'OPEN (' + d.success_servo + '°)' : 'CLOSED (' + d.success_servo + '°)';
+            elSuc.innerText = d.success_servo > 45 ? 'SUCCESS: OPEN (' + d.success_servo + '°)' : 'SUCCESS: CLOSED';
         }
 
         const elRej = document.getElementById('ind-reject');
         if (elRej) {
             elRej.className = 'actuator-indicator ' + (d.reject_servo > 45 ? 'indicator-red' : 'indicator-off');
-            elRej.innerText = d.reject_servo > 45 ? 'OPEN (' + d.reject_servo + '°)' : 'CLOSED (' + d.reject_servo + '°)';
+            elRej.innerText = d.reject_servo > 45 ? 'REJECT: OPEN (' + d.reject_servo + '°)' : 'REJECT: CLOSED';
         }
 
         const elBuzz = document.getElementById('ind-buzzer');
         if (elBuzz) {
             elBuzz.className = 'actuator-indicator ' + (d.buzzer ? 'indicator-red' : 'indicator-off');
-            elBuzz.innerText = d.buzzer ? 'BEEPING' : 'SILENT';
+            elBuzz.innerText = d.buzzer ? 'BUZZER: BEEPING' : 'BUZZER: SILENT';
         }
 
-        const elGrn = document.getElementById('ind-led-green');
-        if (elGrn) {
-            elGrn.className = 'actuator-indicator ' + (d.led_green ? 'indicator-on' : 'indicator-off');
-            elGrn.innerText = d.led_green ? 'ON (GREEN)' : 'OFF';
-        }
-
-        const elRed = document.getElementById('ind-led-red');
-        if (elRed) {
-            elRed.className = 'actuator-indicator ' + (d.led_red ? 'indicator-red' : 'indicator-off');
-            elRed.innerText = d.led_red ? 'ON (RED)' : 'OFF';
-        }
-
-        // Draw 20x4 LCD Canvas
+        // 2. 2004A LCD Matrix Canvas
         if (d.lcd_lines) {
             drawLcdCanvas(d.lcd_lines);
         }
 
-        // Sensors
+        // 3. Pipe & Chute Schematic Visualizer
+        updatePipeVisualizer(d);
+
+        // 4. Sensor telemetry table
         const elMet = document.getElementById('val-metal');
         if (elMet) {
             elMet.className = 'badge ' + (d.prox_metal ? 'badge-danger' : 'badge-success');
@@ -1020,7 +1299,7 @@ function syncSimulator() {
         const elDist = document.getElementById('val-dist');
         if (elDist) elDist.innerText = d.bin_distance_cm + ' cm ' + (d.is_bin_full ? '(FULL!)' : '(OK)');
 
-        // Serial Logs
+        // 5. Serial UART console logs
         const elBox = document.getElementById('serial-box');
         if (elBox && d.serial_logs) {
             let sHtml = '';
@@ -1033,7 +1312,7 @@ function syncSimulator() {
     }).catch(err=>console.error("Sync error:", err));
 }
 
-// Initial draw immediately on page load
+// Initial draw immediately on DOM load
 window.addEventListener('DOMContentLoaded', () => {
     drawLcdCanvas(lastLcdLines);
     syncSimulator();
