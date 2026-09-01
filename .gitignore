@@ -31,6 +31,12 @@ vendo_sessions.db
 .DS_Store
 Thumbs.db
 
+# Large Firmware Images & Unpacked Dumps
+resources/*.img
+resources/unpacked_img/
+resources/pisofi_firmware_dump/
+
 # Scratch files
 scratch/
 portal_recovery.py
+commit_diff.txt
