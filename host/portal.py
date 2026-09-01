@@ -4553,6 +4553,10 @@ function loadClients() {
 function openEditClientModal(ip, mac, remSeconds, dl, ul) {
     document.getElementById('modal-client-ip').value = ip;
     document.getElementById('modal-client-info').value = `${ip} (${mac})`;
+    document.getElementById('modal-client-mins').value = Math.max(0, Math.floor((remSeconds || 0) / 60));
+    document.getElementById('modal-client-dl').value = dl || 3072;
+    document.getElementById('modal-client-ul').value = ul || 1536;
+    $('#modal-edit-client').modal('show');
 }
 
 function submitEditClientModal() {
