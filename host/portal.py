@@ -2174,9 +2174,28 @@ FORCE_PASS_HTML = """
 """
 
 @app.before_request
-def check_default_password():
-    if request.path == '/admin' and session.get('admin_logged_in') and session.get('must_change_password'):
-        return redirect('/admin/force_password_change')
+def admin_security_guard():
+    # Only enforce on /admin and sub-paths
+    if request.path == "/admin" or request.path.startswith("/admin/"):
+        # Public routes in admin namespace
+        if request.path == "/admin/login":
+            return None
+
+        # 1. Enforce strict authentication on all admin endpoints
+        if not session.get('admin_logged_in'):
+            # Direct browser visits, page navigation, and file exports redirect to login page
+            if request.path in ["/admin", "/admin/force_password_change", "/admin/api/export_xlsx", "/admin/api/export_csv"] or not request.path.startswith("/admin/api/"):
+                return redirect("/admin/login")
+            # Background JSON API calls receive 401 Unauthorized JSON error
+            return jsonify({"error": "unauthorized", "message": "Authentication required."}), 401
+
+        # 2. Enforce mandatory password change if default admin123 is detected
+        if session.get('must_change_password'):
+            allowed_during_pw_change = ["/admin/force_password_change", "/admin/logout"]
+            if request.path not in allowed_during_pw_change:
+                if request.path in ["/admin", "/admin/api/export_xlsx", "/admin/api/export_csv"] or not request.path.startswith("/admin/api/"):
+                    return redirect("/admin/force_password_change")
+                return jsonify({"error": "password_change_required", "message": "Default password must be changed first."}), 403
 
 @app.route("/admin/force_password_change", methods=["GET", "POST"])
 def admin_force_password_change():
