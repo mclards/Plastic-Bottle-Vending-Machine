@@ -3519,12 +3519,12 @@ ADMIN_HTML = """
             <table class="table table-striped table-hover mb-0">
               <thead>
                 <tr>
-                  <th style="padding: 10px 14px;">IP Address</th>
-                  <th style="padding: 10px 14px;">MAC Address</th>
-                  <th style="padding: 10px 14px;">Remaining Time</th>
-                  <th style="padding: 10px 14px;">Status</th>
-                  <th style="padding: 10px 14px;">Speed (DL/UL)</th>
-                  <th style="padding: 10px 14px; text-align: right; min-width: 240px; white-space: nowrap;">Actions</th>
+                  <th style="padding: 10px 14px; width: 18%;">IP Address</th>
+                  <th style="padding: 10px 14px; width: 18%;">MAC Address</th>
+                  <th style="padding: 10px 14px; width: 18%;">Remaining Time</th>
+                  <th style="padding: 10px 14px; width: 12%; text-align: center;">Status</th>
+                  <th style="padding: 10px 14px; width: 16%;">Speed (DL/UL)</th>
+                  <th style="padding: 10px 14px; width: 18%; text-align: right; min-width: 220px; white-space: nowrap;">Actions</th>
                 </tr>
               </thead>
               <tbody id="clients-table-body"></tbody>
@@ -3569,10 +3569,20 @@ ADMIN_HTML = """
       
       <div class="card card-dark mt-3">
         <div class="card-header"><h3 class="card-title"><i class="fas fa-history"></i> Voucher History</h3></div>
-        <div class="card-body">
+        <div class="card-body p-0">
           <div class="table-responsive">
-            <table class="table table-bordered table-sm" id="voucher-history-table">
-              <thead><tr><th>Voucher Code</th><th>Duration</th><th>Status</th><th>Note / Tag</th><th>Created Date</th><th>Used By (IP)</th><th>Action</th></tr></thead>
+            <table class="table table-striped table-hover mb-0" id="voucher-history-table">
+              <thead>
+                <tr>
+                  <th style="padding: 10px 14px; width: 18%;">Voucher Code</th>
+                  <th style="padding: 10px 14px; width: 12%;">Duration</th>
+                  <th style="padding: 10px 14px; width: 12%; text-align: center;">Status</th>
+                  <th style="padding: 10px 14px; width: 18%;">Note / Tag</th>
+                  <th style="padding: 10px 14px; width: 18%;">Created Date</th>
+                  <th style="padding: 10px 14px; width: 12%;">Used By (IP)</th>
+                  <th style="padding: 10px 14px; width: 10%; text-align: right; min-width: 100px; white-space: nowrap;">Actions</th>
+                </tr>
+              </thead>
               <tbody id="voucher-history-body"></tbody>
             </table>
           </div>
@@ -3608,10 +3618,17 @@ ADMIN_HTML = """
 
       <div class="card card-info mt-3">
         <div class="card-header"><h3 class="card-title"><i class="fas fa-user-friends"></i> Registered Member Accounts</h3></div>
-        <div class="card-body">
+        <div class="card-body p-0">
           <div class="table-responsive">
-            <table class="table table-bordered table-striped">
-              <thead><tr><th>Username</th><th>Wallet Balance</th><th>Registered At</th><th>Quick Actions</th></tr></thead>
+            <table class="table table-striped table-hover mb-0">
+              <thead>
+                <tr>
+                  <th style="padding: 10px 14px; width: 25%;">Username</th>
+                  <th style="padding: 10px 14px; width: 25%;">Wallet Balance</th>
+                  <th style="padding: 10px 14px; width: 25%;">Registered At</th>
+                  <th style="padding: 10px 14px; width: 25%; text-align: right; min-width: 170px; white-space: nowrap;">Actions</th>
+                </tr>
+              </thead>
               <tbody id="members-table-body"></tbody>
             </table>
           </div>
@@ -3936,8 +3953,14 @@ ADMIN_HTML = """
             </div>
           </div>
           <div class="table-responsive">
-            <table class="table table-bordered table-sm mt-3">
-              <thead><tr><th>Whitelisted Domain</th><th>Note</th><th>Action</th></tr></thead>
+            <table class="table table-striped table-hover mb-0 mt-3">
+              <thead>
+                <tr>
+                  <th style="padding: 10px 14px; width: 45%;">Whitelisted Domain</th>
+                  <th style="padding: 10px 14px; width: 40%;">Note / Purpose</th>
+                  <th style="padding: 10px 14px; width: 15%; text-align: right; min-width: 120px; white-space: nowrap;">Actions</th>
+                </tr>
+              </thead>
               <tbody id="walled-table-body"></tbody>
             </table>
           </div>
@@ -3981,8 +4004,8 @@ ADMIN_HTML = """
             <div class="col-12 col-sm-6 col-md-2 form-group">
               <label class="d-none d-md-block">&nbsp;</label>
               <div class="d-flex">
-                <button class="btn btn-danger btn-block mr-1" id="btn-save-mac" onclick="saveMacControl()"><i class="fas fa-plus"></i> Add Rule</button>
-                <button class="btn btn-secondary" id="btn-cancel-mac" style="display:none;" onclick="cancelEditMac()"><i class="fas fa-times"></i></button>
+                <button class="btn btn-danger btn-block mr-1 font-weight-bold" id="btn-save-mac" onclick="saveMacControl()"><i class="fas fa-plus mr-1"></i> Add Rule</button>
+                <button class="btn btn-secondary font-weight-bold" id="btn-cancel-mac" style="display:none;" onclick="cancelEditMac()" title="Cancel Edit"><i class="fas fa-times"></i></button>
               </div>
             </div>
           </div>
@@ -3991,15 +4014,15 @@ ADMIN_HTML = """
 
       <div class="card card-dark mt-3">
         <div class="card-header"><h3 class="card-title"><i class="fas fa-list-ul"></i> Active MAC Control Table</h3></div>
-        <div class="card-body">
+        <div class="card-body p-0">
           <div class="table-responsive">
-            <table class="table table-bordered table-striped" id="mac-table">
+            <table class="table table-striped table-hover mb-0" id="mac-table">
               <thead>
                 <tr>
-                  <th>MAC Address</th>
-                  <th>Rule Type</th>
-                  <th>Device Note</th>
-                  <th style="width: 140px;">Actions</th>
+                  <th style="padding: 10px 14px; width: 30%;">MAC Address</th>
+                  <th style="padding: 10px 14px; width: 20%; text-align: center;">Rule Type</th>
+                  <th style="padding: 10px 14px; width: 30%;">Device Note</th>
+                  <th style="padding: 10px 14px; width: 20%; text-align: right; min-width: 170px; white-space: nowrap;">Actions</th>
                 </tr>
               </thead>
               <tbody id="mac-table-body"></tbody>
@@ -4271,9 +4294,9 @@ function loadMacs() {
         d.forEach(m=>{
             const safeNote = encodeURIComponent(m.note);
             html += `<tr>
-                <td><code>${m.mac}</code></td>
-                <td><span class="badge ${m.type==='whitelist'?'badge-success':'badge-danger'}">${m.type.toUpperCase()}</span></td>
-                <td>${m.note || '-'}</td>
+                <td style="padding: 10px 14px;"><code>${m.mac}</code></td>
+                <td style="padding: 10px 14px; text-align: center;"><span class="badge ${m.type==='whitelist'?'badge-success':'badge-danger'}">${m.type.toUpperCase()}</span></td>
+                <td style="padding: 10px 14px;"><span class="text-light">${m.note || '-'}</span></td>
                 <td style="padding: 10px 14px; text-align: right; white-space: nowrap;">
                     <div class="d-inline-flex align-items-center justify-content-end" style="gap: 6px; white-space: nowrap; flex-wrap: nowrap;">
                         <button class="btn btn-xs btn-outline-warning text-nowrap" onclick="editMacControl('${m.mac}', '${m.type}', '${safeNote}')"><i class="fas fa-edit mr-1"></i>Edit</button>
@@ -4282,7 +4305,7 @@ function loadMacs() {
                 </td>
             </tr>`;
         });
-        document.getElementById('mac-table-body').innerHTML = html || '<tr><td colspan="4" class="text-center">No MAC filtering rules set.</td></tr>';
+        document.getElementById('mac-table-body').innerHTML = html || '<tr><td colspan="4" class="text-center p-3 text-muted">No MAC filtering rules set.</td></tr>';
     });
 }
 
@@ -4721,16 +4744,16 @@ function loadVouchers() {
         let html = '';
         d.forEach(v=>{
             html += `<tr>
-                <td><strong>${v.code}</strong></td>
-                <td>${v.minutes}m</td>
-                <td><span class="badge ${v.is_used ? 'badge-secondary' : 'badge-success'}">${v.is_used ? 'REDEEMED' : 'ACTIVE'}</span></td>
-                <td>${v.note || '-'}</td>
-                <td>${v.created_at}</td>
-                <td>${v.used_by || '-'}</td>
-                <td><button class="btn btn-xs btn-danger" onclick="deleteVoucher('${v.code}')"><i class="fas fa-trash"></i></button></td>
+                <td style="padding: 10px 14px;"><strong class="text-success"><i class="fas fa-ticket-alt mr-1"></i>${v.code}</strong></td>
+                <td style="padding: 10px 14px;"><strong>${v.minutes}m</strong></td>
+                <td style="padding: 10px 14px; text-align: center;"><span class="badge ${v.is_used ? 'badge-secondary' : 'badge-success'}">${v.is_used ? 'REDEEMED' : 'ACTIVE'}</span></td>
+                <td style="padding: 10px 14px;"><span class="text-light">${v.note || '-'}</span></td>
+                <td style="padding: 10px 14px;"><small class="text-muted">${v.created_at}</small></td>
+                <td style="padding: 10px 14px;"><code>${v.used_by || '-'}</code></td>
+                <td style="padding: 10px 14px; text-align: right; white-space: nowrap;"><button class="btn btn-xs btn-outline-danger text-nowrap" onclick="deleteVoucher('${v.code}')"><i class="fas fa-trash mr-1"></i>Delete</button></td>
             </tr>`;
         });
-        document.getElementById('voucher-history-body').innerHTML = html || '<tr><td colspan="7" class="text-center">No vouchers generated yet.</td></tr>';
+        document.getElementById('voucher-history-body').innerHTML = html || '<tr><td colspan="7" class="text-center p-3 text-muted">No vouchers generated yet.</td></tr>';
     });
 }
 
@@ -4781,9 +4804,9 @@ function loadMembers() {
         d.forEach(m=>{
             const hrs = (m.wallet_minutes / 60).toFixed(1);
             html += `<tr>
-                <td><strong>${m.username}</strong></td>
-                <td><span class="badge badge-info">${m.wallet_minutes} Mins (${hrs} Hrs)</span></td>
-                <td>${m.created_at}</td>
+                <td style="padding: 10px 14px;"><strong class="text-info"><i class="fas fa-user-circle mr-1"></i>${m.username}</strong></td>
+                <td style="padding: 10px 14px;"><span class="badge badge-info">${m.wallet_minutes} Mins (${hrs} Hrs)</span></td>
+                <td style="padding: 10px 14px;"><small class="text-muted">${m.created_at}</small></td>
                 <td style="padding: 10px 14px; text-align: right; white-space: nowrap;">
                     <div class="d-inline-flex align-items-center justify-content-end" style="gap: 6px; white-space: nowrap; flex-wrap: nowrap;">
                         <button class="btn btn-xs btn-outline-success text-nowrap" onclick="openMemberTopupModal('${m.username}')"><i class="fas fa-coins mr-1"></i>Adjust</button>
@@ -4792,7 +4815,7 @@ function loadMembers() {
                 </td>
             </tr>`;
         });
-        document.getElementById('members-table-body').innerHTML = html || '<tr><td colspan="4" class="text-center">No registered members yet.</td></tr>';
+        document.getElementById('members-table-body').innerHTML = html || '<tr><td colspan="4" class="text-center p-3 text-muted">No registered members yet.</td></tr>';
     });
 }
 
@@ -4870,12 +4893,12 @@ function loadWalledGarden() {
         let html = '';
         d.forEach(w=>{
             html += `<tr>
-                <td><code>${w.domain}</code></td>
-                <td>${w.note || '-'}</td>
-                <td><button class="btn btn-xs btn-danger" onclick="deleteWalledDomain('${w.domain}')"><i class="fas fa-trash"></i> Delete</button></td>
+                <td style="padding: 10px 14px;"><code class="text-success">${w.domain}</code></td>
+                <td style="padding: 10px 14px;"><span class="text-light">${w.note || '-'}</span></td>
+                <td style="padding: 10px 14px; text-align: right; white-space: nowrap;"><button class="btn btn-xs btn-outline-danger text-nowrap" onclick="deleteWalledDomain('${w.domain}')"><i class="fas fa-trash mr-1"></i>Delete</button></td>
             </tr>`;
         });
-        document.getElementById('walled-table-body').innerHTML = html || '<tr><td colspan="3" class="text-center">No walled garden sites whitelisted.</td></tr>';
+        document.getElementById('walled-table-body').innerHTML = html || '<tr><td colspan="3" class="text-center p-3 text-muted">No walled garden sites whitelisted.</td></tr>';
     });
 }
 
