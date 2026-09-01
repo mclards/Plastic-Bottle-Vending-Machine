@@ -3301,26 +3301,40 @@ ADMIN_HTML = """
       .table-hover tbody tr:hover {
         background-color: rgba(255, 255, 255, 0.05) !important;
       }
+      .table {
+        width: 100% !important;
+        margin-bottom: 0 !important;
+      }
       .table th {
-        background: rgba(15, 23, 42, 0.9) !important;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+        background: rgba(15, 23, 42, 0.95) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
         border-top: none !important;
-        font-size: 0.8rem;
-        text-transform: uppercase;
-        letter-spacing: 0.6px;
-        color: #94a3b8;
-        font-weight: 700;
+        font-size: 0.78rem !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.6px !important;
+        color: #94a3b8 !important;
+        font-weight: 700 !important;
+        padding: 12px 14px !important;
+        vertical-align: middle !important;
       }
       .table td {
         border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
         vertical-align: middle !important;
-        font-size: 0.88rem;
+        font-size: 0.88rem !important;
+        padding: 12px 14px !important;
+      }
+      .table th.text-center, .table td.text-center {
+        text-align: center !important;
+      }
+      .table th.text-right, .table td.text-right {
+        text-align: right !important;
       }
       .btn-xs {
         padding: 4px 10px;
         font-size: 0.78rem;
         border-radius: 6px;
         font-weight: 600;
+        line-height: 1.4;
       }
       
       /* Mobile Adaptive UI Optimization */
@@ -3623,10 +3637,10 @@ ADMIN_HTML = """
             <table class="table table-striped table-hover mb-0">
               <thead>
                 <tr>
-                  <th style="padding: 10px 14px; width: 25%;">Username</th>
+                  <th style="padding: 10px 14px; width: 30%;">Username</th>
                   <th style="padding: 10px 14px; width: 25%;">Wallet Balance</th>
                   <th style="padding: 10px 14px; width: 25%;">Registered At</th>
-                  <th style="padding: 10px 14px; width: 25%; text-align: right; min-width: 170px; white-space: nowrap;">Actions</th>
+                  <th style="padding: 10px 14px; width: 20%; text-align: right; min-width: 170px; white-space: nowrap;">Actions</th>
                 </tr>
               </thead>
               <tbody id="members-table-body"></tbody>
@@ -3759,11 +3773,11 @@ ADMIN_HTML = """
             <table class="table table-striped table-hover mb-0">
               <thead>
                 <tr>
-                  <th style="padding: 10px 14px;">Bottles Required</th>
-                  <th style="padding: 10px 14px;">Time Credited</th>
-                  <th style="padding: 10px 14px;">Rate Efficiency</th>
-                  <th style="padding: 10px 14px;">Package Label</th>
-                  <th style="padding: 10px 14px; width: 170px; min-width: 170px; text-align: right; white-space: nowrap;">Actions</th>
+                  <th style="padding: 10px 14px; width: 20%;">Bottles Required</th>
+                  <th style="padding: 10px 14px; width: 22%;">Time Credited</th>
+                  <th style="padding: 10px 14px; width: 22%;">Rate Efficiency</th>
+                  <th style="padding: 10px 14px; width: 20%;">Package Label</th>
+                  <th style="padding: 10px 14px; width: 16%; min-width: 170px; text-align: right; white-space: nowrap;">Actions</th>
                 </tr>
               </thead>
               <tbody id="rates-table-body"></tbody>
@@ -4688,7 +4702,7 @@ function loadClients() {
                 <td style="padding: 10px 14px;"><strong>${c.ip}</strong></td>
                 <td style="padding: 10px 14px;"><code>${c.mac}</code></td>
                 <td style="padding: 10px 14px;"><strong>${mins}m</strong> <small class="text-muted">(${c.remaining_seconds}s)</small></td>
-                <td style="padding: 10px 14px;"><span class="badge ${c.is_paused ? 'badge-warning' : 'badge-success'}">${c.is_paused ? 'PAUSED' : 'ACTIVE'}</span></td>
+                <td style="padding: 10px 14px; text-align: center;"><span class="badge ${c.is_paused ? 'badge-warning' : 'badge-success'}">${c.is_paused ? 'PAUSED' : 'ACTIVE'}</span></td>
                 <td style="padding: 10px 14px;"><span class="text-info font-weight-bold">${c.dl_kbps || 3072} / ${c.ul_kbps || 1536}</span> <small class="text-muted">Kbps</small></td>
                 <td style="padding: 10px 14px; text-align: right; white-space: nowrap;">
                     <div class="d-inline-flex align-items-center justify-content-end" style="gap: 5px; white-space: nowrap; flex-wrap: nowrap;">
@@ -4700,7 +4714,7 @@ function loadClients() {
                 </td>
             </tr>`;
         });
-        document.getElementById('clients-table-body').innerHTML = html || '<tr><td colspan="6" class="text-center">No active clients connected.</td></tr>';
+        document.getElementById('clients-table-body').innerHTML = html || '<tr><td colspan="6" class="text-center p-3 text-muted">No active clients connected.</td></tr>';
     });
 }
 
