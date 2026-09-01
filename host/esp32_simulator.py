@@ -426,7 +426,6 @@ class ESP32Simulator:
                 self.prox_metal_detected = False
                 self.prox_capacitive_plastic = True
                 self.nir_spectrometer_val = 1450
-                # bottom_ir_triggered is never set, triggering timeout
 
         threading.Thread(target=_do_drop, daemon=True).start()
 
@@ -626,60 +625,69 @@ class ESP32Simulator:
         }
 
         /* ========================================================================= */
-        /* CUTAWAY MECHANICAL PIPE & CHUTE FLOW SCHEMATIC STYLES                     */
+        /* POLISHED CUTAWAY MECHANICAL PIPE & CHUTE FLOW SCHEMATIC STYLES            */
         /* ========================================================================= */
         .pipe-schematic-box {
-            background: radial-gradient(circle at 50% 30%, #0e1726 0%, #030712 100%);
-            border: 2px solid #1f2937;
+            background: radial-gradient(circle at 50% 25%, #0d1527 0%, #030611 100%);
+            border: 2px solid #1e293b;
             border-radius: 12px;
             position: relative;
-            height: 480px;
+            height: 520px;
             overflow: hidden;
-            box-shadow: inset 0 0 30px rgba(0,0,0,0.9);
+            box-shadow: inset 0 0 35px rgba(0,0,0,0.95), 0 8px 24px rgba(0,0,0,0.6);
         }
 
-        /* SVG Pipe Diagram Layer */
         #pipe-svg-diagram {
             width: 100%;
             height: 100%;
             display: block;
         }
 
-        /* Pipe Status Bar Overlay */
         .pipe-status-overlay {
             position: absolute;
-            top: 10px;
-            left: 14px;
-            right: 14px;
+            top: 12px;
+            left: 16px;
+            right: 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             pointer-events: none;
+            z-index: 10;
         }
         .flow-stage-badge {
-            background: rgba(15, 23, 42, 0.85);
-            border: 1px solid #3b82f6;
-            padding: 4px 12px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1.5px solid #38bdf8;
+            padding: 5px 14px;
             border-radius: 20px;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 700;
-            color: #60a5fa;
+            color: #38bdf8;
             letter-spacing: 0.5px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.6), inset 0 0 8px rgba(56,189,248,0.2);
+            backdrop-filter: blur(4px);
+        }
+
+        /* Technical Callout HUD Badges in SVG */
+        .cad-label {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 9.5px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
         }
 
         /* Actuator and status indicators */
         .actuator-indicator {
-            padding: 8px 12px; border-radius: 8px; font-weight: 700; font-size: 12px;
-            display: inline-block; margin: 4px; width: 100%; text-align: center;
+            padding: 6px 10px; border-radius: 6px; font-weight: 700; font-size: 11.5px;
+            display: inline-block; margin: 2px; width: 100%; text-align: center;
+            transition: all 0.3s ease;
         }
-        .indicator-on { background: #15803d; color: #bbf7d0; border: 1px solid #22c55e; }
+        .indicator-on { background: #15803d; color: #bbf7d0; border: 1px solid #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.4); }
         .indicator-off { background: #1e293b; color: #64748b; border: 1px solid #334155; }
-        .indicator-red { background: #991b1b; color: #fecaca; border: 1px solid #ef4444; }
+        .indicator-red { background: #991b1b; color: #fecaca; border: 1px solid #ef4444; box-shadow: 0 0 8px rgba(239,68,68,0.4); }
 
         .serial-console {
             background: #020617; border: 1px solid #1e293b; border-radius: 8px;
-            font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; height: 200px;
+            font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; height: 175px;
             overflow-y: auto; padding: 8px; color: #94a3b8;
         }
 
@@ -730,16 +738,13 @@ class ESP32Simulator:
                     </div>
                 </div>
                 <div class="card-body p-3">
-                    <!-- PHYSICAL 2004A MODULE WRAPPER -->
                     <div class="lcd-module-wrapper">
                         <div class="lcd-pcb">
-                            <!-- 4 Corner Mounting Holes -->
                             <div class="pcb-hole hole-tl"></div>
                             <div class="pcb-hole hole-tr"></div>
                             <div class="pcb-hole hole-bl"></div>
                             <div class="pcb-hole hole-br"></div>
 
-                            <!-- Top Gold Pin Header Strip -->
                             <div class="pin-strip-top">
                                 <span class="pin-num-label">1</span>
                                 <div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div>
@@ -749,7 +754,6 @@ class ESP32Simulator:
                                 <span class="pin-num-label">16</span>
                             </div>
 
-                            <!-- Black Stamped Steel Metal Frame -->
                             <div class="lcd-metal-frame">
                                 <div class="bezel-tab-top"></div>
                                 <div class="lcd-glass-viewport" id="lcd-viewport">
@@ -758,7 +762,6 @@ class ESP32Simulator:
                                 <div class="bezel-tab-bottom"></div>
                             </div>
 
-                            <!-- Bottom Gold Pin Header Strip -->
                             <div class="pin-strip-bottom">
                                 <span class="pin-num-label">1</span>
                                 <div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div><div class="gold-pad"></div>
@@ -768,7 +771,6 @@ class ESP32Simulator:
                                 <span class="pin-num-label">16</span>
                             </div>
 
-                            <!-- I2C Bus Silkscreen Details -->
                             <div class="lcd-backpack-bar">
                                 <span><i class="fas fa-microchip mr-1"></i> I2C ADDR: 0x27</span>
                                 <div class="i2c-pins">
@@ -840,13 +842,13 @@ class ESP32Simulator:
         <!-- RIGHT COLUMN: CUTAWAY PIPE & CHUTE FLOW SCHEMATIC & TELEMETRY -->
         <div class="col-12 col-xl-7">
             
-            <!-- 3. INTERACTIVE CUTAWAY 2D MECHANICAL PIPE FLOW SCHEMATIC -->
+            <!-- 3. POLISHED CUTAWAY MECHANICAL PIPE FLOW SCHEMATIC -->
             <div class="card">
                 <div class="card-header bg-dark d-flex justify-content-between align-items-center">
                     <h3 class="card-title font-weight-bold text-light" style="font-size:14px;">
                         <i class="fas fa-project-diagram text-warning mr-1"></i> Cutaway Mechanical Pipe & Bifurcated Airlock Chute Flow
                     </h3>
-                    <span class="badge badge-info" style="font-size:11px;">110mm Clear Inspection Tube</span>
+                    <span class="badge badge-info" style="font-size:11px;">110mm Clear Acrylic & Polycarbonate Tube</span>
                 </div>
                 <div class="card-body p-2">
                     <div class="pipe-schematic-box">
@@ -856,126 +858,204 @@ class ESP32Simulator:
                             <span id="pipe-item-badge" class="badge badge-secondary p-2">CHUTE CLEAR</span>
                         </div>
 
-                        <!-- Full Cutaway SVG Diagram -->
-                        <svg id="pipe-svg-diagram" viewBox="0 0 700 480" preserveAspectRatio="xMidYMid meet">
+                        <!-- Full Cutaway SVG Diagram (Polished 800x520 ViewBox) -->
+                        <svg id="pipe-svg-diagram" viewBox="0 0 800 520" preserveAspectRatio="xMidYMid meet">
                             <defs>
-                                <linearGradient id="pipeWallGrad" x1="0" y1="0" x2="1" y2="0">
-                                    <stop offset="0%" stop-color="rgba(148, 163, 184, 0.25)" />
-                                    <stop offset="15%" stop-color="rgba(255, 255, 255, 0.08)" />
-                                    <stop offset="85%" stop-color="rgba(255, 255, 255, 0.08)" />
-                                    <stop offset="100%" stop-color="rgba(148, 163, 184, 0.25)" />
+                                <!-- Acrylic Tube Glass Surface Shader -->
+                                <linearGradient id="acrylicGrad" x1="0" y1="0" x2="1" y2="0">
+                                    <stop offset="0%" stop-color="rgba(56, 189, 248, 0.35)" />
+                                    <stop offset="12%" stop-color="rgba(255, 255, 255, 0.12)" />
+                                    <stop offset="45%" stop-color="rgba(15, 23, 42, 0.75)" />
+                                    <stop offset="88%" stop-color="rgba(255, 255, 255, 0.08)" />
+                                    <stop offset="100%" stop-color="rgba(56, 189, 248, 0.35)" />
                                 </linearGradient>
+
+                                <!-- Metallic Clamp Flanges -->
+                                <linearGradient id="metalFlangeGrad" x1="0" y1="0" x2="1" y2="0">
+                                    <stop offset="0%" stop-color="#475569" />
+                                    <stop offset="30%" stop-color="#94a3b8" />
+                                    <stop offset="70%" stop-color="#cbd5e1" />
+                                    <stop offset="100%" stop-color="#334155" />
+                                </linearGradient>
+
+                                <!-- NIR Laser Sweep Spectrum Shader -->
                                 <linearGradient id="laserBeamGrad" x1="0" y1="0" x2="1" y2="0">
                                     <stop offset="0%" stop-color="rgba(236, 72, 153, 0.9)" />
-                                    <stop offset="50%" stop-color="rgba(168, 85, 247, 0.7)" />
-                                    <stop offset="100%" stop-color="rgba(59, 130, 246, 0.9)" />
+                                    <stop offset="25%" stop-color="rgba(168, 85, 247, 0.85)" />
+                                    <stop offset="75%" stop-color="rgba(59, 130, 246, 0.85)" />
+                                    <stop offset="100%" stop-color="rgba(16, 185, 129, 0.9)" />
                                 </linearGradient>
-                                <filter id="glowEffect" x="-20%" y="-20%" width="140%" height="140%">
-                                    <feGaussianBlur stdDeviation="3" result="blur" />
+
+                                <!-- Drop Shadow & Glow Filters -->
+                                <filter id="glowFilter" x="-20%" y="-20%" width="140%" height="140%">
+                                    <feGaussianBlur stdDeviation="3.5" result="blur" />
                                     <feComposite in="SourceGraphic" in2="blur" operator="over" />
                                 </filter>
                             </defs>
 
-                            <!-- ================= BACKGROUND STRUCTURE ================= -->
-                            <!-- Machine Cabinet Frame Outline -->
-                            <rect x="20" y="30" width="660" height="430" rx="8" fill="#080d1a" stroke="#1e293b" stroke-width="2" stroke-dasharray="4 4" />
-                            <text x="35" y="55" fill="#475569" font-family="monospace" font-size="11" font-weight="700">ECO-Fi INTERNAL AIRLOCK CABINET (GRAVITY FEED)</text>
+                            <!-- ================= INDUSTRIAL CABINET FRAMEWORK ================= -->
+                            <!-- Machine Cabinet Frame Outline with Corner Rivets -->
+                            <rect x="15" y="15" width="770" height="490" rx="10" fill="#070c18" stroke="#1e293b" stroke-width="2" />
+                            <!-- Corner Hardware Screws -->
+                            <circle cx="28" cy="28" r="4" fill="#64748b" stroke="#334155" />
+                            <circle cx="772" cy="28" r="4" fill="#64748b" stroke="#334155" />
+                            <circle cx="28" cy="492" r="4" fill="#64748b" stroke="#334155" />
+                            <circle cx="772" cy="492" r="4" fill="#64748b" stroke="#334155" />
 
-                            <!-- 1. Top Intake Funnel (Entry Throat) -->
-                            <path d="M 280 40 L 420 40 L 380 90 L 320 90 Z" fill="url(#pipeWallGrad)" stroke="#38bdf8" stroke-width="2" />
-                            <text x="350" y="60" fill="#93c5fd" font-family="sans-serif" font-size="10" font-weight="700" text-anchor="middle">INTAKE FUNNEL (Ø110mm)</text>
+                            <!-- Header Technical Silk Title -->
+                            <text x="32" y="44" fill="#475569" class="cad-label" font-weight="700">ECO-Fi AIRLOCK & BIFURCATED CHUTE SCHEMATIC</text>
+                            <text x="768" y="44" fill="#334155" class="cad-label" text-anchor="end">CAD REF: DWG-ECO-CHUTE-V4</text>
 
-                            <!-- Top IR Sensor (E18-D80NK) Probes -->
-                            <rect x="285" y="70" width="30" height="14" rx="2" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5" />
-                            <text x="300" y="66" fill="#f59e0b" font-family="monospace" font-size="8.5" font-weight="700" text-anchor="middle">TOP IR</text>
-                            <!-- Top IR Beam -->
-                            <line id="svg-top-ir-beam" x1="315" y1="77" x2="385" y2="77" stroke="#ef4444" stroke-width="2" stroke-dasharray="3 3" />
-                            <rect x="385" y="70" width="12" height="14" rx="2" fill="#334155" />
+                            <!-- ================= 1. INTAKE FUNNEL & THROAT ================= -->
+                            <!-- Funnel Shape -->
+                            <path d="M 330 65 L 470 65 L 440 115 L 360 115 Z" fill="url(#acrylicGrad)" stroke="#38bdf8" stroke-width="2" />
+                            <!-- Top Flange Collar -->
+                            <rect x="325" y="60" width="150" height="8" rx="2" fill="url(#metalFlangeGrad)" stroke="#1e293b" />
+                            <rect x="355" y="112" width="90" height="6" rx="1" fill="url(#metalFlangeGrad)" stroke="#1e293b" />
 
-                            <!-- 2. Main Sensing / Inspection Tube Chamber -->
-                            <rect x="320" y="90" width="60" height="150" fill="url(#pipeWallGrad)" stroke="#38bdf8" stroke-width="2" />
-                            
-                            <!-- Servo 0: Entrance Flap (PCA Ch 0) -->
-                            <g id="svg-servo-ent" transform="translate(320, 95)">
-                                <circle cx="0" cy="0" r="5" fill="#e2e8f0" stroke="#0f172a" stroke-width="1.5" />
-                                <rect id="svg-ent-flap" x="0" y="-3" width="58" height="6" rx="2" fill="#38bdf8" transform="rotate(0)" />
+                            <!-- Top IR Beam Emitter / Receiver (E18-D80NK) -->
+                            <!-- Left Emitter -->
+                            <rect x="315" y="90" width="42" height="16" rx="3" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5" />
+                            <circle cx="355" cy="98" r="3" fill="#f59e0b" filter="url(#glowFilter)" />
+                            <!-- Right Photodiode -->
+                            <rect x="442" y="90" width="16" height="16" rx="3" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5" />
+                            <!-- Infrared Optical Ray -->
+                            <line id="svg-top-ir-beam" x1="358" y1="98" x2="442" y2="98" stroke="#ef4444" stroke-width="2" stroke-dasharray="3 3" filter="url(#glowFilter)" />
+
+                            <!-- ================= 2. MAIN SENSING / INSPECTION AIRLOCK ================= -->
+                            <!-- Transparent Cylinder Body (80mm wide x 150mm tall) -->
+                            <rect x="360" y="115" width="80" height="155" fill="url(#acrylicGrad)" stroke="#38bdf8" stroke-width="2" />
+                            <!-- Mid Glass Specular Glare Line -->
+                            <line x1="375" y1="120" x2="375" y2="265" stroke="rgba(255,255,255,0.18)" stroke-width="2" />
+
+                            <!-- SERVO 0: Entrance Flap (PCA Ch 0) Pivot & Flap -->
+                            <g id="svg-servo-ent" transform="translate(360, 122)">
+                                <circle cx="0" cy="0" r="6" fill="#f8fafc" stroke="#0f172a" stroke-width="2" />
+                                <rect id="svg-ent-flap" x="0" y="-4" width="78" height="8" rx="2" fill="#38bdf8" stroke="#0284c7" stroke-width="1" transform="rotate(0)" />
                             </g>
-                            <text x="255" y="100" fill="#38bdf8" font-family="monospace" font-size="9" font-weight="700">SERVO 0 (ENTRANCE)</text>
 
-                            <!-- Sensor 1: Inductive Metal Proximity Sensor LJ18A3 (Left Wall) -->
-                            <g id="svg-metal-sensor" transform="translate(265, 130)">
-                                <rect x="0" y="0" width="55" height="20" rx="3" fill="#1e293b" stroke="#64748b" stroke-width="1.5" />
-                                <rect x="45" y="2" width="10" height="16" fill="#3b82f6" />
-                                <text x="25" y="14" fill="#cbd5e1" font-family="monospace" font-size="8" font-weight="700" text-anchor="middle">LJ18A3 (Fe)</text>
+                            <!-- Sensor 1: Inductive Metal Proximity Sensor (LJ18A3-8-Z/BX) -->
+                            <g transform="translate(280, 150)">
+                                <!-- M18 Threaded Sensor Body -->
+                                <rect x="0" y="0" width="76" height="22" rx="3" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5" />
+                                <rect x="64" y="2" width="12" height="18" rx="1" fill="#3b82f6" />
+                                <text x="32" y="15" fill="#93c5fd" class="cad-label" text-anchor="middle">LJ18A3 (Fe)</text>
                             </g>
-                            <circle id="svg-metal-field" cx="320" cy="140" r="14" fill="none" stroke="rgba(59,130,246,0.5)" stroke-width="1.5" stroke-dasharray="2 2" />
+                            <!-- Inductive Magnetic Field Wave -->
+                            <circle id="svg-metal-field" cx="360" cy="161" r="16" fill="none" stroke="rgba(59,130,246,0.6)" stroke-width="1.5" stroke-dasharray="3 2" />
 
-                            <!-- Sensor 2: Capacitive Proximity Sensor LJC18A3 (Right Wall) -->
-                            <g id="svg-cap-sensor" transform="translate(380, 130)">
-                                <rect x="0" y="0" width="55" height="20" rx="3" fill="#1e293b" stroke="#64748b" stroke-width="1.5" />
-                                <rect x="0" y="2" width="10" height="16" fill="#10b981" />
-                                <text x="28" y="14" fill="#cbd5e1" font-family="monospace" font-size="8" font-weight="700" text-anchor="middle">LJC18 (Cap)</text>
+                            <!-- Sensor 2: Capacitive Proximity Sensor (LJC18A3-H-Z/BX) -->
+                            <g transform="translate(444, 150)">
+                                <rect x="0" y="0" width="76" height="22" rx="3" fill="#1e293b" stroke="#10b981" stroke-width="1.5" />
+                                <rect x="0" y="2" width="12" height="18" rx="1" fill="#10b981" />
+                                <text x="44" y="15" fill="#a7f3d0" class="cad-label" text-anchor="middle">LJC18 (Cap)</text>
                             </g>
-                            <circle id="svg-cap-field" cx="380" cy="140" r="14" fill="none" stroke="rgba(16,185,129,0.5)" stroke-width="1.5" stroke-dasharray="2 2" />
+                            <!-- Capacitive Dielectric Field Wave -->
+                            <circle id="svg-cap-field" cx="440" cy="161" r="16" fill="none" stroke="rgba(16,185,129,0.6)" stroke-width="1.5" stroke-dasharray="3 2" />
 
                             <!-- Sensor 3: AS7263 NIR Spectrometer (SparkFun I2C @ 0x49) -->
-                            <g id="svg-nir-sensor" transform="translate(255, 175)">
-                                <rect x="0" y="0" width="65" height="24" rx="4" fill="#1e1b4b" stroke="#a855f7" stroke-width="1.5" />
-                                <text x="32" y="15" fill="#e9d5ff" font-family="monospace" font-size="8.5" font-weight="700" text-anchor="middle">AS7263 (NIR)</text>
+                            <g transform="translate(270, 195)">
+                                <rect x="0" y="0" width="86" height="26" rx="4" fill="#1e1b4b" stroke="#a855f7" stroke-width="1.5" />
+                                <circle cx="8" cy="8" r="2.5" fill="#fef08a" />
+                                <circle cx="8" cy="18" r="2.5" fill="#fef08a" />
+                                <text x="48" y="17" fill="#e9d5ff" class="cad-label" text-anchor="middle">AS7263 NIR (PET)</text>
                             </g>
-                            <!-- NIR Scanning Cone -->
-                            <polygon id="svg-nir-beam" points="320,187 380,172 380,202" fill="url(#laserBeamGrad)" opacity="0" filter="url(#glowEffect)" />
+                            <!-- NIR Multi-Spectral Scanning Sweep Beam -->
+                            <polygon id="svg-nir-beam" points="360,208 440,188 440,228" fill="url(#laserBeamGrad)" opacity="0" filter="url(#glowFilter)" />
 
-                            <!-- 3. Bifurcated Y-Diverter Chute -->
-                            <!-- Left Branch (Reject Exit Chute to Return Tray) -->
-                            <path d="M 320 240 L 220 340 L 160 340 L 160 380 L 240 380 L 350 270 Z" fill="url(#pipeWallGrad)" stroke="#ef4444" stroke-width="1.8" />
+                            <!-- Middle Flange Junction Ring -->
+                            <rect x="355" y="268" width="90" height="7" rx="1.5" fill="url(#metalFlangeGrad)" stroke="#1e293b" />
+
+                            <!-- ================= 3. BIFURCATED Y-DIVERTER CHUTE ================= -->
                             
-                            <!-- Servo 2: Reject Diverter Flap (PCA Ch 2) -->
-                            <g id="svg-servo-rej" transform="translate(325, 245)">
-                                <circle cx="0" cy="0" r="5" fill="#fecaca" stroke="#991b1b" stroke-width="1.5" />
-                                <rect id="svg-rej-flap" x="0" y="-3" width="36" height="6" rx="2" fill="#ef4444" transform="rotate(0)" />
+                            <!-- LEFT BRANCH: Reject Exit Chute -> Customer Return Tray -->
+                            <path d="M 360 272 L 230 395 L 170 395 L 170 435 L 255 435 L 400 300 Z" fill="url(#acrylicGrad)" stroke="#ef4444" stroke-width="2" />
+                            
+                            <!-- SERVO 2: Reject Flap (PCA Ch 2) Pivot & Flap -->
+                            <g id="svg-servo-rej" transform="translate(365, 276)">
+                                <circle cx="0" cy="0" r="5.5" fill="#fecaca" stroke="#991b1b" stroke-width="2" />
+                                <rect id="svg-rej-flap" x="0" y="-4" width="44" height="8" rx="2" fill="#ef4444" stroke="#b91c1c" stroke-width="1" transform="rotate(0)" />
                             </g>
-                            <text x="210" y="275" fill="#f87171" font-family="monospace" font-size="8.5" font-weight="700">SERVO 2 (REJECT)</text>
 
                             <!-- Customer Rejection Return Tray -->
-                            <rect x="50" y="360" width="130" height="85" rx="6" fill="#1e293b" stroke="#ef4444" stroke-width="2" />
-                            <text x="115" y="385" fill="#fca5a5" font-family="sans-serif" font-size="11" font-weight="700" text-anchor="middle"><tspan fill="#ef4444">⮌</tspan> RETURN TRAY</text>
-                            <text x="115" y="405" fill="#94a3b8" font-family="monospace" font-size="9" text-anchor="middle">Customer Eject Slot</text>
-
-                            <!-- Right Branch (Success Collection Chute to Storage Bin) -->
-                            <path d="M 380 240 L 480 340 L 480 380 L 420 380 L 350 310 L 350 240 Z" fill="url(#pipeWallGrad)" stroke="#22c55e" stroke-width="1.8" />
-
-                            <!-- Servo 1: Success Gate Flap (PCA Ch 1) -->
-                            <g id="svg-servo-suc" transform="translate(375, 245)">
-                                <circle cx="0" cy="0" r="5" fill="#bbf7d0" stroke="#166534" stroke-width="1.5" />
-                                <rect id="svg-suc-flap" x="-36" y="-3" width="36" height="6" rx="2" fill="#22c55e" transform="rotate(0)" />
+                            <g transform="translate(45, 395)">
+                                <rect x="0" y="0" width="140" height="90" rx="8" fill="#111827" stroke="#ef4444" stroke-width="2" />
+                                <rect x="8" y="8" width="124" height="74" rx="4" fill="#1f2937" stroke="#374151" />
+                                <!-- Return Ramp Slant -->
+                                <path d="M 12 70 L 120 40 L 120 75 L 12 75 Z" fill="#374151" opacity="0.6" />
+                                <text x="70" y="32" fill="#fca5a5" font-family="sans-serif" font-size="11" font-weight="700" text-anchor="middle"><tspan fill="#ef4444">⮌</tspan> RETURN TRAY</text>
+                                <text x="70" y="50" fill="#94a3b8" class="cad-label" text-anchor="middle">Customer Eject Slot</text>
                             </g>
-                            <text x="410" y="275" fill="#4ade80" font-family="monospace" font-size="8.5" font-weight="700">SERVO 1 (SUCCESS)</text>
 
-                            <!-- Bottom IR Sensor (E18-D80NK) Probes -->
-                            <rect x="420" y="335" width="12" height="16" fill="#334155" />
-                            <rect x="480" y="335" width="26" height="16" rx="2" fill="#1e293b" stroke="#22c55e" stroke-width="1.5" />
-                            <line id="svg-bot-ir-beam" x1="432" y1="343" x2="480" y2="343" stroke="#22c55e" stroke-width="2" stroke-dasharray="3 3" />
-                            <text x="515" y="332" fill="#86efac" font-family="monospace" font-size="8" font-weight="700">BOTTOM IR</text>
+                            <!-- RIGHT BRANCH: Success Collection Chute -> Secure Storage Bin -->
+                            <path d="M 440 272 L 570 395 L 570 435 L 500 435 L 400 340 L 400 272 Z" fill="url(#acrylicGrad)" stroke="#22c55e" stroke-width="2" />
+
+                            <!-- SERVO 1: Success Flap (PCA Ch 1) Pivot & Flap -->
+                            <g id="svg-servo-suc" transform="translate(435, 276)">
+                                <circle cx="0" cy="0" r="5.5" fill="#bbf7d0" stroke="#166534" stroke-width="2" />
+                                <rect id="svg-suc-flap" x="-44" y="-4" width="44" height="8" rx="2" fill="#22c55e" stroke="#15803d" stroke-width="1" transform="rotate(0)" />
+                            </g>
+
+                            <!-- Bottom IR Sensor (E18-D80NK) Verified Drop Detector -->
+                            <g transform="translate(490, 390)">
+                                <rect x="0" y="0" width="16" height="18" rx="2" fill="#1e293b" stroke="#22c55e" stroke-width="1.5" />
+                                <rect x="74" y="0" width="34" height="18" rx="3" fill="#1e293b" stroke="#22c55e" stroke-width="1.5" />
+                                <line id="svg-bot-ir-beam" x1="16" y1="9" x2="74" y2="9" stroke="#22c55e" stroke-width="2" stroke-dasharray="3 3" filter="url(#glowFilter)" />
+                            </g>
 
                             <!-- Secure Storage Bin Section -->
-                            <rect x="420" y="375" width="240" height="75" rx="6" fill="#0f2e1b" stroke="#22c55e" stroke-width="2" />
-                            <text x="540" y="398" fill="#86efac" font-family="sans-serif" font-size="11" font-weight="700" text-anchor="middle"><tspan fill="#22c55e">✔</tspan> STORAGE BIN</text>
-                            
-                            <!-- Ultrasonic Sensor JSN-SR04T on Bin Lid -->
-                            <rect x="610" y="358" width="40" height="16" rx="2" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5" />
-                            <text x="630" y="352" fill="#38bdf8" font-family="monospace" font-size="8" font-weight="700" text-anchor="middle">JSN-SR04T</text>
-                            <path d="M 620 375 Q 630 395 640 375" fill="none" stroke="rgba(56,189,248,0.7)" stroke-width="1.5" />
-                            <path d="M 615 385 Q 630 410 645 385" fill="none" stroke="rgba(56,189,248,0.4)" stroke-width="1.5" />
+                            <g transform="translate(495, 410)">
+                                <rect x="0" y="0" width="275" height="75" rx="8" fill="#062212" stroke="#22c55e" stroke-width="2" />
+                                <!-- Storage Bin Handles & Top Rim -->
+                                <rect x="10" y="6" width="255" height="63" rx="4" fill="#0a331c" stroke="#166534" />
+                                <text x="110" y="35" fill="#86efac" font-family="sans-serif" font-size="12" font-weight="700"><tspan fill="#22c55e">✔</tspan> RECYCLE STORAGE BIN</text>
+                                <text x="110" y="52" fill="#4ade80" class="cad-label">Internal Capacity OK</text>
+                                
+                                <!-- JSN-SR04T Waterproof Ultrasonic Sensor Module -->
+                                <g transform="translate(210, -18)">
+                                    <rect x="0" y="0" width="46" height="20" rx="3" fill="#1e293b" stroke="#38bdf8" stroke-width="1.5" />
+                                    <circle cx="14" cy="10" r="5" fill="#0284c7" />
+                                    <circle cx="32" cy="10" r="5" fill="#0284c7" />
+                                    <!-- Sonar Echo Wave Arcs -->
+                                    <path d="M 12 24 Q 23 38 34 24" fill="none" stroke="rgba(56,189,248,0.7)" stroke-width="1.5" />
+                                    <path d="M 6 32 Q 23 48 40 32" fill="none" stroke="rgba(56,189,248,0.4)" stroke-width="1.5" />
+                                </g>
+                            </g>
+
+                            <!-- ================= TECHNICAL CAD LEADER CALLOUT BADGES ================= -->
+                            <!-- Callout 1: Top IR -->
+                            <line x1="285" y1="98" x2="210" y2="98" stroke="#64748b" stroke-width="1" stroke-dasharray="2 2" />
+                            <circle cx="210" cy="98" r="2" fill="#f59e0b" />
+                            <text x="200" y="101" fill="#fbbf24" class="cad-label" text-anchor="end">TOP IR (ENTRY BEAM)</text>
+
+                            <!-- Callout 2: Servo 0 -->
+                            <line x1="360" y1="122" x2="230" y2="122" stroke="#64748b" stroke-width="1" stroke-dasharray="2 2" />
+                            <circle cx="230" cy="122" r="2" fill="#38bdf8" />
+                            <text x="220" y="125" fill="#38bdf8" class="cad-label" text-anchor="end">SERVO 0 (AIRLOCK FLAP)</text>
+
+                            <!-- Callout 3: Bottom IR -->
+                            <line x1="600" y1="398" x2="660" y2="398" stroke="#64748b" stroke-width="1" stroke-dasharray="2 2" />
+                            <circle cx="660" cy="398" r="2" fill="#22c55e" />
+                            <text x="670" y="401" fill="#4ade80" class="cad-label">BOTTOM IR (DROP OK)</text>
+
+                            <!-- Callout 4: Servo 1 -->
+                            <line x1="435" y1="276" x2="550" y2="276" stroke="#64748b" stroke-width="1" stroke-dasharray="2 2" />
+                            <circle cx="550" cy="276" r="2" fill="#22c55e" />
+                            <text x="560" y="279" fill="#4ade80" class="cad-label">SERVO 1 (SUCCESS GATE)</text>
+
+                            <!-- Callout 5: Servo 2 -->
+                            <line x1="365" y1="276" x2="250" y2="276" stroke="#64748b" stroke-width="1" stroke-dasharray="2 2" />
+                            <circle cx="250" cy="276" r="2" fill="#ef4444" />
+                            <text x="240" y="279" fill="#f87171" class="cad-label" text-anchor="end">SERVO 2 (REJECT GATE)</text>
 
                             <!-- ================= ANIMATED BOTTLE / ITEM ELEMENT ================= -->
-                            <g id="svg-moving-bottle" transform="translate(332, 45)" opacity="0">
-                                <!-- Default Bottle Shape (PET Bottle) -->
-                                <rect x="4" y="0" width="12" height="6" rx="1" fill="#38bdf8" stroke="#0284c7" />
-                                <rect x="0" y="6" width="20" height="34" rx="4" fill="#7dd3fc" stroke="#0284c7" stroke-width="1.5" />
-                                <line x1="2" y1="18" x2="18" y2="18" stroke="#0369a1" stroke-width="1" />
-                                <line x1="2" y1="24" x2="18" y2="24" stroke="#0369a1" stroke-width="1" />
-                                <text id="svg-bottle-label" x="10" y="23" fill="#0369a1" font-family="sans-serif" font-size="6" font-weight="700" text-anchor="middle">PET</text>
+                            <g id="svg-moving-bottle" transform="translate(388, 70)" opacity="0" style="transition: transform 0.4s ease, opacity 0.3s ease;">
+                                <!-- Dynamic Item Shell (PET Bottle by Default) -->
+                                <rect id="svg-item-neck" x="5" y="0" width="14" height="7" rx="1.5" fill="#38bdf8" stroke="#0284c7" />
+                                <rect id="svg-item-body" x="0" y="7" width="24" height="42" rx="5" fill="#7dd3fc" stroke="#0284c7" stroke-width="1.8" />
+                                <line x1="3" y1="20" x2="21" y2="20" stroke="#0369a1" stroke-width="1.2" />
+                                <line x1="3" y1="28" x2="21" y2="28" stroke="#0369a1" stroke-width="1.2" />
+                                <text id="svg-bottle-label" x="12" y="27" fill="#0369a1" font-family="sans-serif" font-size="7.5" font-weight="700" text-anchor="middle">PET</text>
                             </g>
                         </svg>
                     </div>
@@ -983,16 +1063,16 @@ class ESP32Simulator:
                     <!-- Sensor & Servo State Badges Bar -->
                     <div class="row text-center mt-2 no-gutters">
                         <div class="col-3 px-1">
-                            <span id="ind-gate" class="actuator-indicator indicator-off" style="font-size:11px; padding:4px 6px;">ENTRANCE: CLOSED</span>
+                            <span id="ind-gate" class="actuator-indicator indicator-off">ENTRANCE: CLOSED</span>
                         </div>
                         <div class="col-3 px-1">
-                            <span id="ind-success" class="actuator-indicator indicator-off" style="font-size:11px; padding:4px 6px;">SUCCESS: CLOSED</span>
+                            <span id="ind-success" class="actuator-indicator indicator-off">SUCCESS: CLOSED</span>
                         </div>
                         <div class="col-3 px-1">
-                            <span id="ind-reject" class="actuator-indicator indicator-off" style="font-size:11px; padding:4px 6px;">REJECT: CLOSED</span>
+                            <span id="ind-reject" class="actuator-indicator indicator-off">REJECT: CLOSED</span>
                         </div>
                         <div class="col-3 px-1">
-                            <span id="ind-buzzer" class="actuator-indicator indicator-off" style="font-size:11px; padding:4px 6px;">BUZZER: SILENT</span>
+                            <span id="ind-buzzer" class="actuator-indicator indicator-off">BUZZER: SILENT</span>
                         </div>
                     </div>
                 </div>
@@ -1146,7 +1226,6 @@ function updatePipeVisualizer(d) {
     // 1. Servo Flap Angles
     const entFlap = document.getElementById('svg-ent-flap');
     if (entFlap) {
-        // 0 deg closed (horizontal), 90 deg open (swung down 90)
         entFlap.setAttribute('transform', 'rotate(' + (d.entrance_servo || 0) + ')');
     }
     const sucFlap = document.getElementById('svg-suc-flap');
@@ -1179,13 +1258,13 @@ function updatePipeVisualizer(d) {
     const stageBadge = document.getElementById('pipe-stage-badge');
     if (stageBadge) {
         let label = 'STAGE: STANDBY / READY';
-        let badgeCol = '#60a5fa';
+        let badgeCol = '#38bdf8';
         if (d.pipe_item_stage === 'intake') { label = 'STAGE 1: GATE OPEN (INSERTING)'; badgeCol = '#38bdf8'; }
         else if (d.pipe_item_stage === 'airlock') { label = 'STAGE 2: AIRLOCK CLOSED (SETTLING)'; badgeCol = '#818cf8'; }
-        else if (d.pipe_item_stage === 'scanning') { label = 'STAGE 3: MULTI-SENSOR & NIR SCAN'; badgeCol = '#a855f7'; }
-        else if (d.pipe_item_stage === 'success_drop') { label = 'STAGE 4: VERIFIED OK -> DROPPING TO BIN'; badgeCol = '#22c55e'; }
-        else if (d.pipe_item_stage === 'reject_drop') { label = 'STAGE 4: REJECTED -> RETURNING ITEM'; badgeCol = '#ef4444'; }
-        else if (d.pipe_item_stage === 'stuck_chute') { label = 'ALERT: ITEM JAMMED IN CHUTE'; badgeCol = '#f59e0b'; }
+        else if (d.pipe_item_stage === 'scanning') { label = 'STAGE 3: MULTI-SENSOR & NIR SCAN'; badgeCol = '#c084fc'; }
+        else if (d.pipe_item_stage === 'success_drop') { label = 'STAGE 4: VERIFIED OK -> DROPPING TO BIN'; badgeCol = '#4ade80'; }
+        else if (d.pipe_item_stage === 'reject_drop') { label = 'STAGE 4: REJECTED -> RETURNING ITEM'; badgeCol = '#f87171'; }
+        else if (d.pipe_item_stage === 'stuck_chute') { label = 'ALERT: ITEM JAMMED IN CHUTE'; badgeCol = '#fbbf24'; }
         stageBadge.innerText = label;
         stageBadge.style.color = badgeCol;
         stageBadge.style.borderColor = badgeCol;
@@ -1204,30 +1283,47 @@ function updatePipeVisualizer(d) {
         itemBadge.className = cls;
     }
 
-    // 4. Moving Bottle Animation Position
+    // 4. Moving Bottle Animation Position & Skin
     const bottleEl = document.getElementById('svg-moving-bottle');
+    const itemNeck = document.getElementById('svg-item-neck');
+    const itemBody = document.getElementById('svg-item-body');
     const bottleLabel = document.getElementById('svg-bottle-label');
+
     if (bottleEl) {
         if (d.pipe_item_stage === 'idle' || d.pipe_item_type === 'none') {
             bottleEl.setAttribute('opacity', '0');
         } else {
             bottleEl.setAttribute('opacity', '1');
-            let posX = 340;
-            let posY = 50;
-            if (d.pipe_item_stage === 'intake') { posX = 340; posY = 65; }
-            else if (d.pipe_item_stage === 'airlock') { posX = 340; posY = 115; }
-            else if (d.pipe_item_stage === 'scanning') { posX = 340; posY = 160; }
-            else if (d.pipe_item_stage === 'success_drop') { posX = 440; posY = 350; }
-            else if (d.pipe_item_stage === 'reject_drop') { posX = 170; posY = 355; }
-            else if (d.pipe_item_stage === 'stuck_chute') { posX = 360; posY = 260; }
+            let posX = 388;
+            let posY = 70;
+            if (d.pipe_item_stage === 'intake') { posX = 388; posY = 75; }
+            else if (d.pipe_item_stage === 'airlock') { posX = 388; posY = 135; }
+            else if (d.pipe_item_stage === 'scanning') { posX = 388; posY = 185; }
+            else if (d.pipe_item_stage === 'success_drop') { posX = 510; posY = 380; }
+            else if (d.pipe_item_stage === 'reject_drop') { posX = 190; posY = 380; }
+            else if (d.pipe_item_stage === 'stuck_chute') { posX = 400; posY = 285; }
 
             bottleEl.setAttribute('transform', 'translate(' + posX + ', ' + posY + ')');
-            if (bottleLabel) {
-                let lbl = 'PET';
-                if (d.pipe_item_type === 'metal') lbl = 'CAN';
-                else if (d.pipe_item_type === 'paper') lbl = 'PPR';
-                else if (d.pipe_item_type === 'pvc') lbl = 'PVC';
-                bottleLabel.innerText = lbl;
+            
+            // Custom item skin colors
+            if (itemNeck && itemBody && bottleLabel) {
+                if (d.pipe_item_type === 'metal') {
+                    itemNeck.setAttribute('fill', '#94a3b8'); itemNeck.setAttribute('stroke', '#475569');
+                    itemBody.setAttribute('fill', '#f59e0b'); itemBody.setAttribute('stroke', '#b45309');
+                    bottleLabel.innerText = 'CAN'; bottleLabel.setAttribute('fill', '#78350f');
+                } else if (d.pipe_item_type === 'paper') {
+                    itemNeck.setAttribute('fill', '#d97706'); itemNeck.setAttribute('stroke', '#92400e');
+                    itemBody.setAttribute('fill', '#b45309'); itemBody.setAttribute('stroke', '#78350f');
+                    bottleLabel.innerText = 'PPR'; bottleLabel.setAttribute('fill', '#fef3c7');
+                } else if (d.pipe_item_type === 'pvc') {
+                    itemNeck.setAttribute('fill', '#ef4444'); itemNeck.setAttribute('stroke', '#991b1b');
+                    itemBody.setAttribute('fill', '#dc2626'); itemBody.setAttribute('stroke', '#7f1d1d');
+                    bottleLabel.innerText = 'PVC'; bottleLabel.setAttribute('fill', '#fee2e2');
+                } else {
+                    itemNeck.setAttribute('fill', '#38bdf8'); itemNeck.setAttribute('stroke', '#0284c7');
+                    itemBody.setAttribute('fill', '#7dd3fc'); itemBody.setAttribute('stroke', '#0284c7');
+                    bottleLabel.innerText = 'PET'; bottleLabel.setAttribute('fill', '#0369a1');
+                }
             }
         }
     }
