@@ -104,9 +104,9 @@ def init_db():
 
         # Default promo rates
         c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (1, 10, '1 Bottle = 10 mins')")
-        c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (3, 40, '3 Bottles = 40 mins (+10m Bonus)')")
-        c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (5, 75, '5 Bottles = 1h 15m (+25m Bonus)')")
-        c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (10, 180, '10 Bottles = 3.0 Hours (Super Saver)')")
+        c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (3, 40, '3 Bottles = 40 mins')")
+        c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (5, 75, '5 Bottles = 1h 15m')")
+        c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (10, 180, '10 Bottles = 3 Hours')")
         
         # Default announcement
         c.execute("INSERT OR IGNORE INTO announcements (id, message, active) VALUES (1, '♻️ Welcome to ECO-Fi! Deposit clean PET plastic bottles to earn high-speed Wi-Fi access.', 1)")
@@ -894,13 +894,24 @@ PORTAL_HTML = """
 
         <!-- TAB 1: PROMO RATES -->
         <div id="tab-rates" class="tab-content active">
-            <div style="font-size: 13px; color:#94a3b8; font-weight:700; margin-bottom:6px;">PROMO PACKAGES:</div>
+            <div style="font-size: 13px; color:#94a3b8; font-weight:700; margin-bottom:8px;"><i class="fas fa-tags text-success mr-1"></i> RATES & PACKAGES:</div>
             <table class="table-info">
                 {% for r in promo_rates %}
                 <tr>
-                    <td><strong style="color:#34d399;">{{ r.bottles }} Bottle(s)</strong></td>
-                    <td style="text-align:right;">{{ r.minutes }} Minutes</td>
-                    <td style="text-align:right; font-size:10px; color:#f59e0b;">{{ r.label }}</td>
+                    <td style="padding: 7px 6px;"><strong style="color:#34d399; font-size:13px;">{{ r.bottles }} Bottle{% if r.bottles > 1 %}s{% endif %}</strong></td>
+                    <td style="text-align:right; font-weight:700; color:#f8fafc; font-size:13px; padding: 7px 6px;">
+                        {% if r.minutes >= 60 %}
+                            {% set hrs = (r.minutes // 60) %}
+                            {% set mins = (r.minutes % 60) %}
+                            {% if mins == 0 %}
+                                {{ hrs }} Hour{% if hrs > 1 %}s{% endif %}
+                            {% else %}
+                                {{ hrs }}h {{ mins }}m
+                            {% endif %}
+                        {% else %}
+                            {{ r.minutes }} mins
+                        {% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </table>
@@ -2065,27 +2076,27 @@ def admin_api_rates_apply_preset():
             "label": "Standard Community Curve",
             "rates": [
                 (1, 10, "1 Bottle = 10 mins"),
-                (3, 40, "3 Bottles = 40 mins (+10m Bonus)"),
-                (5, 75, "5 Bottles = 1h 15m (+25m Bonus)"),
-                (10, 180, "10 Bottles = 3.0 Hours (Super Saver)"),
+                (3, 40, "3 Bottles = 40 mins"),
+                (5, 75, "5 Bottles = 1h 15m"),
+                (10, 180, "10 Bottles = 3 Hours"),
             ]
         },
         "aggressive": {
-            "label": "Aggressive Bonus Curve",
+            "label": "Aggressive Reward Curve",
             "rates": [
                 (1, 10, "1 Bottle = 10 mins"),
-                (5, 70, "5 Bottles = 1h 10m (+20m Bonus)"),
-                (10, 180, "10 Bottles = 3 Hours (+80m Bonus)"),
-                (20, 420, "20 Bottles = 7 Hours (Mega Saver)"),
+                (5, 70, "5 Bottles = 1h 10m"),
+                (10, 180, "10 Bottles = 3 Hours"),
+                (20, 420, "20 Bottles = 7 Hours"),
             ]
         },
         "cafe": {
-            "label": "Café/Library Curve",
+            "label": "Café / Study Hub Curve",
             "rates": [
                 (1, 20, "1 Bottle = 20 mins"),
-                (3, 75, "3 Bottles = 1h 15m (+15m Bonus)"),
-                (6, 180, "6 Bottles = 3 Hours (+60m Bonus)"),
-                (12, 420, "12 Bottles = 7 Hours (Full Day)"),
+                (3, 75, "3 Bottles = 1h 15m"),
+                (6, 180, "6 Bottles = 3 Hours"),
+                (12, 420, "12 Bottles = 7 Hours"),
             ]
         }
     }
@@ -4317,17 +4328,15 @@ function autoGenerateRateLabel() {
     const b = parseInt(document.getElementById('new-rate-bottles').value) || 0;
     const m = getSelectedTotalMinutes();
     if (!b || !m) return;
-    const hrs = (m / 60).toFixed(1);
-    const eff = (m / b).toFixed(1);
-    const baseRate = parseInt(document.getElementById('rate-1').value) || 10;
-    const bonusMins = Math.round(m - (b * baseRate));
-    let timeStr = (hrs >= 1 && m % 60 === 0) ? `${Math.round(m/60)}.0 Hours` : (hrs >= 1 ? `${hrs} Hours` : `${m} mins`);
-    let label = `${b} Bottle${b > 1 ? 's' : ''} = ${timeStr}`;
-    if (bonusMins > 0) {
-        label += ` (+${bonusMins}m Bonus)`;
-    } else if (b === 1) {
-        label += ` (Base Rate)`;
+    let timeStr = '';
+    if (m >= 60) {
+        const h = Math.floor(m / 60);
+        const remM = m % 60;
+        timeStr = (remM === 0) ? `${h} Hour${h > 1 ? 's' : ''}` : `${h}h ${remM}m`;
+    } else {
+        timeStr = `${m} mins`;
     }
+    const label = `${b} Bottle${b > 1 ? 's' : ''} = ${timeStr}`;
     document.getElementById('new-rate-label').value = label;
 }
 
