@@ -431,7 +431,7 @@ class ESP32Simulator:
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>ECO-Fi ESP32 Hardware Simulator & 20x4 I2C LCD Display</title>
+    <title>ECO-Fi ESP32 Hardware Simulator & 2004A 20x4 I2C LCD Display</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/3.2.0/css/adminlte.min.css">
@@ -444,20 +444,16 @@ class ESP32Simulator:
             min-height: 100vh;
         }
 
-        /* ========================================================================= */
-        /* AUTHENTIC 2004A 20x4 I2C CHARACTER LCD MODULE (PHYSICAL SCALE & RATIO)    */
-        /* ========================================================================= */
-
         /* Outer FR4 Industrial Green PCB */
         .lcd-module-wrapper {
             max-width: 680px;
-            margin: 0 auto 20px;
+            margin: 0 auto 16px;
         }
 
         .lcd-pcb {
             background-color: #0d6e38;
             background-image: 
-                radial-gradient(circle at 10% 20%, rgba(255,255,255,0.05) 0%, transparent 40%),
+                radial-gradient(circle at 10% 20%, rgba(255,255,255,0.06) 0%, transparent 40%),
                 linear-gradient(135deg, #13773e 0%, #0d6834 50%, #085227 100%);
             border: 2px solid #06401e;
             border-radius: 6px;
@@ -482,7 +478,7 @@ class ESP32Simulator:
         .hole-bl { bottom: 8px; left: 8px; }
         .hole-br { bottom: 8px; right: 8px; }
 
-        /* Top Gold 16-Pin Header Strip (1 ... 16) */
+        /* Top Gold 16-Pin Header Strip */
         .pin-strip-top {
             display: flex;
             justify-content: flex-start;
@@ -541,7 +537,6 @@ class ESP32Simulator:
             position: relative;
         }
 
-        /* Metal Bezel Stamping Notches (Top & Bottom Crimp Tabs) */
         .bezel-tab-top, .bezel-tab-bottom {
             position: absolute;
             left: 20px;
@@ -567,13 +562,11 @@ class ESP32Simulator:
             padding: 8px 10px;
         }
 
-        /* Active HD44780 Canvas */
         #lcd-matrix-canvas {
             width: 100%;
             height: auto;
             display: block;
             image-rendering: pixelated;
-            filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.35));
         }
 
         /* I2C Backpack Silkscreen Banner */
@@ -688,7 +681,6 @@ class ESP32Simulator:
                                 
                                 <!-- Active Dot Matrix LCD Glass Screen -->
                                 <div class="lcd-glass-viewport" id="lcd-viewport">
-                                    <!-- Canvas Aspect Ratio 3.2:1 (672x210px for crisp 5x8 pixel matrix rendering) -->
                                     <canvas id="lcd-matrix-canvas" width="672" height="210"></canvas>
                                 </div>
 
@@ -842,102 +834,11 @@ class ESP32Simulator:
 </div>
 
 <script>
-// Complete HD44780 ROM 5x8 Dot Matrix Font Table
-const HD44780_FONT = {
-    ' ': [0, 0, 0, 0, 0, 0, 0, 0],
-    '!': [4, 4, 4, 4, 0, 0, 4, 0],
-    '"': [10, 10, 0, 0, 0, 0, 0, 0],
-    '#': [10, 10, 31, 10, 31, 10, 10, 0],
-    '$': [4, 15, 20, 14, 5, 30, 4, 0],
-    '%': [24, 25, 2, 4, 8, 19, 3, 0],
-    '&': [12, 18, 20, 8, 21, 18, 13, 0],
-    "'": [4, 4, 0, 0, 0, 0, 0, 0],
-    '(': [2, 4, 8, 8, 8, 4, 2, 0],
-    ')': [8, 4, 2, 2, 2, 4, 8, 0],
-    '*': [0, 4, 21, 14, 21, 4, 0, 0],
-    '+': [0, 4, 4, 31, 4, 4, 0, 0],
-    ',': [0, 0, 0, 0, 4, 4, 8, 0],
-    '-': [0, 0, 0, 31, 0, 0, 0, 0],
-    '.': [0, 0, 0, 0, 0, 6, 6, 0],
-    '/': [0, 1, 2, 4, 8, 16, 0, 0],
-    '0': [14, 17, 19, 21, 25, 17, 14, 0],
-    '1': [4, 12, 4, 4, 4, 4, 14, 0],
-    '2': [14, 17, 1, 2, 4, 8, 31, 0],
-    '3': [31, 2, 4, 2, 1, 17, 14, 0],
-    '4': [2, 6, 10, 18, 31, 2, 2, 0],
-    '5': [31, 16, 30, 1, 1, 17, 14, 0],
-    '6': [6, 8, 16, 30, 17, 17, 14, 0],
-    '7': [31, 1, 2, 4, 8, 8, 8, 0],
-    '8': [14, 17, 17, 14, 17, 17, 14, 0],
-    '9': [14, 17, 17, 15, 1, 2, 12, 0],
-    ':': [0, 6, 6, 0, 6, 6, 0, 0],
-    ';': [0, 6, 6, 0, 4, 4, 8, 0],
-    '<': [2, 4, 8, 16, 8, 4, 2, 0],
-    '=': [0, 31, 0, 31, 0, 0, 0, 0],
-    '>': [8, 4, 2, 1, 2, 4, 8, 0],
-    '?': [14, 17, 1, 2, 4, 0, 4, 0],
-    '@': [14, 17, 1, 13, 21, 21, 14, 0],
-    'A': [14, 17, 17, 31, 17, 17, 17, 0],
-    'B': [30, 17, 17, 30, 17, 17, 30, 0],
-    'C': [14, 17, 16, 16, 16, 17, 14, 0],
-    'D': [28, 18, 17, 17, 17, 18, 28, 0],
-    'E': [31, 16, 16, 30, 16, 16, 31, 0],
-    'F': [31, 16, 16, 30, 16, 16, 16, 0],
-    'G': [14, 17, 16, 23, 17, 17, 14, 0],
-    'H': [17, 17, 17, 31, 17, 17, 17, 0],
-    'I': [14, 4, 4, 4, 4, 4, 14, 0],
-    'J': [7, 2, 2, 2, 2, 18, 12, 0],
-    'K': [17, 18, 20, 24, 20, 18, 17, 0],
-    'L': [16, 16, 16, 16, 16, 16, 31, 0],
-    'M': [17, 27, 21, 21, 17, 17, 17, 0],
-    'N': [17, 17, 25, 21, 19, 17, 17, 0],
-    'O': [14, 17, 17, 17, 17, 17, 14, 0],
-    'P': [30, 17, 17, 30, 16, 16, 16, 0],
-    'Q': [14, 17, 17, 17, 21, 18, 13, 0],
-    'R': [30, 17, 17, 30, 20, 18, 17, 0],
-    'S': [14, 17, 16, 14, 1, 17, 14, 0],
-    'T': [31, 4, 4, 4, 4, 4, 4, 0],
-    'U': [17, 17, 17, 17, 17, 17, 14, 0],
-    'V': [17, 17, 17, 17, 17, 10, 4, 0],
-    'W': [17, 17, 17, 21, 21, 21, 10, 0],
-    'X': [17, 17, 10, 4, 10, 17, 17, 0],
-    'Y': [17, 17, 10, 4, 4, 4, 4, 0],
-    'Z': [31, 1, 2, 4, 8, 16, 31, 0],
-    '[': [14, 8, 8, 8, 8, 8, 14, 0],
-    '\\': [0, 16, 8, 4, 2, 1, 0, 0],
-    ']': [14, 2, 2, 2, 2, 2, 14, 0],
-    '^': [4, 10, 17, 0, 0, 0, 0, 0],
-    '_': [0, 0, 0, 0, 0, 0, 31, 0],
-    'a': [0, 0, 14, 1, 15, 17, 15, 0],
-    'b': [16, 16, 22, 25, 17, 17, 30, 0],
-    'c': [0, 0, 14, 17, 16, 17, 14, 0],
-    'd': [1, 1, 13, 19, 17, 17, 15, 0],
-    'e': [0, 0, 14, 17, 31, 16, 14, 0],
-    'f': [6, 9, 8, 28, 8, 8, 8, 0],
-    'g': [0, 15, 17, 17, 15, 1, 14, 0],
-    'h': [16, 16, 22, 25, 17, 17, 17, 0],
-    'i': [4, 0, 12, 4, 4, 4, 14, 0],
-    'j': [2, 0, 6, 2, 2, 18, 12, 0],
-    'k': [16, 16, 18, 20, 24, 20, 18, 0],
-    'l': [12, 4, 4, 4, 4, 4, 14, 0],
-    'm': [0, 0, 26, 21, 21, 17, 17, 0],
-    'n': [0, 0, 22, 25, 17, 17, 17, 0],
-    'o': [0, 0, 14, 17, 17, 17, 14, 0],
-    'p': [0, 0, 30, 17, 30, 16, 16, 0],
-    'q': [0, 0, 15, 17, 15, 1, 1, 0],
-    'r': [0, 0, 22, 25, 16, 16, 16, 0],
-    's': [0, 0, 14, 16, 14, 1, 30, 0],
-    't': [8, 8, 28, 8, 8, 9, 6, 0],
-    'u': [0, 0, 17, 17, 17, 19, 13, 0],
-    'v': [0, 0, 17, 17, 17, 10, 4, 0],
-    'w': [0, 0, 17, 17, 21, 21, 10, 0],
-    'x': [0, 0, 17, 10, 4, 10, 17, 0],
-    'y': [0, 0, 17, 17, 15, 1, 14, 0],
-    'z': [0, 0, 31, 2, 4, 8, 31, 0]
-};
+// Complete HD44780 ROM 5x8 Dot Matrix Font Table (ASCII 0..127 Array)
+const HD44780_FONT = [[0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [4, 4, 4, 4, 0, 0, 4, 0], [10, 10, 0, 0, 0, 0, 0, 0], [10, 10, 31, 10, 31, 10, 10, 0], [4, 15, 20, 14, 5, 30, 4, 0], [24, 25, 2, 4, 8, 19, 3, 0], [12, 18, 20, 8, 21, 18, 13, 0], [4, 4, 0, 0, 0, 0, 0, 0], [2, 4, 8, 8, 8, 4, 2, 0], [8, 4, 2, 2, 2, 4, 8, 0], [0, 4, 21, 14, 21, 4, 0, 0], [0, 4, 4, 31, 4, 4, 0, 0], [0, 0, 0, 0, 4, 4, 8, 0], [0, 0, 0, 31, 0, 0, 0, 0], [0, 0, 0, 0, 0, 6, 6, 0], [0, 1, 2, 4, 8, 16, 0, 0], [14, 17, 19, 21, 25, 17, 14, 0], [4, 12, 4, 4, 4, 4, 14, 0], [14, 17, 1, 2, 4, 8, 31, 0], [31, 2, 4, 2, 1, 17, 14, 0], [2, 6, 10, 18, 31, 2, 2, 0], [31, 16, 30, 1, 1, 17, 14, 0], [6, 8, 16, 30, 17, 17, 14, 0], [31, 1, 2, 4, 8, 8, 8, 0], [14, 17, 17, 14, 17, 17, 14, 0], [14, 17, 17, 15, 1, 2, 12, 0], [0, 6, 6, 0, 6, 6, 0, 0], [0, 6, 6, 0, 4, 4, 8, 0], [2, 4, 8, 16, 8, 4, 2, 0], [0, 31, 0, 31, 0, 0, 0, 0], [8, 4, 2, 1, 2, 4, 8, 0], [14, 17, 1, 2, 4, 0, 4, 0], [14, 17, 1, 13, 21, 21, 14, 0], [14, 17, 17, 31, 17, 17, 17, 0], [30, 17, 17, 30, 17, 17, 30, 0], [14, 17, 16, 16, 16, 17, 14, 0], [28, 18, 17, 17, 17, 18, 28, 0], [31, 16, 16, 30, 16, 16, 31, 0], [31, 16, 16, 30, 16, 16, 16, 0], [14, 17, 16, 23, 17, 17, 14, 0], [17, 17, 17, 31, 17, 17, 17, 0], [14, 4, 4, 4, 4, 4, 14, 0], [7, 2, 2, 2, 2, 18, 12, 0], [17, 18, 20, 24, 20, 18, 17, 0], [16, 16, 16, 16, 16, 16, 31, 0], [17, 27, 21, 21, 17, 17, 17, 0], [17, 17, 25, 21, 19, 17, 17, 0], [14, 17, 17, 17, 17, 17, 14, 0], [30, 17, 17, 30, 16, 16, 16, 0], [14, 17, 17, 17, 21, 18, 13, 0], [30, 17, 17, 30, 20, 18, 17, 0], [14, 17, 16, 14, 1, 17, 14, 0], [31, 4, 4, 4, 4, 4, 4, 0], [17, 17, 17, 17, 17, 17, 14, 0], [17, 17, 17, 17, 17, 10, 4, 0], [17, 17, 17, 21, 21, 21, 10, 0], [17, 17, 10, 4, 10, 17, 17, 0], [17, 17, 10, 4, 4, 4, 4, 0], [31, 1, 2, 4, 8, 16, 31, 0], [14, 8, 8, 8, 8, 8, 14, 0], [0, 16, 8, 4, 2, 1, 0, 0], [14, 2, 2, 2, 2, 2, 14, 0], [4, 10, 17, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 31, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 14, 1, 15, 17, 15, 0], [16, 16, 22, 25, 17, 17, 30, 0], [0, 0, 14, 17, 16, 17, 14, 0], [1, 1, 13, 19, 17, 17, 15, 0], [0, 0, 14, 17, 31, 16, 14, 0], [6, 9, 8, 28, 8, 8, 8, 0], [0, 15, 17, 17, 15, 1, 14, 0], [16, 16, 22, 25, 17, 17, 17, 0], [4, 0, 12, 4, 4, 4, 14, 0], [2, 0, 6, 2, 2, 18, 12, 0], [16, 16, 18, 20, 24, 20, 18, 0], [12, 4, 4, 4, 4, 4, 14, 0], [0, 0, 26, 21, 21, 17, 17, 0], [0, 0, 22, 25, 17, 17, 17, 0], [0, 0, 14, 17, 17, 17, 14, 0], [0, 0, 30, 17, 30, 16, 16, 0], [0, 0, 15, 17, 15, 1, 1, 0], [0, 0, 22, 25, 16, 16, 16, 0], [0, 0, 14, 16, 14, 1, 30, 0], [8, 8, 28, 8, 8, 9, 6, 0], [0, 0, 17, 17, 17, 19, 13, 0], [0, 0, 17, 17, 17, 10, 4, 0], [0, 0, 17, 17, 21, 21, 10, 0], [0, 0, 17, 10, 4, 10, 17, 0], [0, 0, 17, 17, 15, 1, 14, 0], [0, 0, 31, 2, 4, 8, 31, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0]];
 
 let currentLcdTheme = 'blue';
-let lastLcdLines = ["", "", "", ""];
+let lastLcdLines = ["=== ECO-Fi VENDO ===", "Ready for Deposit   ", "Rate: 1 Bottle = 10m", "Session Bottles: 0  "];
 
 const LCD_THEMES = {
     blue: {
@@ -966,14 +867,18 @@ const LCD_THEMES = {
 function changeLcdTheme(t) {
     currentLcdTheme = t;
     const vp = document.getElementById('lcd-viewport');
-    if (t === 'blue') vp.style.background = '#002bb0';
-    else if (t === 'yellow') vp.style.background = '#8bb300';
-    else vp.style.background = '#141818';
+    if (vp) {
+        if (t === 'blue') vp.style.background = '#002bb0';
+        else if (t === 'yellow') vp.style.background = '#8bb300';
+        else vp.style.background = '#141818';
+    }
     drawLcdCanvas(lastLcdLines);
 }
 
 function drawLcdCanvas(lines) {
-    lastLcdLines = lines;
+    if (lines && lines.length) {
+        lastLcdLines = lines;
+    }
     const canvas = document.getElementById('lcd-matrix-canvas');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -1007,18 +912,18 @@ function drawLcdCanvas(lines) {
     const dotH = (usableH - ((dotRows - 1) * dotGapY)) / dotRows;
 
     for (let r = 0; r < rows; r++) {
-        const rawLine = lines[r] || "";
+        const rawLine = (lastLcdLines && lastLcdLines[r]) || "";
         const lineStr = rawLine.padEnd(20, ' ').substring(0, 20);
 
         for (let c = 0; c < cols; c++) {
-            const char = lineStr[c] || ' ';
-            const glyph = HD44780_FONT[char] || HD44780_FONT[' '] || [0,0,0,0,0,0,0,0];
+            const charCode = lineStr.charCodeAt(c) || 32;
+            const glyph = (charCode < HD44780_FONT.length) ? HD44780_FONT[charCode] : HD44780_FONT[32];
 
             const startX = (c * cellW) + padX;
             const startY = (r * cellH) + padY;
 
             for (let gr = 0; gr < dotRows; gr++) {
-                const bitmask = glyph[gr] || 0;
+                const bitmask = (glyph && glyph[gr]) || 0;
                 for (let gc = 0; gc < dotCols; gc++) {
                     const isBitOn = (bitmask & (1 << (4 - gc))) !== 0;
                     const px = startX + (gc * (dotW + dotGapX));
@@ -1043,61 +948,104 @@ function drawLcdCanvas(lines) {
 function syncSimulator() {
     fetch('/simulator/api/state').then(r=>r.json()).then(d=>{
         // Actuators
-        document.getElementById('ind-gate').className = 'actuator-indicator ' + (d.entrance_servo > 45 ? 'indicator-on' : 'indicator-off');
-        document.getElementById('ind-gate').innerText = d.entrance_servo > 45 ? 'OPEN (' + d.entrance_servo + '°)' : 'CLOSED (' + d.entrance_servo + '°)';
+        const elGate = document.getElementById('ind-gate');
+        if (elGate) {
+            elGate.className = 'actuator-indicator ' + (d.entrance_servo > 45 ? 'indicator-on' : 'indicator-off');
+            elGate.innerText = d.entrance_servo > 45 ? 'OPEN (' + d.entrance_servo + '°)' : 'CLOSED (' + d.entrance_servo + '°)';
+        }
 
-        document.getElementById('ind-success').className = 'actuator-indicator ' + (d.success_servo > 45 ? 'indicator-on' : 'indicator-off');
-        document.getElementById('ind-success').innerText = d.success_servo > 45 ? 'OPEN (' + d.success_servo + '°)' : 'CLOSED (' + d.success_servo + '°)';
+        const elSuc = document.getElementById('ind-success');
+        if (elSuc) {
+            elSuc.className = 'actuator-indicator ' + (d.success_servo > 45 ? 'indicator-on' : 'indicator-off');
+            elSuc.innerText = d.success_servo > 45 ? 'OPEN (' + d.success_servo + '°)' : 'CLOSED (' + d.success_servo + '°)';
+        }
 
-        document.getElementById('ind-reject').className = 'actuator-indicator ' + (d.reject_servo > 45 ? 'indicator-red' : 'indicator-off');
-        document.getElementById('ind-reject').innerText = d.reject_servo > 45 ? 'OPEN (' + d.reject_servo + '°)' : 'CLOSED (' + d.reject_servo + '°)';
+        const elRej = document.getElementById('ind-reject');
+        if (elRej) {
+            elRej.className = 'actuator-indicator ' + (d.reject_servo > 45 ? 'indicator-red' : 'indicator-off');
+            elRej.innerText = d.reject_servo > 45 ? 'OPEN (' + d.reject_servo + '°)' : 'CLOSED (' + d.reject_servo + '°)';
+        }
 
-        document.getElementById('ind-buzzer').className = 'actuator-indicator ' + (d.buzzer ? 'indicator-red' : 'indicator-off');
-        document.getElementById('ind-buzzer').innerText = d.buzzer ? 'BEEPING' : 'SILENT';
+        const elBuzz = document.getElementById('ind-buzzer');
+        if (elBuzz) {
+            elBuzz.className = 'actuator-indicator ' + (d.buzzer ? 'indicator-red' : 'indicator-off');
+            elBuzz.innerText = d.buzzer ? 'BEEPING' : 'SILENT';
+        }
 
-        document.getElementById('ind-led-green').className = 'actuator-indicator ' + (d.led_green ? 'indicator-on' : 'indicator-off');
-        document.getElementById('ind-led-green').innerText = d.led_green ? 'ON (GREEN)' : 'OFF';
+        const elGrn = document.getElementById('ind-led-green');
+        if (elGrn) {
+            elGrn.className = 'actuator-indicator ' + (d.led_green ? 'indicator-on' : 'indicator-off');
+            elGrn.innerText = d.led_green ? 'ON (GREEN)' : 'OFF';
+        }
 
-        document.getElementById('ind-led-red').className = 'actuator-indicator ' + (d.led_red ? 'indicator-red' : 'indicator-off');
-        document.getElementById('ind-led-red').innerText = d.led_red ? 'ON (RED)' : 'OFF';
+        const elRed = document.getElementById('ind-led-red');
+        if (elRed) {
+            elRed.className = 'actuator-indicator ' + (d.led_red ? 'indicator-red' : 'indicator-off');
+            elRed.innerText = d.led_red ? 'ON (RED)' : 'OFF';
+        }
 
         // Draw 20x4 LCD Canvas
-        drawLcdCanvas(d.lcd_lines || []);
+        if (d.lcd_lines) {
+            drawLcdCanvas(d.lcd_lines);
+        }
 
         // Sensors
-        document.getElementById('val-metal').className = 'badge ' + (d.prox_metal ? 'badge-danger' : 'badge-success');
-        document.getElementById('val-metal').innerText = d.prox_metal ? 'METAL DETECTED (LOW)' : 'NO METAL (HIGH)';
+        const elMet = document.getElementById('val-metal');
+        if (elMet) {
+            elMet.className = 'badge ' + (d.prox_metal ? 'badge-danger' : 'badge-success');
+            elMet.innerText = d.prox_metal ? 'METAL DETECTED (LOW)' : 'NO METAL (HIGH)';
+        }
 
-        document.getElementById('val-cap').className = 'badge ' + (d.prox_capacitive ? 'badge-success' : 'badge-danger');
-        document.getElementById('val-cap').innerText = d.prox_capacitive ? 'PLASTIC PRESENT (LOW)' : 'NO DIELECTRIC (HIGH)';
+        const elCap = document.getElementById('val-cap');
+        if (elCap) {
+            elCap.className = 'badge ' + (d.prox_capacitive ? 'badge-success' : 'badge-danger');
+            elCap.innerText = d.prox_capacitive ? 'PLASTIC PRESENT (LOW)' : 'NO DIELECTRIC (HIGH)';
+        }
 
-        document.getElementById('val-nir').innerText = d.nir_val;
-        document.getElementById('val-top-ir').className = 'badge ' + (d.top_ir ? 'badge-warning' : 'badge-secondary');
-        document.getElementById('val-top-ir').innerText = d.top_ir ? 'BEAM BROKEN (LOW)' : 'CLEAR (HIGH)';
+        const elNir = document.getElementById('val-nir');
+        if (elNir) elNir.innerText = d.nir_val;
 
-        document.getElementById('val-bot-ir').className = 'badge ' + (d.bottom_ir ? 'badge-warning' : 'badge-secondary');
-        document.getElementById('val-bot-ir').innerText = d.bottom_ir ? 'BEAM BROKEN (LOW)' : 'CLEAR (HIGH)';
+        const elTop = document.getElementById('val-top-ir');
+        if (elTop) {
+            elTop.className = 'badge ' + (d.top_ir ? 'badge-warning' : 'badge-secondary');
+            elTop.innerText = d.top_ir ? 'BEAM BROKEN (LOW)' : 'CLEAR (HIGH)';
+        }
 
-        document.getElementById('val-dist').innerText = d.bin_distance_cm + ' cm ' + (d.is_bin_full ? '(FULL!)' : '(OK)');
+        const elBot = document.getElementById('val-bot-ir');
+        if (elBot) {
+            elBot.className = 'badge ' + (d.bottom_ir ? 'badge-warning' : 'badge-secondary');
+            elBot.innerText = d.bottom_ir ? 'BEAM BROKEN (LOW)' : 'CLEAR (HIGH)';
+        }
+
+        const elDist = document.getElementById('val-dist');
+        if (elDist) elDist.innerText = d.bin_distance_cm + ' cm ' + (d.is_bin_full ? '(FULL!)' : '(OK)');
 
         // Serial Logs
-        let sHtml = '';
-        d.serial_logs.forEach(l=>{
-            const col = l.dir === 'TX' ? '#34d399' : '#38bdf8';
-            sHtml += `<div><span style="color:#64748b;">[${l.time}]</span> <strong style="color:${col};">${l.dir}:</strong> ${l.msg}</div>`;
-        });
-        document.getElementById('serial-box').innerHTML = sHtml;
-    });
+        const elBox = document.getElementById('serial-box');
+        if (elBox && d.serial_logs) {
+            let sHtml = '';
+            d.serial_logs.forEach(l=>{
+                const col = l.dir === 'TX' ? '#34d399' : '#38bdf8';
+                sHtml += `<div><span style="color:#64748b;">[${l.time}]</span> <strong style="color:${col};">${l.dir}:</strong> ${l.msg}</div>`;
+            });
+            elBox.innerHTML = sHtml;
+        }
+    }).catch(err=>console.error("Sync error:", err));
 }
-setInterval(syncSimulator, 500);
-syncSimulator();
+
+// Initial draw immediately on page load
+window.addEventListener('DOMContentLoaded', () => {
+    drawLcdCanvas(lastLcdLines);
+    syncSimulator();
+    setInterval(syncSimulator, 500);
+});
 
 function triggerDrop(type) {
     fetch('/simulator/api/trigger', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({item_type: type})
-    });
+    }).then(()=>setTimeout(syncSimulator, 100));
 }
 
 function setBin(dist) {
@@ -1105,7 +1053,7 @@ function setBin(dist) {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({distance_cm: dist})
-    });
+    }).then(()=>setTimeout(syncSimulator, 100));
 }
 
 function resetSimSession() {
