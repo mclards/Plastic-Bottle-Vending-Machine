@@ -2190,6 +2190,16 @@ def simulator_reset():
     esp32.reset_session()
     return jsonify({"success": True})
 
+@app.route("/simulator/api/lcd", methods=["POST"])
+def simulator_set_lcd():
+    data = request.get_json() or {}
+    l0 = data.get("line0")
+    l1 = data.get("line1")
+    l2 = data.get("line2")
+    l3 = data.get("line3")
+    esp32.set_lcd(line0=l0, line1=l1, line2=l2, line3=l3)
+    return jsonify({"success": True, "lcd_lines": esp32.lcd_lines})
+
 FORCE_PASS_HTML = """
 <!DOCTYPE html>
 <html lang="en">
@@ -3483,8 +3493,11 @@ ADMIN_HTML = """
     <div id="sec-esp32" class="section-view">
       <div class="card card-purple">
         <div class="card-header d-flex justify-content-between align-items-center">
-          <h3 class="card-title m-0"><i class="fas fa-microchip"></i> ESP32 Hardware Calibration</h3>
-          <button class="btn btn-warning btn-sm ml-auto" onclick="triggerEsp32Config()"><i class="fas fa-wifi"></i> Reboot to Captive Portal</button>
+          <h3 class="card-title m-0"><i class="fas fa-microchip"></i> ESP32 Hardware Calibration & 20x4 LCD</h3>
+          <div class="ml-auto">
+            <a href="/simulator" target="_blank" class="btn btn-info btn-sm mr-2"><i class="fas fa-desktop mr-1"></i> Live 20x4 LCD Simulator</a>
+            <button class="btn btn-warning btn-sm" onclick="triggerEsp32Config()"><i class="fas fa-wifi mr-1"></i> Reboot to AP Mode</button>
+          </div>
         </div>
         <div class="card-body">
           <div class="row">
