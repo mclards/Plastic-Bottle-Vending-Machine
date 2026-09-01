@@ -3146,7 +3146,6 @@ ADMIN_HTML = """
       </div>
     </div>
 
-    </div>
     <!-- 7. PORTAL & BANNERS SECTION -->
     <div id="sec-portal-custom" class="section-view">
       <div class="card card-primary">
