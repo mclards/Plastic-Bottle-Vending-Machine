@@ -327,15 +327,16 @@ def apply_client_bandwidth(ip, dl_kbps, ul_kbps):
     interface = get_lan_interface()
     try:
         ip_int = int(ipaddress.IPv4Address(ip))
-        mark = ip_int & 0xFFFF
-        # Download (egress on LAN interface)
-        subprocess.run(["tc", "class", "replace", "dev", interface, "parent", "1:1", "classid", f"1:{mark}", "htb", "rate", f"{dl_kbps}kbit", "ceil", f"{dl_kbps}kbit"], check=True)
+        # Ensure mark avoids reserved root class (1:1) and default unauth class (1:99)
+        mark = 100 + (ip_int & 0x3FFF)
+        # Download (egress on LAN interface towards client)
+        subprocess.run(["tc", "class", "replace", "dev", interface, "parent", "1:1", "classid", f"1:{mark}", "htb", "rate", f"{dl_kbps}kbit", "ceil", f"{dl_kbps}kbit", "burst", "15k"], check=True)
         subprocess.run(["tc", "filter", "replace", "dev", interface, "protocol", "ip", "parent", "1:", "prio", str(mark), "u32", "match", "ip", "dst", f"{ip}/32", "flowid", f"1:{mark}"], check=True)
         
-        # Upload (egress on ifb0)
+        # Upload (egress on ifb0 from client)
         res = subprocess.run(["ip", "link", "show", "ifb0"], stderr=subprocess.DEVNULL)
         if res.returncode == 0:
-            subprocess.run(["tc", "class", "replace", "dev", "ifb0", "parent", "1:1", "classid", f"1:{mark}", "htb", "rate", f"{ul_kbps}kbit", "ceil", f"{ul_kbps}kbit"], check=True)
+            subprocess.run(["tc", "class", "replace", "dev", "ifb0", "parent", "1:1", "classid", f"1:{mark}", "htb", "rate", f"{ul_kbps}kbit", "ceil", f"{ul_kbps}kbit", "burst", "15k"], check=True)
             subprocess.run(["tc", "filter", "replace", "dev", "ifb0", "protocol", "ip", "parent", "1:", "prio", str(mark), "u32", "match", "ip", "src", f"{ip}/32", "flowid", f"1:{mark}"], check=True)
     except Exception:
         pass
@@ -345,7 +346,7 @@ def remove_client_bandwidth(ip):
     interface = get_lan_interface()
     try:
         ip_int = int(ipaddress.IPv4Address(ip))
-        mark = ip_int & 0xFFFF
+        mark = 100 + (ip_int & 0x3FFF)
         subprocess.run(["tc", "filter", "del", "dev", interface, "protocol", "ip", "parent", "1:", "prio", str(mark)], stderr=subprocess.DEVNULL)
         subprocess.run(["tc", "class", "del", "dev", interface, "parent", "1:1", "classid", f"1:{mark}"], stderr=subprocess.DEVNULL)
         
@@ -355,6 +356,17 @@ def remove_client_bandwidth(ip):
             subprocess.run(["tc", "class", "del", "dev", "ifb0", "parent", "1:1", "classid", f"1:{mark}"], stderr=subprocess.DEVNULL)
     except Exception:
         pass
+
+def sync_client_firewall(ip):
+    with active_clients_lock:
+        if ip not in active_clients: return
+        sess = active_clients[ip]
+        dl = sess.get("dl_kbps") or int(get_config("default_dl_kbps", "3072"))
+        ul = sess.get("ul_kbps") or int(get_config("default_ul_kbps", "1536"))
+        if sess["remaining_seconds"] > 0 and not sess.get("is_paused", False):
+            update_firewall(ip, "add", sess["remaining_seconds"], dl, ul)
+        else:
+            update_firewall(ip, "del")
 
 def apply_walled_garden_and_macs():
     if platform.system() == "Windows": return
@@ -519,6 +531,8 @@ def save_sessions_to_db():
             conn.commit()
 
 def restore_sessions_from_db():
+    default_dl = int(get_config("default_dl_kbps", "3072"))
+    default_ul = int(get_config("default_ul_kbps", "1536"))
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         try:
@@ -536,12 +550,14 @@ def restore_sessions_from_db():
                     if is_paused and expires_at and expires_at > 0 and now > expires_at:
                         continue
                     if remaining > 0:
+                        client_dl = dl if (dl and dl not in [5120, 2048]) else default_dl
+                        client_ul = ul if (ul and ul not in [5120, 1024]) else default_ul
                         active_clients[ip] = {
                             "mac": mac,
                             "remaining_seconds": remaining,
                             "is_paused": bool(is_paused),
-                            "dl_kbps": dl,
-                            "ul_kbps": ul,
+                            "dl_kbps": client_dl,
+                            "ul_kbps": client_ul,
                             "pending_bottles": pending,
                             "paused_at": paused_at or 0,
                             "expires_at": expires_at or 0
@@ -2475,14 +2491,15 @@ def admin_api_client_edit():
     ul = data.get("ul_kbps")
     with active_clients_lock:
         if ip in active_clients:
-            if minutes is not None:
-                active_clients[ip]["remaining_seconds"] = max(0, int(minutes) * 60)
-                sync_client_firewall(ip)
             if dl is not None:
                 active_clients[ip]["dl_kbps"] = max(128, int(dl))
             if ul is not None:
                 active_clients[ip]["ul_kbps"] = max(64, int(ul))
-            return jsonify({"success": True})
+            if minutes is not None:
+                active_clients[ip]["remaining_seconds"] = max(0, int(minutes) * 60)
+            sync_client_firewall(ip)
+            save_sessions_to_db()
+            return jsonify({"success": True, "client": active_clients[ip]})
     return jsonify({"success": False, "error": "Client not found."})
 
 @app.route("/admin/api/vouchers/list")
