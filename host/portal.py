@@ -3230,23 +3230,106 @@ ADMIN_HTML = """
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.4/dist/Chart.min.js"></script>
     <style>
+      body.dark-mode {
+        background-color: #0b0f19;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+      .content-wrapper {
+        background-color: #0b0f19 !important;
+        padding: 16px 20px !important;
+      }
       .section-view { display: none; }
-      .section-view.active { display: block; }
-      .brand-link { font-weight: 700; letter-spacing: 0.5px; }
-      .pulse-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #28a745; box-shadow: 0 0 8px #28a745; margin-right: 5px; }
+      .section-view.active { display: block; animation: fadeIn 0.2s ease-in-out; }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+      
+      .brand-link { font-weight: 700; letter-spacing: 0.5px; border-bottom: 1px solid rgba(255,255,255,0.08) !important; }
+      .pulse-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981; margin-right: 5px; }
       .badge-custom { font-size: 0.85rem; padding: 0.35em 0.6em; }
       .modal-header { border-bottom: 1px solid rgba(255,255,255,0.1); }
       .modal-footer { border-top: 1px solid rgba(255,255,255,0.1); }
       .close { color: #fff; }
       .table-responsive { -webkit-overflow-scrolling: touch; overflow-x: auto; margin-bottom: 0; }
+
+      /* Sleek Modern Dark Cards */
+      .card {
+        background: #1e293b !important;
+        border: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25) !important;
+        margin-bottom: 18px !important;
+        overflow: hidden;
+      }
+      .card-header {
+        background: rgba(15, 23, 42, 0.75) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        padding: 12px 18px !important;
+      }
+      .card-title {
+        font-size: 1rem !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.3px;
+        margin: 0;
+      }
+      .card-body {
+        padding: 16px 18px !important;
+      }
+
+      /* Polished Form Inputs */
+      .form-control, .custom-select {
+        background-color: #0f172a !important;
+        border: 1px solid #334155 !important;
+        color: #f8fafc !important;
+        border-radius: 8px !important;
+        height: 38px;
+        font-size: 0.9rem;
+      }
+      .form-control:focus, .custom-select:focus {
+        border-color: #10b981 !important;
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25) !important;
+      }
+      .form-group label {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #94a3b8;
+        margin-bottom: 5px;
+      }
+
+      /* Clean Table Styling */
+      .table-striped tbody tr:nth-of-type(odd) {
+        background-color: rgba(255, 255, 255, 0.02) !important;
+      }
+      .table-hover tbody tr:hover {
+        background-color: rgba(255, 255, 255, 0.05) !important;
+      }
+      .table th {
+        background: rgba(15, 23, 42, 0.9) !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-top: none !important;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: #94a3b8;
+        font-weight: 700;
+      }
+      .table td {
+        border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
+        vertical-align: middle !important;
+        font-size: 0.88rem;
+      }
+      .btn-xs {
+        padding: 4px 10px;
+        font-size: 0.78rem;
+        border-radius: 6px;
+        font-weight: 600;
+      }
       
       /* Mobile Adaptive UI Optimization */
       @media (max-width: 767.98px) {
         .content-wrapper { padding: 10px !important; }
         .card { margin-bottom: 12px; }
-        .card-header { padding: 0.6rem 0.8rem; }
-        .card-body { padding: 0.8rem; }
-        .card-title { font-size: 0.95rem; font-weight: 700; }
+        .card-header { padding: 0.6rem 0.8rem !important; }
+        .card-body { padding: 0.8rem !important; }
+        .card-title { font-size: 0.95rem !important; font-weight: 700; }
         .small-box { margin-bottom: 10px; border-radius: 12px; }
         .small-box .inner { padding: 10px; }
         .small-box .inner h3 { font-size: 1.45rem; margin-bottom: 2px; }
@@ -3529,53 +3612,57 @@ ADMIN_HTML = """
 
     <!-- 5. RATES & PROMOS SECTION (DYNAMIC ADD+ & EDIT RATE TIERS) -->
     <div id="sec-rates" class="section-view">
-      <!-- General Settings -->
-      <div class="card card-warning">
-        <div class="card-header"><h3 class="card-title"><i class="fas fa-sliders-h"></i> Basic Rate Timing & Chute Timeout</h3></div>
-        <div class="card-body">
-          <div class="row">
-            <div class="col-12 col-md-4 form-group">
-              <label>Default Base Rate (Mins per 1 Bottle):</label>
-              <input type="number" id="rate-1" class="form-control" value="{{ config.minutes_per_bottle }}" min="1" oninput="onBaseRateInput()">
-            </div>
-            <div class="col-12 col-md-4 form-group">
-              <label>Drop Chute Timeout (Seconds):</label>
-              <input type="number" id="rate-timeout" class="form-control" value="{{ config.drop_timeout }}" min="10" max="120">
-            </div>
-            <div class="col-12 col-md-4 form-group">
-              <label class="d-none d-md-block">&nbsp;</label>
-              <button class="btn btn-warning btn-block" onclick="saveRates()"><i class="fas fa-save"></i> Save Timing</button>
+      <div class="row">
+        <!-- Card 1: General Timing -->
+        <div class="col-12 col-lg-6">
+          <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title text-warning"><i class="fas fa-sliders-h mr-1"></i> Basic Rate & Drop Timeout</h3></div>
+            <div class="card-body">
+              <div class="row">
+                <div class="col-6 form-group mb-2">
+                  <label>Base Rate (Mins / Bottle):</label>
+                  <input type="number" id="rate-1" class="form-control" value="{{ config.minutes_per_bottle }}" min="1" oninput="onBaseRateInput()">
+                </div>
+                <div class="col-6 form-group mb-2">
+                  <label>Chute Timeout (Seconds):</label>
+                  <input type="number" id="rate-timeout" class="form-control" value="{{ config.drop_timeout }}" min="10" max="120">
+                </div>
+                <div class="col-12 mt-2">
+                  <button class="btn btn-warning btn-block font-weight-bold" onclick="saveRates()"><i class="fas fa-save mr-1"></i> Save Base Timing</button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Quick Template Presets -->
-      <div class="card card-info mt-3">
-        <div class="card-header"><h3 class="card-title"><i class="fas fa-magic"></i> Quick-Load Balanced Rate Templates</h3></div>
-        <div class="card-body">
-          <div class="row align-items-center">
-            <div class="col-12 col-md-8 form-group mb-md-0">
-              <select id="rate-preset-select" class="form-control">
-                <option value="standard">🌟 Standard Community Tier (1b=10m, 3b=40m, 5b=1h15m, 10b=3h)</option>
-                <option value="aggressive">⚡ Aggressive Reward Curve (1b=10m, 5b=1h10m, 10b=3h, 20b=7h)</option>
-                <option value="cafe">☕ Café / Study Hub Curve (1b=20m, 3b=1h15m, 6b=3h, 12b=7h)</option>
-              </select>
-            </div>
-            <div class="col-12 col-md-4">
-              <button class="btn btn-info btn-block" onclick="applyRatePreset()"><i class="fas fa-file-import"></i> Apply Template</button>
+        <!-- Card 2: Template Presets -->
+        <div class="col-12 col-lg-6">
+          <div class="card mb-3">
+            <div class="card-header"><h3 class="card-title text-info"><i class="fas fa-magic mr-1"></i> Quick-Load Rate Templates</h3></div>
+            <div class="card-body">
+              <div class="form-group mb-2">
+                <label>Balanced Rate Curve Templates:</label>
+                <select id="rate-preset-select" class="form-control">
+                  <option value="standard">🌟 Standard Community (1b=10m, 3b=40m, 5b=1h15m, 10b=3h)</option>
+                  <option value="aggressive">⚡ Aggressive Reward (1b=10m, 5b=1h10m, 10b=3h, 20b=7h)</option>
+                  <option value="cafe">☕ Café / Study Hub (1b=20m, 3b=1h15m, 6b=3h, 12b=7h)</option>
+                </select>
+              </div>
+              <div class="mt-2 pt-1">
+                <button class="btn btn-info btn-block font-weight-bold" onclick="applyRatePreset()"><i class="fas fa-file-import mr-1"></i> Apply Selected Template</button>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Add / Edit Custom Promo Rate Form -->
-      <div class="card card-success mt-3" id="promo-form-card">
-        <div class="card-header"><h3 class="card-title" id="promo-form-title"><i class="fas fa-plus-circle"></i> Add Custom Promo Rate Package</h3></div>
+      <div class="card mb-3" id="promo-form-card">
+        <div class="card-header"><h3 class="card-title text-success" id="promo-form-title"><i class="fas fa-plus-circle mr-1"></i> Add Custom Promo Rate Package</h3></div>
         <div class="card-body">
           <input type="hidden" id="edit-original-bottles" value="">
-          <div class="row">
-            <div class="col-12 col-md-3 form-group">
+          <div class="row align-items-end">
+            <div class="col-12 col-sm-6 col-md-3 form-group mb-2">
               <label>Bottles Required:</label>
               <div class="input-group">
                 <input type="number" id="new-rate-bottles" class="form-control" placeholder="e.g. 5" min="1" max="100" oninput="validatePromoFormMath()">
@@ -3590,19 +3677,17 @@ ADMIN_HTML = """
                     <a class="dropdown-item" href="javascript:setRateBottles(12)">12 Bottles</a>
                     <a class="dropdown-item" href="javascript:setRateBottles(15)">15 Bottles</a>
                     <a class="dropdown-item" href="javascript:setRateBottles(20)">20 Bottles</a>
-                    <a class="dropdown-item" href="javascript:setRateBottles(25)">25 Bottles</a>
-                    <a class="dropdown-item" href="javascript:setRateBottles(50)">50 Bottles</a>
                   </div>
                 </div>
               </div>
             </div>
             
-            <div class="col-12 col-md-3 form-group">
+            <div class="col-12 col-sm-6 col-md-3 form-group mb-2">
               <label>Time Credited:</label>
               <div class="input-group">
                 <input type="number" id="new-rate-time-val" class="form-control" placeholder="e.g. 90" min="1" oninput="validatePromoFormMath()">
                 <div class="input-group-append">
-                  <select id="new-rate-time-unit" class="custom-select" style="max-width: 90px;" onchange="validatePromoFormMath()">
+                  <select id="new-rate-time-unit" class="custom-select" style="max-width: 85px;" onchange="validatePromoFormMath()">
                     <option value="mins" selected>Mins</option>
                     <option value="hours">Hours</option>
                     <option value="days">Days</option>
@@ -3611,7 +3696,7 @@ ADMIN_HTML = """
               </div>
             </div>
 
-            <div class="col-12 col-md-4 form-group">
+            <div class="col-12 col-sm-8 col-md-4 form-group mb-2">
               <label>Package Display Label:</label>
               <div class="input-group">
                 <input type="text" id="new-rate-label" class="form-control" placeholder="Auto-generated if blank">
@@ -3621,17 +3706,16 @@ ADMIN_HTML = """
               </div>
             </div>
 
-            <div class="col-12 col-md-2 form-group">
-              <label class="d-none d-md-block">&nbsp;</label>
+            <div class="col-12 col-sm-4 col-md-2 form-group mb-2">
               <div class="d-flex">
-                <button class="btn btn-success btn-block mr-1" id="btn-save-promo" onclick="addPromoRate()"><i class="fas fa-plus"></i> Add Rate</button>
-                <button class="btn btn-secondary" id="btn-cancel-promo" onclick="cancelEditPromoRate()" style="display:none;" title="Cancel Edit"><i class="fas fa-times"></i></button>
+                <button class="btn btn-success btn-block mr-1 font-weight-bold" id="btn-save-promo" onclick="addPromoRate()"><i class="fas fa-plus mr-1"></i> Add</button>
+                <button class="btn btn-secondary font-weight-bold" id="btn-cancel-promo" onclick="cancelEditPromoRate()" style="display:none;" title="Cancel Edit"><i class="fas fa-times"></i></button>
               </div>
             </div>
           </div>
 
           <!-- Live Validator Feedback Box -->
-          <div id="rate-validator-feedback" class="alert alert-info py-2 px-3 mb-0" style="display:none; font-size:12px; border-radius:8px;">
+          <div id="rate-validator-feedback" class="alert alert-info py-2 px-3 mt-2 mb-0" style="display:none; font-size:12px; border-radius:8px;">
             <div class="d-flex justify-content-between align-items-center">
               <span id="rate-validator-eff" class="font-weight-bold">📊 Efficiency: --</span>
               <span id="rate-validator-status" class="font-weight-bold">✔ Status: OK</span>
@@ -3642,18 +3726,18 @@ ADMIN_HTML = """
       </div>
 
       <!-- Active Rate Packages Table -->
-      <div class="card card-dark mt-3">
-        <div class="card-header"><h3 class="card-title"><i class="fas fa-tags"></i> Active Rate Tiers & Promo Curves</h3></div>
+      <div class="card mb-3">
+        <div class="card-header"><h3 class="card-title text-light"><i class="fas fa-tags mr-1"></i> Active Rate Tiers & Promo Curves</h3></div>
         <div class="card-body p-0">
           <div class="table-responsive">
             <table class="table table-striped table-hover mb-0">
               <thead>
                 <tr>
-                  <th>Bottles Required</th>
-                  <th>Time Credited</th>
-                  <th>Rate Efficiency</th>
-                  <th>Package Label</th>
-                  <th style="width: 140px;">Actions</th>
+                  <th style="padding: 10px 14px;">Bottles Required</th>
+                  <th style="padding: 10px 14px;">Time Credited</th>
+                  <th style="padding: 10px 14px;">Rate Efficiency</th>
+                  <th style="padding: 10px 14px;">Package Label</th>
+                  <th style="padding: 10px 14px; width: 140px; text-align: right;">Actions</th>
                 </tr>
               </thead>
               <tbody id="rates-table-body"></tbody>
@@ -4284,24 +4368,30 @@ function loadRates() {
         currentRatesCache = d || [];
         let html = '';
         currentRatesCache.forEach(r=>{
-            const hrs = (r.minutes / 60).toFixed(1);
+            let timeStr = '';
+            if (r.minutes >= 60) {
+                const hrs = (r.minutes / 60).toFixed(1);
+                timeStr = `${hrs} Hours (${r.minutes} mins)`;
+            } else {
+                timeStr = `${r.minutes} Minutes`;
+            }
             const eff = (r.minutes / r.bottles).toFixed(1);
             const baseRate = parseInt(document.getElementById('rate-1').value) || 10;
             const bonusPct = Math.round(((eff - baseRate) / baseRate) * 100);
-            const bonusTag = bonusPct > 0 ? `<span class="badge badge-success">+${bonusPct}% Bonus</span>` : `<span class="badge badge-secondary">Base Rate</span>`;
+            const bonusTag = bonusPct > 0 ? `<span class="badge badge-success ml-1">+${bonusPct}% Bonus</span>` : `<span class="badge badge-secondary ml-1">Base</span>`;
             const safeLabel = encodeURIComponent(r.label || '');
             html += `<tr>
-                <td><strong>${r.bottles} Bottle${r.bottles > 1 ? 's' : ''}</strong></td>
-                <td><strong>${r.minutes} Minutes</strong> (${hrs >= 1 ? hrs + ' Hours' : r.minutes + ' Mins'})</td>
-                <td><strong>${eff} m/bottle</strong> ${bonusTag}</td>
-                <td>${r.label || '-'}</td>
-                <td>
-                    <button class="btn btn-xs btn-warning mr-1" onclick="editPromoRate(${r.bottles}, ${r.minutes}, '${safeLabel}')"><i class="fas fa-edit"></i> Edit</button>
-                    ${r.bottles > 1 ? `<button class="btn btn-xs btn-danger" onclick="deletePromoRate(${r.bottles})"><i class="fas fa-trash"></i> Delete</button>` : `<span class="text-muted" style="font-size:11px;">(Base tier)</span>`}
+                <td style="padding: 10px 14px;"><strong class="text-success"><i class="fas fa-wine-bottle mr-1"></i>${r.bottles} Bottle${r.bottles > 1 ? 's' : ''}</strong></td>
+                <td style="padding: 10px 14px;"><strong>${timeStr}</strong></td>
+                <td style="padding: 10px 14px;"><code>${eff} m/b</code> ${bonusTag}</td>
+                <td style="padding: 10px 14px;"><span class="text-light">${r.label || '-'}</span></td>
+                <td style="padding: 10px 14px; text-align: right;">
+                    <button class="btn btn-xs btn-outline-warning mr-1" onclick="editPromoRate(${r.bottles}, ${r.minutes}, '${safeLabel}')"><i class="fas fa-edit"></i> Edit</button>
+                    ${r.bottles > 1 ? `<button class="btn btn-xs btn-outline-danger" onclick="deletePromoRate(${r.bottles})"><i class="fas fa-trash"></i> Delete</button>` : `<span class="text-muted" style="font-size:11px;">(Base)</span>`}
                 </td>
             </tr>`;
         });
-        document.getElementById('rates-table-body').innerHTML = html || '<tr><td colspan="5" class="text-center">No promo rates configured.</td></tr>';
+        document.getElementById('rates-table-body').innerHTML = html || '<tr><td colspan="5" class="text-center p-3 text-muted">No promo rates configured.</td></tr>';
     });
 }
 
