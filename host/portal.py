@@ -2162,15 +2162,146 @@ def simulator_reset():
     return jsonify({"success": True})
 
 FORCE_PASS_HTML = """
-<!DOCTYPE html><html><head><title>Change Password</title>
-<style>body{font-family:sans-serif;background:#f0f2f5;display:flex;justify-content:center;align-items:center;height:100vh;}
-.card{background:#fff;padding:2rem;border-radius:8px;box-shadow:0 4px 6px rgba(0,0,0,0.1);}</style></head>
-<body><div class="card"><h2>Security Requirement</h2>
-<p style="color:#d32f2f;">You must change the default password before continuing.</p>
-<form method="POST" action="/admin/force_password_change">
-<input type="password" name="new_password" placeholder="New Password" required minlength="6" style="padding:10px;width:100%;margin-bottom:10px;box-sizing:border-box;">
-<button type="submit" style="padding:10px;width:100%;background:#d32f2f;color:white;border:none;border-radius:4px;cursor:pointer;">Change Password</button>
-</form></div></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ECO-Fi Security - Password Update Required</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/3.2.0/css/adminlte.min.css">
+    <style>
+        body {
+            background: radial-gradient(circle at 50% 20%, #1a1a3a 0%, #0b0d19 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 16px;
+        }
+        .security-card {
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            border-radius: 20px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(239, 68, 68, 0.15);
+            width: 100%;
+            max-width: 440px;
+            overflow: hidden;
+        }
+        .security-header {
+            padding: 30px 24px 20px 24px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .shield-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: rgba(239, 68, 68, 0.15);
+            border: 2px solid #ef4444;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            color: #f87171;
+            margin-bottom: 12px;
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
+        }
+        .security-title {
+            font-size: 22px;
+            font-weight: 800;
+            color: #f8fafc;
+            margin-bottom: 6px;
+        }
+        .security-sub {
+            font-size: 13px;
+            color: #fca5a5;
+            line-height: 1.4;
+        }
+        .security-body {
+            padding: 24px;
+        }
+        .input-group-custom {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+        .input-group-custom:focus-within {
+            border-color: #f87171;
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25);
+        }
+        .custom-input {
+            background: transparent !important;
+            border: none !important;
+            color: #f8fafc !important;
+            font-size: 14px;
+            padding: 12px 14px 12px 0;
+            width: 100%;
+            outline: none !important;
+        }
+        .btn-change {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            border: none;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 15px;
+            padding: 13px;
+            border-radius: 12px;
+            width: 100%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
+        }
+        .btn-change:hover {
+            background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+        }
+        .security-reqs {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 10px;
+            padding: 10px 14px;
+            margin-bottom: 18px;
+            font-size: 12px;
+            color: #cbd5e1;
+        }
+    </style>
+</head>
+<body>
+<div class="security-card">
+    <div class="security-header">
+        <div class="shield-icon"><i class="fas fa-shield-alt"></i></div>
+        <div class="security-title">Security Initialization</div>
+        <div class="security-sub">The default password <code>admin123</code> must be replaced with a secure password to unlock administrative features.</div>
+    </div>
+    <div class="security-body">
+        <div class="security-reqs">
+            <i class="fas fa-info-circle text-info mr-1"></i> <strong>Requirements:</strong>
+            <ul class="mb-0 pl-3 mt-1" style="font-size: 11px; color: #94a3b8;">
+                <li>Minimum of 6 characters</li>
+                <li>Cannot be the default "admin123"</li>
+            </ul>
+        </div>
+        <form method="POST" action="/admin/force_password_change">
+            <div class="input-group-custom">
+                <div style="padding: 12px 14px; color: #94a3b8;"><i class="fas fa-key"></i></div>
+                <input type="password" name="new_password" class="custom-input" placeholder="Enter New Secure Password" required minlength="6">
+            </div>
+            <button type="submit" class="btn-change"><i class="fas fa-lock mr-1"></i> Update Password & Proceed</button>
+        </form>
+    </div>
+    <div style="padding: 12px; text-align: center; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.05); font-size: 12px;">
+        <a href="/admin/logout" style="color: #94a3b8; text-decoration: none;"><i class="fas fa-sign-out-alt"></i> Cancel & Logout</a>
+    </div>
+</div>
+</body>
+</html>
 """
 
 @app.before_request
@@ -2929,33 +3060,285 @@ def admin_export_csv():
 
 LOGIN_HTML = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>ECO-Fi Admin Login</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ECO-Fi Master Admin Control Panel • Login</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/admin-lte/3.2.0/css/adminlte.min.css">
+    <style>
+        :root {
+            --brand-emerald: #10b981;
+            --brand-cyan: #06b6d4;
+            --brand-dark: #0b1329;
+        }
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            background: radial-gradient(circle at 50% 20%, #132742 0%, #080e1e 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 16px;
+            overflow-x: hidden;
+        }
+        .login-card {
+            background: rgba(15, 23, 42, 0.88);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 35px rgba(16, 185, 129, 0.15);
+            width: 100%;
+            max-width: 420px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            animation: fadeInCard 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes fadeInCard {
+            from { opacity: 0; transform: translateY(16px) scale(0.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .login-header {
+            padding: 34px 24px 20px 24px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+            position: relative;
+        }
+        .brand-logo-badge {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(6, 182, 212, 0.2));
+            border: 2px solid var(--brand-emerald);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            color: var(--brand-emerald);
+            margin-bottom: 14px;
+            box-shadow: 0 0 24px rgba(16, 185, 129, 0.4);
+        }
+        .brand-title {
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            background: linear-gradient(135deg, #34d399 0%, #38bdf8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 4px;
+        }
+        .brand-sub {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #94a3b8;
+            font-weight: 600;
+        }
+        .login-body {
+            padding: 28px 24px 24px 24px;
+        }
+        .alert-custom-error {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            color: #fca5a5;
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 13px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .input-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #cbd5e1;
+            margin-bottom: 6px;
+            display: block;
+        }
+        .custom-input-group {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            margin-bottom: 18px;
+            transition: all 0.2s ease;
+        }
+        .custom-input-group:focus-within {
+            border-color: var(--brand-emerald);
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.25);
+            background: rgba(30, 41, 59, 0.95);
+        }
+        .input-icon {
+            padding: 12px 14px;
+            color: #94a3b8;
+            font-size: 15px;
+            min-width: 44px;
+            text-align: center;
+        }
+        .custom-input {
+            background: transparent !important;
+            border: none !important;
+            color: #f8fafc !important;
+            font-size: 14px;
+            padding: 12px 14px 12px 0;
+            width: 100%;
+            outline: none !important;
+        }
+        .custom-input::placeholder {
+            color: #64748b;
+        }
+        .toggle-pw {
+            cursor: pointer;
+            padding: 12px 14px;
+            color: #64748b;
+            transition: color 0.2s;
+        }
+        .toggle-pw:hover {
+            color: #34d399;
+        }
+        .btn-login {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border: none;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 15px;
+            letter-spacing: 0.5px;
+            padding: 13px;
+            border-radius: 12px;
+            width: 100%;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 6px;
+        }
+        .btn-login:hover {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.5);
+            transform: translateY(-1px);
+        }
+        .btn-login:active {
+            transform: translateY(0);
+        }
+        .login-footer {
+            padding: 16px 24px;
+            background: rgba(11, 19, 41, 0.75);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            text-align: center;
+            font-size: 12px;
+            color: #64748b;
+        }
+        .portal-link {
+            color: #38bdf8;
+            text-decoration: none;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: color 0.2s;
+        }
+        .portal-link:hover {
+            color: #7dd3fc;
+            text-decoration: underline;
+        }
+        .badge-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: #94a3b8;
+            margin-top: 8px;
+        }
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            background: #10b981;
+            border-radius: 50%;
+            box-shadow: 0 0 8px #10b981;
+        }
+    </style>
 </head>
-<body class="hold-transition login-page bg-dark">
-<div class="login-box">
-  <div class="card card-outline card-success">
-    <div class="card-header text-center">
-      <h2 class="text-success font-weight-bold">ECO-Fi VENDO</h2>
-      <small>Master Control Panel</small>
-    </div>
-    <div class="card-body">
-      {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
-      <form method="post">
-        <div class="input-group mb-3">
-          <input type="text" name="username" class="form-control" placeholder="Username" required>
+<body>
+<div class="login-card">
+    <div class="login-header">
+        <div class="brand-logo-badge">
+            <i class="fas fa-recycle"></i>
         </div>
-        <div class="input-group mb-3">
-          <input type="password" name="password" class="form-control" placeholder="Password" required>
-        </div>
-        <button type="submit" class="btn btn-success btn-block">Sign In</button>
-      </form>
+        <div class="brand-title">ECO-Fi VENDO</div>
+        <div class="brand-sub">Master Admin Control Panel</div>
     </div>
-  </div>
+    <div class="login-body">
+        {% if error %}
+        <div class="alert-custom-error">
+            <i class="fas fa-exclamation-triangle text-danger font-size-16"></i>
+            <div>{{ error }}</div>
+        </div>
+        {% endif %}
+        <form method="post" id="login-form">
+            <div>
+                <label class="input-label"><i class="fas fa-user-shield mr-1"></i> Admin Username</label>
+                <div class="custom-input-group">
+                    <div class="input-icon"><i class="fas fa-user"></i></div>
+                    <input type="text" name="username" class="custom-input" placeholder="Enter administrator username" required autofocus autocomplete="username">
+                </div>
+            </div>
+            
+            <div>
+                <label class="input-label"><i class="fas fa-key mr-1"></i> Master Password</label>
+                <div class="custom-input-group">
+                    <div class="input-icon"><i class="fas fa-lock"></i></div>
+                    <input type="password" id="input-password" name="password" class="custom-input" placeholder="Enter administrator password" required autocomplete="current-password">
+                    <div class="toggle-pw" onclick="togglePassword()" title="Toggle visibility"><i class="fas fa-eye" id="eye-icon"></i></div>
+                </div>
+            </div>
+            
+            <button type="submit" class="btn-login" id="btn-submit">
+                <i class="fas fa-sign-in-alt"></i> Sign In to Dashboard
+            </button>
+        </form>
+    </div>
+    <div class="login-footer">
+        <a href="/" class="portal-link"><i class="fas fa-wifi"></i> Return to Client Captive Portal</a>
+        <br>
+        <div class="badge-status">
+            <span class="status-dot"></span> Reverse Vending Gateway Online
+        </div>
+    </div>
 </div>
+
+<script>
+function togglePassword() {
+    const input = document.getElementById('input-password');
+    const icon = document.getElementById('eye-icon');
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+    } else {
+        input.type = 'password';
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+    }
+}
+document.getElementById('login-form').addEventListener('submit', function() {
+    const btn = document.getElementById('btn-submit');
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Authenticating...';
+    btn.disabled = true;
+    this.submit();
+});
+</script>
 </body>
 </html>
 """
