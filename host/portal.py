@@ -80,8 +80,8 @@ def init_db():
         # Default configs
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('minutes_per_bottle', '10')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('drop_timeout', '30')")
-        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('default_dl_kbps', '2048')")
-        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('default_ul_kbps', '1024')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('default_dl_kbps', '3072')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('default_ul_kbps', '1536')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('custom_css', '')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('telegram_bot_token', '')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('telegram_chat_id', '')")
@@ -443,7 +443,7 @@ def setup_firewall():
     except Exception:
         pass
 
-def update_firewall(ip, action, timeout_sec=0, dl_kbps=2048, ul_kbps=1024):
+def update_firewall(ip, action, timeout_sec=0, dl_kbps=3072, ul_kbps=1536):
     if platform.system() == "Windows":
         return
     try:
@@ -465,7 +465,7 @@ def sync_client_firewall(ip):
         if ip not in active_clients: return
         sess = active_clients[ip]
         if sess["remaining_seconds"] > 0 and not sess.get("is_paused", False):
-            update_firewall(ip, "add", sess["remaining_seconds"], sess.get("dl_kbps", 2048), sess.get("ul_kbps", 1024))
+            update_firewall(ip, "add", sess["remaining_seconds"], sess.get("dl_kbps", 3072), sess.get("ul_kbps", 1536))
         else:
             update_firewall(ip, "del")
 
@@ -511,7 +511,7 @@ def save_sessions_to_db():
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (ip, s["mac"], s["remaining_seconds"], 
                      1 if s.get("is_paused", False) else 0,
-                     s.get("dl_kbps", 2048), s.get("ul_kbps", 1024),
+                     s.get("dl_kbps", 3072), s.get("ul_kbps", 1536),
                      s.get("pending_bottles", 0),
                      s.get("paused_at", 0),
                      s.get("expires_at", 0),
@@ -652,8 +652,8 @@ def ensure_client_session(ip):
             "is_paused": False,
             "paused_at": 0,
             "expires_at": 0,
-            "dl_kbps": int(get_config("default_dl_kbps", "2048")),
-            "ul_kbps": int(get_config("default_ul_kbps", "1024"))
+            "dl_kbps": int(get_config("default_dl_kbps", "3072")),
+            "ul_kbps": int(get_config("default_ul_kbps", "1536"))
         }
         return active_clients[ip]
 
@@ -2432,8 +2432,8 @@ def admin_api_clients():
                 "mac": sess.get("mac", "00:00:00:00:00:00"),
                 "remaining_seconds": sess.get("remaining_seconds", 0),
                 "is_paused": sess.get("is_paused", False),
-                "dl_kbps": sess.get("dl_kbps", 2048),
-                "ul_kbps": sess.get("ul_kbps", 1024)
+                "dl_kbps": sess.get("dl_kbps", 3072),
+                "ul_kbps": sess.get("ul_kbps", 1536)
             })
         return jsonify(res)
 
@@ -4558,8 +4558,8 @@ function openEditClientModal(ip, mac, remSeconds, dl, ul) {
 function submitEditClientModal() {
     const ip = document.getElementById('modal-client-ip').value;
     const mins = parseInt(document.getElementById('modal-client-mins').value) || 0;
-    const dl = parseInt(document.getElementById('modal-client-dl').value) || 2048;
-    const ul = parseInt(document.getElementById('modal-client-ul').value) || 1024;
+    const dl = parseInt(document.getElementById('modal-client-dl').value) || 3072;
+    const ul = parseInt(document.getElementById('modal-client-ul').value) || 1536;
 
     fetch('/admin/api/client/edit', {
         method: 'POST',
