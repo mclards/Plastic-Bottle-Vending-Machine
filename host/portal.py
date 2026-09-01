@@ -13,11 +13,19 @@ import platform
 import subprocess
 import urllib.request
 import urllib.parse
+import io
 from datetime import datetime
 from collections import deque
-from flask import Flask, request, render_template_string, jsonify, session, redirect, url_for, Response
+from flask import Flask, request, render_template_string, jsonify, session, redirect, url_for, Response, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
 import logging
+
+try:
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+except ImportError:
+    openpyxl = None
 
 try:
     import serial
@@ -2541,6 +2549,351 @@ def admin_api_telegram_test():
     ok = send_telegram_alert("🔔 *ECO-Fi Test Alert*\n\nThis is a successful test notification from your Reverse Vending Machine!")
     return jsonify({"success": ok})
 
+def generate_ecofi_excel_report(db_path):
+    if not openpyxl:
+        return None
+    wb = openpyxl.Workbook()
+    
+    FONT_FAMILY = "Segoe UI"
+    title_font = Font(name=FONT_FAMILY, size=16, bold=True, color="FFFFFF")
+    subtitle_font = Font(name=FONT_FAMILY, size=10, italic=True, color="E2E8F0")
+    kpi_title_font = Font(name=FONT_FAMILY, size=9, bold=True, color="64748B")
+    kpi_value_font = Font(name=FONT_FAMILY, size=14, bold=True, color="0F172A")
+    header_font = Font(name=FONT_FAMILY, size=11, bold=True, color="FFFFFF")
+    total_font = Font(name=FONT_FAMILY, size=11, bold=True, color="0F172A")
+    data_font = Font(name=FONT_FAMILY, size=10, color="1E293B")
+    
+    title_fill = PatternFill(start_color="0F766E", end_color="0F766E", fill_type="solid")
+    header_fill = PatternFill(start_color="10B981", end_color="10B981", fill_type="solid")
+    kpi_fill = PatternFill(start_color="F8FAFC", end_color="F8FAFC", fill_type="solid")
+    zebra_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+    white_fill = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+    total_fill = PatternFill(start_color="E2E8F0", end_color="E2E8F0", fill_type="solid")
+    
+    status_active_fill = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
+    status_active_font = Font(name=FONT_FAMILY, size=10, bold=True, color="15803D")
+    status_used_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
+    status_used_font = Font(name=FONT_FAMILY, size=10, color="64748B")
+
+    thin_border_side = Side(style="thin", color="CBD5E1")
+    cell_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
+    kpi_border = Border(left=thin_border_side, right=thin_border_side, top=thin_border_side, bottom=thin_border_side)
+    total_border = Border(
+        left=thin_border_side, right=thin_border_side,
+        top=Side(style="thin", color="0F172A"),
+        bottom=Side(style="double", color="0F172A")
+    )
+    
+    align_center = Alignment(horizontal="center", vertical="center")
+    align_left = Alignment(horizontal="left", vertical="center")
+    align_right = Alignment(horizontal="right", vertical="center")
+    
+    # 1. SHEET: DAILY COLLECTIONS & IMPACT
+    ws1 = wb.active
+    ws1.title = "Daily Collections & Impact"
+    ws1.views.sheetView[0].showGridLines = True
+    
+    with sqlite3.connect(db_path) as conn:
+        c = conn.cursor()
+        c.execute("SELECT date, total_bottles FROM stats ORDER BY date DESC")
+        stats_rows = c.fetchall()
+        c.execute("SELECT COUNT(*), SUM(wallet_minutes) FROM members")
+        m_stats = c.fetchone()
+        total_members = m_stats[0] or 0
+        c.execute("SELECT COUNT(*), SUM(CASE WHEN is_used=0 THEN 1 ELSE 0 END) FROM vouchers")
+        v_stats = c.fetchone()
+        total_vouchers = v_stats[0] or 0
+        unclaimed_vouchers = v_stats[1] or 0
+
+    total_bottles_sum = sum(r[1] for r in stats_rows)
+    est_plastic_kg = total_bottles_sum * 0.025
+    est_co2_kg = est_plastic_kg * 1.5
+    total_mins_sum = total_bottles_sum * 10
+    total_hours_sum = total_mins_sum / 60.0
+
+    ws1.merge_cells("A1:G1")
+    ws1["A1"] = "ECO-FI REVERSE VENDING MACHINE (PBVM)"
+    ws1["A1"].font = title_font
+    ws1["A1"].fill = title_fill
+    ws1["A1"].alignment = align_center
+    ws1.row_dimensions[1].height = 28
+    
+    ws1.merge_cells("A2:G2")
+    ws1["A2"] = f"Executive Operations & Environmental Impact Report • Generated on {datetime.now().strftime('%B %d, %Y at %I:%M %p')}"
+    ws1["A2"].font = subtitle_font
+    ws1["A2"].fill = title_fill
+    ws1["A2"].alignment = align_center
+    ws1.row_dimensions[2].height = 18
+
+    kpis = [
+        ("TOTAL BOTTLES", f"{total_bottles_sum:,}", "A", "B"),
+        ("WIFI TIME ISSUED", f"{total_hours_sum:.1f} Hours", "C", "C"),
+        ("PLASTIC RECYCLED", f"{est_plastic_kg:.2f} kg", "D", "D"),
+        ("CO₂ OFFSET", f"{est_co2_kg:.2f} kg", "E", "E"),
+        ("MEMBERS", f"{total_members} users", "F", "F"),
+        ("ACTIVE VOUCHERS", f"{unclaimed_vouchers} avail", "G", "G"),
+    ]
+    ws1.row_dimensions[4].height = 16
+    ws1.row_dimensions[5].height = 24
+    for title, val, c1, c2 in kpis:
+        if c1 != c2:
+            ws1.merge_cells(f"{c1}4:{c2}4")
+            ws1.merge_cells(f"{c1}5:{c2}5")
+        top_cell = ws1[f"{c1}4"]
+        top_cell.value = title
+        top_cell.font = kpi_title_font
+        top_cell.fill = kpi_fill
+        top_cell.alignment = align_center
+        top_cell.border = kpi_border
+        val_cell = ws1[f"{c1}5"]
+        val_cell.value = val
+        val_cell.font = kpi_value_font
+        val_cell.fill = kpi_fill
+        val_cell.alignment = align_center
+        val_cell.border = kpi_border
+        if c1 != c2:
+            ws1[f"{c2}4"].border = kpi_border
+            ws1[f"{c2}5"].border = kpi_border
+
+    headers = [
+        ("Date", align_center),
+        ("Bottles Recycled", align_right),
+        ("WiFi Time (Minutes)", align_right),
+        ("WiFi Time (Hours)", align_right),
+        ("Plastic Weight (kg)", align_right),
+        ("CO₂ Saved (kg)", align_right),
+        ("Collection Status", align_center)
+    ]
+    ws1.row_dimensions[7].height = 24
+    for col_idx, (h_title, h_align) in enumerate(headers, start=1):
+        cell = ws1.cell(row=7, column=col_idx, value=h_title)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = h_align
+        cell.border = cell_border
+
+    current_row = 8
+    for idx, (dt, count) in enumerate(stats_rows):
+        mins = count * 10
+        hrs = mins / 60.0
+        kg = count * 0.025
+        co2 = kg * 1.5
+        status = "High Volume" if count >= 20 else ("Active" if count > 0 else "Idle")
+        fill = zebra_fill if idx % 2 == 1 else white_fill
+        ws1.row_dimensions[current_row].height = 20
+        row_vals = [
+            (dt, align_center, "@"),
+            (count, align_right, "#,##0"),
+            (mins, align_right, "#,##0"),
+            (hrs, align_right, "0.00"),
+            (kg, align_right, "0.000"),
+            (co2, align_right, "0.000"),
+            (status, align_center, "@")
+        ]
+        for col_idx, (val, c_align, num_fmt) in enumerate(row_vals, start=1):
+            cell = ws1.cell(row=current_row, column=col_idx, value=val)
+            cell.font = data_font
+            cell.fill = fill
+            cell.alignment = c_align
+            cell.border = cell_border
+            cell.number_format = num_fmt
+        current_row += 1
+
+    if stats_rows:
+        ws1.row_dimensions[current_row].height = 22
+        tot_cells = [
+            ("TOTAL", align_center),
+            (f"=SUM(B8:B{current_row-1})", align_right, "#,##0"),
+            (f"=SUM(C8:C{current_row-1})", align_right, "#,##0"),
+            (f"=SUM(D8:D{current_row-1})", align_right, "0.00"),
+            (f"=SUM(E8:E{current_row-1})", align_right, "0.000"),
+            (f"=SUM(F8:F{current_row-1})", align_right, "0.000"),
+            ("", align_center)
+        ]
+        for col_idx, (val, c_align, *opt_fmt) in enumerate(tot_cells, start=1):
+            cell = ws1.cell(row=current_row, column=col_idx, value=val)
+            cell.font = total_font
+            cell.fill = total_fill
+            cell.alignment = c_align
+            cell.border = total_border
+            if opt_fmt:
+                cell.number_format = opt_fmt[0]
+    ws1.freeze_panes = "A8"
+
+    # 2. SHEET: VOUCHERS INVENTORY
+    ws2 = wb.create_sheet(title="Voucher Inventory")
+    ws2.views.sheetView[0].showGridLines = True
+    ws2.merge_cells("A1:G1")
+    ws2["A1"] = "ECO-FI VOUCHER TICKETS INVENTORY"
+    ws2["A1"].font = title_font
+    ws2["A1"].fill = title_fill
+    ws2["A1"].alignment = align_center
+    ws2.row_dimensions[1].height = 26
+    
+    v_headers = ["Voucher Code", "Duration (Mins)", "Duration (Hours)", "Status", "Created Date", "Redeemed / Used By", "Batch / Admin Note"]
+    ws2.row_dimensions[3].height = 22
+    for col_idx, h_title in enumerate(v_headers, start=1):
+        cell = ws2.cell(row=3, column=col_idx, value=h_title)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = align_center if col_idx in [1, 4] else (align_right if col_idx in [2, 3] else align_left)
+        cell.border = cell_border
+
+    with sqlite3.connect(db_path) as conn:
+        c = conn.cursor()
+        c.execute("SELECT code, minutes, is_used, created_at, used_by, note FROM vouchers ORDER BY created_at DESC")
+        v_rows = c.fetchall()
+
+    v_row_idx = 4
+    for idx, (code, mins, is_used, created_at, used_by, note) in enumerate(v_rows):
+        ws2.row_dimensions[v_row_idx].height = 19
+        fill = zebra_fill if idx % 2 == 1 else white_fill
+        status_str = "REDEEMED" if is_used else "ACTIVE"
+        s_fill = status_used_fill if is_used else status_active_fill
+        s_font = status_used_font if is_used else status_active_font
+        row_data = [
+            (code, align_center, fill, data_font, "@"),
+            (mins, align_right, fill, data_font, "#,##0"),
+            (mins/60.0, align_right, fill, data_font, "0.00"),
+            (status_str, align_center, s_fill, s_font, "@"),
+            (created_at or "--", align_left, fill, data_font, "@"),
+            (used_by or "--", align_left, fill, data_font, "@"),
+            (note or "", align_left, fill, data_font, "@")
+        ]
+        for col_idx, (val, c_align, c_fill, c_font, n_fmt) in enumerate(row_data, start=1):
+            cell = ws2.cell(row=v_row_idx, column=col_idx, value=val)
+            cell.font = c_font
+            cell.fill = c_fill
+            cell.alignment = c_align
+            cell.border = cell_border
+            cell.number_format = n_fmt
+        v_row_idx += 1
+    ws2.freeze_panes = "A4"
+
+    # 3. SHEET: REGISTERED MEMBERS
+    ws3 = wb.create_sheet(title="Member Wallets")
+    ws3.views.sheetView[0].showGridLines = True
+    ws3.merge_cells("A1:E1")
+    ws3["A1"] = "ECO-FI REGISTERED MEMBERS & TIME WALLETS"
+    ws3["A1"].font = title_font
+    ws3["A1"].fill = title_fill
+    ws3["A1"].alignment = align_center
+    ws3.row_dimensions[1].height = 26
+    
+    m_headers = ["Member Username", "Wallet Balance (Mins)", "Wallet Balance (Hours)", "Registered Date", "Account Status"]
+    ws3.row_dimensions[3].height = 22
+    for col_idx, h_title in enumerate(m_headers, start=1):
+        cell = ws3.cell(row=3, column=col_idx, value=h_title)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = align_right if col_idx in [2, 3] else (align_center if col_idx in [4, 5] else align_left)
+        cell.border = cell_border
+
+    with sqlite3.connect(db_path) as conn:
+        c = conn.cursor()
+        c.execute("SELECT username, wallet_minutes, created_at FROM members ORDER BY wallet_minutes DESC")
+        m_rows = c.fetchall()
+
+    m_row_idx = 4
+    for idx, (uname, w_mins, m_created) in enumerate(m_rows):
+        ws3.row_dimensions[m_row_idx].height = 19
+        fill = zebra_fill if idx % 2 == 1 else white_fill
+        row_data = [
+            (uname, align_left, "@"),
+            (w_mins, align_right, "#,##0"),
+            (w_mins/60.0, align_right, "0.00"),
+            (m_created or "--", align_center, "@"),
+            ("Active User", align_center, "@")
+        ]
+        for col_idx, (val, c_align, n_fmt) in enumerate(row_data, start=1):
+            cell = ws3.cell(row=m_row_idx, column=col_idx, value=val)
+            cell.font = data_font
+            cell.fill = fill
+            cell.alignment = c_align
+            cell.border = cell_border
+            cell.number_format = n_fmt
+        m_row_idx += 1
+    ws3.freeze_panes = "A4"
+
+    # 4. SHEET: ACTIVE PROMO RATES
+    ws4 = wb.create_sheet(title="Promo Rate Curves")
+    ws4.views.sheetView[0].showGridLines = True
+    ws4.merge_cells("A1:E1")
+    ws4["A1"] = "ECO-FI ACTIVE RATE TIERS & PROMO CURVES"
+    ws4["A1"].font = title_font
+    ws4["A1"].fill = title_fill
+    ws4["A1"].alignment = align_center
+    ws4.row_dimensions[1].height = 26
+    
+    r_headers = ["Bottles Required", "Time Credited (Mins)", "Time Credited (Hours)", "Rate Efficiency", "Package Display Label"]
+    ws4.row_dimensions[3].height = 22
+    for col_idx, h_title in enumerate(r_headers, start=1):
+        cell = ws4.cell(row=3, column=col_idx, value=h_title)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = align_right if col_idx in [1, 2, 3] else (align_center if col_idx == 4 else align_left)
+        cell.border = cell_border
+
+    with sqlite3.connect(db_path) as conn:
+        c = conn.cursor()
+        c.execute("SELECT bottles, minutes, label FROM promo_rates ORDER BY bottles ASC")
+        r_rows = c.fetchall()
+
+    r_row_idx = 4
+    for idx, (b, m, l) in enumerate(r_rows):
+        ws4.row_dimensions[r_row_idx].height = 19
+        fill = zebra_fill if idx % 2 == 1 else white_fill
+        eff = f"{m/b:.1f} m/bottle"
+        row_data = [
+            (b, align_right, "#,##0"),
+            (m, align_right, "#,##0"),
+            (m/60.0, align_right, "0.00"),
+            (eff, align_center, "@"),
+            (l, align_left, "@")
+        ]
+        for col_idx, (val, c_align, n_fmt) in enumerate(row_data, start=1):
+            cell = ws4.cell(row=r_row_idx, column=col_idx, value=val)
+            cell.font = data_font
+            cell.fill = fill
+            cell.alignment = c_align
+            cell.border = cell_border
+            cell.number_format = n_fmt
+        r_row_idx += 1
+    ws4.freeze_panes = "A4"
+
+    # Auto-fit Column Widths
+    for ws in [ws1, ws2, ws3, ws4]:
+        for col in ws.columns:
+            max_len = 0
+            col_letter = get_column_letter(col[0].column)
+            for cell in col:
+                if cell.row in [1, 2]:
+                    continue
+                if cell.value is not None:
+                    s = str(cell.value)
+                    if len(s) > max_len:
+                        max_len = len(s)
+            ws.column_dimensions[col_letter].width = max(max_len + 4, 13)
+
+    return wb
+
+@app.route("/admin/api/export_xlsx")
+def admin_export_xlsx():
+    if not session.get('admin_logged_in'): return redirect("/admin/login")
+    if not openpyxl:
+        return redirect("/admin/api/export_csv")
+    wb = generate_ecofi_excel_report(DB_PATH)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"ECO_Fi_Operations_Report_{datetime.now().strftime('%Y%m%d')}.xlsx"
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=filename
+    )
+
 @app.route("/admin/api/export_csv")
 def admin_export_csv():
     if not session.get('admin_logged_in'): return redirect("/admin/login")
@@ -2646,7 +2999,7 @@ ADMIN_HTML = """
       <li class="nav-item"><a href="/" target="_blank" class="nav-link"><i class="fas fa-wifi text-success"></i> <span class="d-none d-sm-inline">Portal</span></a></li>
     </ul>
     <ul class="navbar-nav ml-auto">
-      <li class="nav-item"><a href="/admin/api/export_csv" class="btn btn-sm btn-outline-info mr-2"><i class="fas fa-file-csv"></i> <span class="d-none d-sm-inline">Export CSV</span></a></li>
+      <li class="nav-item"><a href="/admin/api/export_xlsx" class="btn btn-sm btn-success mr-2 shadow-sm"><i class="fas fa-file-excel"></i> <span class="d-none d-sm-inline">Export Excel (.xlsx)</span></a></li>
       <li class="nav-item"><a href="/admin/logout" class="btn btn-sm btn-danger"><i class="fas fa-sign-out-alt"></i> <span class="d-none d-sm-inline">Logout</span></a></li>
     </ul>
   </nav>
