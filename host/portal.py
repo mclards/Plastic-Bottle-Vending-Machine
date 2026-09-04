@@ -243,18 +243,18 @@ def check_network_health():
         pass
 
 def get_lan_interface():
-    """Find the active LAN interface (eth0, eth1, br-lan)."""
+    """Find the active LAN interface (eth1, br-lan, wlan0, eth0)."""
     if platform.system() == 'Windows':
         return 'eth0'
     try:
         wan_iface = subprocess.run("ip route | grep default | awk '{print $5}'", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout.strip()
         all_ifaces = subprocess.run('ls /sys/class/net', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout.split()
-        for iface in ['eth0', 'eth1', 'br-lan', 'wlan0']:
+        for iface in ['eth1', 'br-lan', 'wlan0', 'eth0']:
             if iface in all_ifaces and iface != wan_iface:
                 return iface
-        return wan_iface or 'eth0'
+        return wan_iface or 'eth1'
     except Exception:
-        return 'eth0'
+        return 'eth1'
 
 def get_arp_table():
     if platform.system() == 'Windows':

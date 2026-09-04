@@ -109,8 +109,8 @@ EOF
 ln -sf ../sites-available/ecofi "$MOUNT_DIR/etc/nginx/sites-enabled/ecofi"
 
 
-# Force static LAN interface on eth0 and static IP 10.0.0.1/19
-echo "[4/6.5] Enforcing 10.0.0.1/19 static IP on eth0 and authoritative dnsmasq DHCP..."
+# Configure networking: eth0 = WAN (ISP via DHCP), eth1 = LAN (Access Point static 10.0.0.1/19)
+echo "[4/6.5] Enforcing eth0 as WAN (DHCP) and eth1 as LAN (10.0.0.1/19) with authoritative dnsmasq DHCP..."
 
 # Permanent IPv4 Forwarding in sysctl
 mkdir -p "$MOUNT_DIR/etc/sysctl.d"
@@ -126,21 +126,41 @@ ROOT_HASH='$6$JpJzc5Fnsdll3j83$D9xx8MwvyG9KoulpMUVrD8JfSWwfOV5QkcxAdI0z4GeT5FpbC
 sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$MOUNT_DIR/etc/shadow"
 sed -i "s|^pi:[^:]*:|pi:${ROOT_HASH}:|" "$MOUNT_DIR/etc/shadow"
 
-# Configure /etc/network/interfaces for static 10.0.0.1/19 on eth0
+# Configure /etc/network/interfaces for eth0 (WAN DHCP) and eth1 (LAN Static 10.0.0.1/19)
 cat << 'EOF' > "$MOUNT_DIR/etc/network/interfaces"
+source /etc/network/interfaces.d/*
+
 auto lo
 iface lo inet loopback
 
+# WAN: Onboard Ethernet port connected to ISP Router
 auto eth0
 allow-hotplug eth0
-iface eth0 inet static
+iface eth0 inet dhcp
+
+# LAN: USB-to-Ethernet Adapter connected to Access Point
+auto eth1
+allow-hotplug eth1
+iface eth1 inet static
     address 10.0.0.1
     netmask 255.255.224.0
     broadcast 10.0.31.255
 EOF
-rm -rf "$MOUNT_DIR/etc/network/interfaces.d/"* 2>/dev/null || true
 
-# Configure /etc/dnsmasq.conf with full DHCP pool and captive portal wildcard
+mkdir -p "$MOUNT_DIR/etc/network/interfaces.d"
+cat << 'EOF' > "$MOUNT_DIR/etc/network/interfaces.d/vlans"
+auto eth0
+allow-hotplug eth0
+iface eth0 inet dhcp
+
+auto eth1
+allow-hotplug eth1
+iface eth1 inet static
+    address 10.0.0.1
+    netmask 255.255.224.0
+EOF
+
+# Configure /etc/dnsmasq.conf with full DHCP pool and captive portal wildcard on LAN (eth1)
 cat << 'EOF' > "$MOUNT_DIR/etc/dnsmasq.conf"
 bogus-priv
 dhcp-lease-max=20000
@@ -154,12 +174,13 @@ domain=ecofi.local
 local=/ecofi.local/
 listen-address=10.0.0.1,127.0.0.1
 
-interface=eth0
-dhcp-range=eth0,10.0.0.100,10.0.31.254,255.255.224.0,72h
-dhcp-option=eth0,3,10.0.0.1
-dhcp-option=eth0,6,10.0.0.1,1.1.1.1,1.0.0.1
-dhcp-option=eth0,114,http://10.0.0.1/
-dhcp-option=eth0,160,http://10.0.0.1/
+# LAN Hotspot Interface: USB-to-Ethernet Adapter (Access Point)
+interface=eth1
+dhcp-range=eth1,10.0.0.100,10.0.31.254,255.255.224.0,72h
+dhcp-option=eth1,3,10.0.0.1
+dhcp-option=eth1,6,10.0.0.1,1.1.1.1,1.0.0.1
+dhcp-option=eth1,114,http://10.0.0.1/
+dhcp-option=eth1,160,http://10.0.0.1/
 
 address=/#/10.0.0.1
 address=/localhost/127.0.0.1
@@ -170,26 +191,54 @@ server=1.0.0.1
 EOF
 rm -rf "$MOUNT_DIR/etc/dnsmasq.d/"* 2>/dev/null || true
 
+# Add udev hotplug rule for USB-to-Ethernet Adapter
+mkdir -p "$MOUNT_DIR/etc/udev/rules.d"
+cat << 'EOF' > "$MOUNT_DIR/etc/udev/rules.d/99-ecofi-usbnet.rules"
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="eth1|usb*|enx*", RUN+="/opt/ecofi/setup_network.sh"
+EOF
+
 mkdir -p "$MOUNT_DIR/opt/ecofi"
 cat << 'EOF' > "$MOUNT_DIR/opt/ecofi/setup_network.sh"
 #!/bin/bash
 # Enable Kernel IPv4 Packet Forwarding
 sysctl -w net.ipv4.ip_forward=1 &>/dev/null
 
-# Ensure eth0 is UP with 10.0.0.1/19
-ip addr add 10.0.0.1/19 dev eth0 2>/dev/null || true
-ip link set eth0 up
+# 1. Identify LAN interface (USB-Ethernet adapter to Access Point)
+LAN_IFACE="eth1"
+if ! ip link show eth1 &>/dev/null; then
+    USB_IFACE=$(ls -1 /sys/class/net 2>/dev/null | grep -E '^(eth1|usb[0-9]|enx)' | head -n 1)
+    if [[ -n "$USB_IFACE" ]]; then
+        LAN_IFACE="$USB_IFACE"
+    fi
+fi
 
-# Restart dnsmasq to ensure DHCP is active on eth0
+# 2. Configure LAN interface for Access Point
+if ip link show "$LAN_IFACE" &>/dev/null; then
+    ip addr add 10.0.0.1/19 dev "$LAN_IFACE" 2>/dev/null || true
+    ip link set "$LAN_IFACE" up
+else
+    # Fallback for bench testing if no USB-Ethernet adapter is plugged in
+    if ! ip route | grep default | grep -q eth0; then
+        ip addr add 10.0.0.1/19 dev eth0 2>/dev/null || true
+        ip link set eth0 up
+    fi
+fi
+
+# 3. Ensure WAN interface (eth0) is up and requesting DHCP from ISP
+ip link set eth0 up 2>/dev/null || true
+if ! ip addr show dev eth0 | grep -q 'inet '; then
+    dhclient -4 -nw eth0 2>/dev/null || true
+fi
+
+# 4. Restart dnsmasq to ensure DHCP is active on LAN interface
 systemctl restart dnsmasq 2>/dev/null || true
 
-# Dynamic WAN NAT Masquerade if secondary WAN exists (USB eth, wlan, etc.)
+# 5. Dynamic WAN NAT Masquerade out to ISP
 WAN=$(ip route | grep default | awk '{print $5}' | head -n 1)
-if [[ -n "$WAN" && "$WAN" != "eth0" ]]; then
-    iptables -t nat -C POSTROUTING -o "$WAN" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o "$WAN" -j MASQUERADE
-else
-    iptables -t nat -C POSTROUTING -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -j MASQUERADE
+if [[ -z "$WAN" ]]; then
+    WAN="eth0"
 fi
+iptables -t nat -C POSTROUTING -o "$WAN" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o "$WAN" -j MASQUERADE
 EOF
 chmod +x "$MOUNT_DIR/opt/ecofi/setup_network.sh"
 
