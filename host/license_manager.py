@@ -1,20 +1,15 @@
-#!/usr/bin/env python3
 """
 ECO-Fi Hardware Licensing & Anti-Cloning Engine
 Handles Silicon Hardware ID (HWID) extraction, cryptographic license verification,
 and offline activation validation.
 """
-
 import hashlib
 import json
 import os
 import time
-
-LICENSE_FILE = "/opt/ecofi/license.key"
-HWID_OVERRIDE_FILE = "/opt/ecofi/hwid_override.txt"
-
-# Master Vendor Public Secret Salt (Known only to the ECO-Fi platform)
-VENDOR_SECRET_SALT = "ECOFI_MASTER_SOVEREIGN_KEY_2026_SECURE_SALT_v1"
+LICENSE_FILE = '/opt/ecofi/license.key'
+HWID_OVERRIDE_FILE = '/opt/ecofi/hwid_override.txt'
+VENDOR_SECRET_SALT = 'ECOFI_MASTER_SOVEREIGN_KEY_2026_SECURE_SALT_v1'
 
 def get_machine_hwid() -> str:
     """
@@ -23,62 +18,53 @@ def get_machine_hwid() -> str:
     """
     if os.path.exists(HWID_OVERRIDE_FILE):
         try:
-            with open(HWID_OVERRIDE_FILE, "r") as f:
+            with open(HWID_OVERRIDE_FILE, 'r') as f:
                 override = f.read().strip()
                 if override:
                     return override
         except Exception:
             pass
-
-    # 1. CPU Silicon Serial (Allwinner H3 / ARM SoC)
-    cpu_serial = "CPU_GENERIC_OPI"
+    cpu_serial = 'CPU_GENERIC_OPI'
     try:
-        if os.path.exists("/sys/class/sunxi_info/sys_info"):
-            with open("/sys/class/sunxi_info/sys_info", "r") as f:
+        if os.path.exists('/sys/class/sunxi_info/sys_info'):
+            with open('/sys/class/sunxi_info/sys_info', 'r') as f:
                 cpu_serial = f.read().strip()
-        elif os.path.exists("/proc/cpuinfo"):
-            with open("/proc/cpuinfo", "r") as f:
+        elif os.path.exists('/proc/cpuinfo'):
+            with open('/proc/cpuinfo', 'r') as f:
                 for line in f:
-                    if "Serial" in line or "serial" in line:
-                        cpu_serial = line.split(":")[1].strip()
+                    if 'Serial' in line or 'serial' in line:
+                        cpu_serial = line.split(':')[1].strip()
                         break
     except Exception:
         pass
-
-    # 2. MicroSD Card Silicon CID
-    sd_cid = "SD_CID_SANDISK_DEFAULT"
+    sd_cid = 'SD_CID_SANDISK_DEFAULT'
     try:
-        if os.path.exists("/sys/block/mmcblk0/device/cid"):
-            with open("/sys/block/mmcblk0/device/cid", "r") as f:
+        if os.path.exists('/sys/block/mmcblk0/device/cid'):
+            with open('/sys/block/mmcblk0/device/cid', 'r') as f:
                 sd_cid = f.read().strip()
     except Exception:
         pass
-
-    # 3. Primary Ethernet MAC Address
-    mac_addr = "00:00:00:00:00:00"
+    mac_addr = '00:00:00:00:00:00'
     try:
-        if os.path.exists("/sys/class/net/eth0/address"):
-            with open("/sys/class/net/eth0/address", "r") as f:
+        if os.path.exists('/sys/class/net/eth0/address'):
+            with open('/sys/class/net/eth0/address', 'r') as f:
                 mac_addr = f.read().strip()
     except Exception:
         pass
+    raw_signature = '{}|{}|{}|{}'.format(cpu_serial, sd_cid, mac_addr, VENDOR_SECRET_SALT)
+    sha = hashlib.sha256(raw_signature.encode('utf-8')).hexdigest().upper()
+    return 'ECOFI-{}-{}-{}-{}'.format(sha[:4], sha[4:8], sha[8:12], sha[12:16])
 
-    raw_signature = f"{cpu_serial}|{sd_cid}|{mac_addr}|{VENDOR_SECRET_SALT}"
-    sha = hashlib.sha256(raw_signature.encode("utf-8")).hexdigest().upper()
-    return f"ECOFI-{sha[:4]}-{sha[4:8]}-{sha[8:12]}-{sha[12:16]}"
-
-
-def compute_activation_pin(hwid: str, tier: str = "COMMERCIAL") -> str:
+def compute_activation_pin(hwid: str, tier: str='COMMERCIAL') -> str:
     """
     Computes the mathematical activation PIN for a specific HWID.
     Used by both the vendor key generator and the on-device validator.
     """
     clean_hwid = hwid.strip().upper()
     clean_tier = tier.strip().upper()
-    payload = f"{clean_hwid}::{clean_tier}::{VENDOR_SECRET_SALT}"
-    sha = hashlib.sha256(payload.encode("utf-8")).hexdigest().upper()
-    return f"{sha[:4]}-{sha[4:8]}-{sha[8:12]}-{sha[12:16]}"
-
+    payload = '{}::{}::{}'.format(clean_hwid, clean_tier, VENDOR_SECRET_SALT)
+    sha = hashlib.sha256(payload.encode('utf-8')).hexdigest().upper()
+    return '{}-{}-{}-{}'.format(sha[:4], sha[4:8], sha[8:12], sha[12:16])
 
 def verify_license() -> dict:
     """
@@ -86,136 +72,57 @@ def verify_license() -> dict:
     Returns: {"valid": bool, "tier": str, "hwid": str, "licensee": str, "message": str}
     """
     current_hwid = get_machine_hwid()
-
     if not os.path.exists(LICENSE_FILE):
-        return {
-            "valid": False,
-            "status": "UNLICENSED",
-            "hwid": current_hwid,
-            "tier": "NONE",
-            "licensee": "Unregistered",
-            "message": "No license key found. Machine is in Lockout / Demo mode."
-        }
-
+        return {'valid': False, 'status': 'UNLICENSED', 'hwid': current_hwid, 'tier': 'NONE', 'licensee': 'Unregistered', 'message': 'No license key found. Machine is in Lockout / Demo mode.'}
     try:
-        with open(LICENSE_FILE, "r") as f:
+        with open(LICENSE_FILE, 'r') as f:
             data = json.load(f)
-
-        stored_hwid = data.get("machine_hwid", "")
-        stored_tier = data.get("tier", "COMMERCIAL")
-        stored_key = data.get("activation_key", "")
-        licensee = data.get("licensee", "Standard Client")
-        expiry = data.get("expiry_date", "PERPETUAL")
-
-        # 1. Anti-Cloning Check: Ensure HWID matches the current physical board
+        stored_hwid = data.get('machine_hwid', '')
+        stored_tier = data.get('tier', 'COMMERCIAL')
+        stored_key = data.get('activation_key', '')
+        licensee = data.get('licensee', 'Standard Client')
+        expiry = data.get('expiry_date', 'PERPETUAL')
         if stored_hwid != current_hwid:
-            return {
-                "valid": False,
-                "status": "CLONED_HARDWARE_MISMATCH",
-                "hwid": current_hwid,
-                "tier": stored_tier,
-                "licensee": licensee,
-                "message": f"Hardware mismatch! License issued for {stored_hwid}, but running on {current_hwid}."
-            }
-
-        # 2. Signature Check: Validate the cryptographic activation key
+            return {'valid': False, 'status': 'CLONED_HARDWARE_MISMATCH', 'hwid': current_hwid, 'tier': stored_tier, 'licensee': licensee, 'message': 'Hardware mismatch! License issued for {}, but running on {}.'.format(stored_hwid, current_hwid)}
         expected_key = compute_activation_pin(stored_hwid, stored_tier)
         if stored_key != expected_key:
-            return {
-                "valid": False,
-                "status": "CORRUPTED_SIGNATURE",
-                "hwid": current_hwid,
-                "tier": stored_tier,
-                "licensee": licensee,
-                "message": "Invalid cryptographic license signature."
-            }
-
-        # 3. Expiry Check (if time-locked)
-        if expiry != "PERPETUAL":
+            return {'valid': False, 'status': 'CORRUPTED_SIGNATURE', 'hwid': current_hwid, 'tier': stored_tier, 'licensee': licensee, 'message': 'Invalid cryptographic license signature.'}
+        if expiry != 'PERPETUAL':
             try:
-                exp_timestamp = time.mktime(time.strptime(expiry, "%Y-%m-%d"))
+                exp_timestamp = time.mktime(time.strptime(expiry, '%Y-%m-%d'))
                 if time.time() > exp_timestamp:
-                    return {
-                        "valid": False,
-                        "status": "EXPIRED",
-                        "hwid": current_hwid,
-                        "tier": stored_tier,
-                        "licensee": licensee,
-                        "message": f"License expired on {expiry}. Contact vendor for renewal."
-                    }
+                    return {'valid': False, 'status': 'EXPIRED', 'hwid': current_hwid, 'tier': stored_tier, 'licensee': licensee, 'message': 'License expired on {}. Contact vendor for renewal.'.format(expiry)}
             except Exception:
                 pass
-
-        return {
-            "valid": True,
-            "status": "ACTIVATED",
-            "hwid": current_hwid,
-            "tier": stored_tier,
-            "licensee": licensee,
-            "expiry": expiry,
-            "message": f"Genuine ECO-Fi {stored_tier} License Activated."
-        }
-
+        return {'valid': True, 'status': 'ACTIVATED', 'hwid': current_hwid, 'tier': stored_tier, 'licensee': licensee, 'expiry': expiry, 'message': 'Genuine ECO-Fi {} License Activated.'.format(stored_tier)}
     except Exception as e:
-        return {
-            "valid": False,
-            "status": "ERROR",
-            "hwid": current_hwid,
-            "tier": "NONE",
-            "licensee": "Error",
-            "message": f"License read error: {e}"
-        }
+        return {'valid': False, 'status': 'ERROR', 'hwid': current_hwid, 'tier': 'NONE', 'licensee': 'Error', 'message': 'License read error: {}'.format(e)}
 
-
-def activate_machine(activation_pin: str, licensee_name: str = "Store Owner", tier: str = "COMMERCIAL") -> dict:
+def activate_machine(activation_pin: str, licensee_name: str='Store Owner', tier: str='COMMERCIAL') -> dict:
     """
     Activates the machine using an offline 16-character alphanumeric PIN.
     """
     current_hwid = get_machine_hwid()
     expected_pin = compute_activation_pin(current_hwid, tier)
-
-    clean_pin = activation_pin.strip().upper().replace(" ", "")
-
+    clean_pin = activation_pin.strip().upper().replace(' ', '')
     if clean_pin != expected_pin:
-        return {
-            "success": False,
-            "message": "Invalid Activation PIN. Please check your Hardware ID and try again."
-        }
-
-    # Save verified license certificate
-    license_data = {
-        "vendor": "ECO-Fi Technologies",
-        "licensee": licensee_name,
-        "machine_hwid": current_hwid,
-        "tier": tier,
-        "activation_key": expected_pin,
-        "activated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "expiry_date": "PERPETUAL"
-    }
-
+        return {'success': False, 'message': 'Invalid Activation PIN. Please check your Hardware ID and try again.'}
+    license_data = {'vendor': 'ECO-Fi Technologies', 'licensee': licensee_name, 'machine_hwid': current_hwid, 'tier': tier, 'activation_key': expected_pin, 'activated_at': time.strftime('%Y-%m-%d %H:%M:%S'), 'expiry_date': 'PERPETUAL'}
     try:
         os.makedirs(os.path.dirname(LICENSE_FILE), exist_ok=True)
-        with open(LICENSE_FILE, "w") as f:
+        with open(LICENSE_FILE, 'w') as f:
             json.dump(license_data, f, indent=4)
-        return {
-            "success": True,
-            "message": f"Machine successfully activated for {licensee_name} ({tier} Edition)!"
-        }
+        return {'success': True, 'message': 'Machine successfully activated for {} ({} Edition)!'.format(licensee_name, tier)}
     except Exception as e:
-        return {
-            "success": False,
-            "message": f"Failed to save license certificate: {e}"
-        }
-
-
-if __name__ == "__main__":
+        return {'success': False, 'message': 'Failed to save license certificate: {}'.format(e)}
+if __name__ == '__main__':
     hwid = get_machine_hwid()
-    print("======================================================")
-    print(" ECO-Fi Cryptographic Hardware Identifier & Validator")
-    print("======================================================")
-    print(f" Detected Machine HWID: {hwid}")
+    print('======================================================')
+    print(' ECO-Fi Cryptographic Hardware Identifier & Validator')
+    print('======================================================')
+    print(' Detected Machine HWID: {}'.format(hwid))
     status = verify_license()
-    print(f" License Status:        {status['status']}")
-    print(f" Active Tier:           {status.get('tier', 'NONE')}")
-    print(f" Message:               {status['message']}")
-    print("======================================================")
+    print(' License Status:        {}'.format(status['status']))
+    print(' Active Tier:           {}'.format(status.get('tier', 'NONE')))
+    print(' Message:               {}'.format(status['message']))
+    print('======================================================')

@@ -156,9 +156,18 @@ EOF
 chmod +x "$MOUNT_DIR/opt/ecofi/setup_network.sh"
 rm -f "$MOUNT_DIR/etc/network/interfaces.d/eth0" 2>/dev/null || true
 
-# Step 5: Inject ECO-Fi software stack into /opt/ecofi
-echo "[5/6] Injecting ECO-Fi software stack into /opt/ecofi..."
+# Step 5: Inject Offline Python 3.5 Packages and ECO-Fi Software Stack
+echo "[5/6] Injecting offline Python 3.5 dependencies into rootfs..."
+mkdir -p "$MOUNT_DIR/usr/local/lib/python3.5/dist-packages"
+rm -rf /tmp/ecofi_wheels_py35
+mkdir -p /tmp/ecofi_wheels_py35
+python3 -m pip install --target /tmp/ecofi_wheels_py35 --no-deps Flask==1.1.4 Werkzeug==1.0.1 Jinja2==2.11.3 MarkupSafe==1.1.1 itsdangerous==1.1.0 click==7.1.2 pyserial==3.5 openpyxl==3.0.7 et_xmlfile==1.0.1
+rm -f /tmp/ecofi_wheels_py35/markupsafe/_speedups*.so 2>/dev/null || true
+cp -r /tmp/ecofi_wheels_py35/* "$MOUNT_DIR/usr/local/lib/python3.5/dist-packages/"
+
+echo "[5/6.5] Injecting ECO-Fi software stack into /opt/ecofi..."
 mkdir -p "$MOUNT_DIR/opt/ecofi"
+rm -f "$MOUNT_DIR/opt/ecofi/vendo_sessions.db" 2>/dev/null || true
 cp "$SOURCE_HOST/portal.py" "$MOUNT_DIR/opt/ecofi/"
 cp "$SOURCE_HOST/license_manager.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
 cp "$SOURCE_HOST/esp32_simulator.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
@@ -189,23 +198,6 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 
-# BUILD-05: First-Boot Dependency Installer
-cat << 'EOF' > "$MOUNT_DIR/etc/systemd/system/ecofi_firstboot.service"
-[Unit]
-Description=ECO-Fi First Boot Dependency Installer
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-StandardOutput=journal
-StandardError=journal
-ExecStart=/bin/bash -c "pip3 install flask werkzeug pyserial openpyxl --break-system-packages && systemctl disable ecofi_firstboot.service"
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
 # GAP-06 & NET-05: Update DNS Hijacking
 sed -i 's/portal.pisofiapp.com/10.0.0.1/g' "$MOUNT_DIR/etc/dnsmasq.conf" 2>/dev/null || true
 rm -f "$MOUNT_DIR/etc/dnsmasq.d/ecofi_captive.conf" 2>/dev/null || true
@@ -222,11 +214,11 @@ cat << 'EOF' > "$MOUNT_DIR/etc/logrotate.d/ecofi"
 }
 EOF
 
-# Main Portal Service
+# Main Portal Service (Starts immediately on boot, 100% offline ready)
 cat << 'EOF' > "$MOUNT_DIR/etc/systemd/system/ecofi_portal.service"
 [Unit]
 Description=ECO-Fi Captive Portal & Web Engine
-After=network.target network-online.target nginx.service ecofi_firewall.service ecofi_firstboot.service
+After=network.target nginx.service ecofi_firewall.service
 
 [Service]
 Type=simple
@@ -243,10 +235,15 @@ Environment=PORT=5000
 WantedBy=multi-user.target
 EOF
 
+# Enable services in multi-user.target
 mkdir -p "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants"
+rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/ecofi_firstboot.service" 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/systemd/system/ecofi_firstboot.service" 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/ecofi_daemon.service" 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/systemd/system/ecofi_daemon.service" 2>/dev/null || true
+rm -f "$MOUNT_DIR/opt/ecofi/daemon.py" 2>/dev/null || true
 ln -sf /etc/systemd/system/ecofi_portal.service "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/ecofi_portal.service"
 ln -sf /etc/systemd/system/ecofi_firewall.service "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/ecofi_firewall.service"
-ln -sf /etc/systemd/system/ecofi_firstboot.service "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/ecofi_firstboot.service"
 
 
 # Finalize and unmount
