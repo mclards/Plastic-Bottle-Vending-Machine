@@ -76,6 +76,7 @@ server {
     server_name _;
 
     # Captive Portal Trigger Intercepts (Android, iOS, Windows, ChromeOS)
+    location /redirect { return 302 http://10.0.0.1/; }
     location /generate_204 { return 302 http://10.0.0.1/; }
     location /gen_204 { return 302 http://10.0.0.1/; }
     location /ncsi.txt { return 302 http://10.0.0.1/; }
@@ -85,6 +86,7 @@ server {
     location /connectivitycheck.gstatic.com { return 302 http://10.0.0.1/; }
     location /connectivitycheck.android.com { return 302 http://10.0.0.1/; }
     location /msftconnecttest.com { return 302 http://10.0.0.1/; }
+    location /success.txt { return 302 http://10.0.0.1/; }
 
     # Static Assets Cache
     location /static/ {
@@ -160,9 +162,22 @@ listen-address=10.0.0.1,127.0.0.1
 interface=eth0
 dhcp-range=10.0.0.100,10.0.31.254,255.255.224.0,72h
 dhcp-option=3,10.0.0.1
-dhcp-option=6,10.0.0.1,1.1.1.1,1.0.0.1
+dhcp-option=6,10.0.0.1
 dhcp-option=114,http://10.0.0.1/
 dhcp-option=160,http://10.0.0.1/
+
+# Explicit Captive Portal Probes (Windows NCSI, Android, Apple iOS/macOS, Firefox)
+address=/msftconnecttest.com/10.0.0.1
+address=/www.msftconnecttest.com/10.0.0.1
+address=/ipv6.msftconnecttest.com/10.0.0.1
+address=/msftncsi.com/10.0.0.1
+address=/www.msftncsi.com/10.0.0.1
+address=/connectivitycheck.gstatic.com/10.0.0.1
+address=/connectivitycheck.android.com/10.0.0.1
+address=/clients3.google.com/10.0.0.1
+address=/apple.com/10.0.0.1
+address=/captive.apple.com/10.0.0.1
+address=/detectportal.firefox.com/10.0.0.1
 
 address=/#/10.0.0.1
 address=/localhost/127.0.0.1
