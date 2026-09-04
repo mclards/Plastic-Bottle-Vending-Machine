@@ -1,6 +1,5 @@
 import os
 import atexit
-import secrets
 import ipaddress
 import re
 import sqlite3
@@ -233,7 +232,7 @@ def check_network_health():
         return
     try:
         lan_iface = get_lan_interface()
-        res = subprocess.run(['ip', 'addr', 'show', lan_iface], capture_output=True, text=True)
+        res = subprocess.run(['ip', 'addr', 'show', lan_iface], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         if '10.0.0.1' not in res.stdout:
             subprocess.run(['systemctl', 'restart', 'networking'])
             subprocess.run(['systemctl', 'restart', 'dnsmasq'])
@@ -247,8 +246,8 @@ def get_lan_interface():
     if platform.system() == 'Windows':
         return 'eth0'
     try:
-        wan_iface = subprocess.run("ip route | grep default | awk '{print $5}'", shell=True, capture_output=True, text=True).stdout.strip()
-        all_ifaces = subprocess.run('ls /sys/class/net', shell=True, capture_output=True, text=True).stdout.split()
+        wan_iface = subprocess.run("ip route | grep default | awk '{print $5}'", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout.strip()
+        all_ifaces = subprocess.run('ls /sys/class/net', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout.split()
         for iface in ['eth0', 'eth1', 'br-lan', 'wlan0']:
             if iface in all_ifaces and iface != wan_iface:
                 return iface
@@ -260,7 +259,7 @@ def get_arp_table():
     if platform.system() == 'Windows':
         return {}
     try:
-        res = subprocess.run(['arp', '-n'], capture_output=True, text=True)
+        res = subprocess.run(['arp', '-n'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
         arp_map = {}
         for line in res.stdout.splitlines():
             parts = line.split()

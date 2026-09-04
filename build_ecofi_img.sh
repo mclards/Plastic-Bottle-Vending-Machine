@@ -196,11 +196,9 @@ chmod +x "$MOUNT_DIR/opt/ecofi/setup_network.sh"
 # Step 5: Inject Offline Python 3.5 Packages and ECO-Fi Software Stack
 echo "[5/6] Injecting offline Python 3.5 dependencies into rootfs..."
 mkdir -p "$MOUNT_DIR/usr/local/lib/python3.5/dist-packages"
-rm -rf /tmp/ecofi_wheels_py35
-mkdir -p /tmp/ecofi_wheels_py35
-python3 -m pip install --target /tmp/ecofi_wheels_py35 --no-deps Flask==1.1.4 Werkzeug==1.0.1 Jinja2==2.11.3 MarkupSafe==1.1.1 itsdangerous==1.1.0 click==7.1.2 pyserial==3.5 openpyxl==3.0.7 et_xmlfile==1.0.1
-rm -f /tmp/ecofi_wheels_py35/markupsafe/_speedups*.so 2>/dev/null || true
-cp -r /tmp/ecofi_wheels_py35/* "$MOUNT_DIR/usr/local/lib/python3.5/dist-packages/"
+if [ -d "/var/cache/ecofi_wheels_py35" ]; then
+    cp -r /var/cache/ecofi_wheels_py35/* "$MOUNT_DIR/usr/local/lib/python3.5/dist-packages/"
+fi
 
 echo "[5/6.5] Injecting ECO-Fi software stack into /opt/ecofi..."
 mkdir -p "$MOUNT_DIR/opt/ecofi"
@@ -261,9 +259,9 @@ After=network.target nginx.service ecofi_firewall.service
 Type=simple
 User=root
 WorkingDirectory=/opt/ecofi
-ExecStart=/usr/bin/python3 /opt/ecofi/portal.py
-StandardOutput=append:/opt/ecofi/portal.log
-StandardError=append:/opt/ecofi/portal.log
+ExecStart=/bin/bash -c "exec /usr/bin/python3 /opt/ecofi/portal.py >> /opt/ecofi/portal.log 2>&1"
+StandardOutput=journal
+StandardError=journal
 Restart=always
 RestartSec=3
 Environment=PORT=5000
