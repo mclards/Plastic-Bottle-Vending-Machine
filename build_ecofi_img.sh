@@ -203,42 +203,47 @@ cat << 'EOF' > "$MOUNT_DIR/opt/ecofi/setup_network.sh"
 # Enable Kernel IPv4 Packet Forwarding
 sysctl -w net.ipv4.ip_forward=1 &>/dev/null
 
-# 1. Identify LAN interface (USB-Ethernet adapter to Access Point)
-LAN_IFACE="eth1"
-if ! ip link show eth1 &>/dev/null; then
-    USB_IFACE=$(ls -1 /sys/class/net 2>/dev/null | grep -E '^(eth1|usb[0-9]|enx)' | head -n 1)
-    if [[ -n "$USB_IFACE" ]]; then
-        LAN_IFACE="$USB_IFACE"
+# 1. Identify LAN interface (USB-to-Ethernet adapter for Access Point)
+LAN_IFACE=""
+for iface in eth1 $(ls -1 /sys/class/net 2>/dev/null | grep -E '^(usb[0-9]|enx)'); do
+    if ip link show "$iface" &>/dev/null && [[ "$iface" != "eth0" && "$iface" != "lo" ]]; then
+        LAN_IFACE="$iface"
+        break
     fi
-fi
+done
 
-# 2. Configure LAN interface for Access Point
-if ip link show "$LAN_IFACE" &>/dev/null; then
+if [[ -n "$LAN_IFACE" ]]; then
+    # PRODUCTION MODE: USB-to-Ethernet adapter detected -> AP is on $LAN_IFACE, ISP is on eth0
     ip addr add 10.0.0.1/19 dev "$LAN_IFACE" 2>/dev/null || true
     ip link set "$LAN_IFACE" up
-else
-    # Fallback for bench testing if no USB-Ethernet adapter is plugged in
-    if ! ip route | grep default | grep -q eth0; then
-        ip addr add 10.0.0.1/19 dev eth0 2>/dev/null || true
-        ip link set eth0 up
+
+    # Bind dnsmasq to USB-LAN adapter
+    sed -i "s/^interface=.*/interface=$LAN_IFACE/" /etc/dnsmasq.conf 2>/dev/null || true
+    sed -i "s/^dhcp-range=[^,]*,/dhcp-range=$LAN_IFACE,/" /etc/dnsmasq.conf 2>/dev/null || true
+
+    # Ensure eth0 is UP and requests WAN IP from ISP Router
+    ip link set eth0 up 2>/dev/null || true
+    if ! ip addr show dev eth0 | grep -q 'inet '; then
+        dhclient -4 -nw eth0 2>/dev/null || true
     fi
+else
+    # BENCH TEST MODE: No USB-to-Ethernet adapter present -> Single-port bench testing on eth0
+    ip addr add 10.0.0.1/19 dev eth0 2>/dev/null || true
+    ip link set eth0 up
+
+    # Bind dnsmasq to eth0 so connected PC receives DHCP IP automatically
+    sed -i "s/^interface=.*/interface=eth0/" /etc/dnsmasq.conf 2>/dev/null || true
+    sed -i "s/^dhcp-range=[^,]*,/dhcp-range=eth0,/" /etc/dnsmasq.conf 2>/dev/null || true
 fi
 
-# 3. Ensure WAN interface (eth0) is up and requesting DHCP from ISP
-ip link set eth0 up 2>/dev/null || true
-if ! ip addr show dev eth0 | grep -q 'inet '; then
-    dhclient -4 -nw eth0 2>/dev/null || true
-fi
-
-# 4. Restart dnsmasq to ensure DHCP is active on LAN interface
+# Restart dnsmasq to activate DHCP on whichever interface is currently active
 systemctl restart dnsmasq 2>/dev/null || true
 
-# 5. Dynamic WAN NAT Masquerade out to ISP
+# Dynamic WAN NAT Masquerade out to Internet (whichever route is default)
 WAN=$(ip route | grep default | awk '{print $5}' | head -n 1)
-if [[ -z "$WAN" ]]; then
-    WAN="eth0"
+if [[ -n "$WAN" ]]; then
+    iptables -t nat -C POSTROUTING -o "$WAN" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o "$WAN" -j MASQUERADE
 fi
-iptables -t nat -C POSTROUTING -o "$WAN" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o "$WAN" -j MASQUERADE
 EOF
 chmod +x "$MOUNT_DIR/opt/ecofi/setup_network.sh"
 
