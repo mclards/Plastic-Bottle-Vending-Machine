@@ -126,41 +126,23 @@ ROOT_HASH='$6$JpJzc5Fnsdll3j83$D9xx8MwvyG9KoulpMUVrD8JfSWwfOV5QkcxAdI0z4GeT5FpbC
 sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$MOUNT_DIR/etc/shadow"
 sed -i "s|^pi:[^:]*:|pi:${ROOT_HASH}:|" "$MOUNT_DIR/etc/shadow"
 
-# Configure /etc/network/interfaces for eth0 (WAN DHCP) and eth1 (LAN Static 10.0.0.1/19)
+# Configure /etc/network/interfaces with non-blocking manual interfaces (managed dynamically by setup_network.sh)
 cat << 'EOF' > "$MOUNT_DIR/etc/network/interfaces"
-source /etc/network/interfaces.d/*
-
 auto lo
 iface lo inet loopback
 
-# WAN: Onboard Ethernet port connected to ISP Router
 auto eth0
 allow-hotplug eth0
-iface eth0 inet dhcp
-
-# LAN: USB-to-Ethernet Adapter connected to Access Point
-auto eth1
-allow-hotplug eth1
-iface eth1 inet static
-    address 10.0.0.1
-    netmask 255.255.224.0
-    broadcast 10.0.31.255
-EOF
-
-mkdir -p "$MOUNT_DIR/etc/network/interfaces.d"
-cat << 'EOF' > "$MOUNT_DIR/etc/network/interfaces.d/vlans"
-auto eth0
-allow-hotplug eth0
-iface eth0 inet dhcp
+iface eth0 inet manual
 
 auto eth1
 allow-hotplug eth1
-iface eth1 inet static
-    address 10.0.0.1
-    netmask 255.255.224.0
+iface eth1 inet manual
 EOF
 
-# Configure /etc/dnsmasq.conf with full DHCP pool and captive portal wildcard on LAN (eth1)
+rm -rf "$MOUNT_DIR/etc/network/interfaces.d/"* 2>/dev/null || true
+
+# Configure /etc/dnsmasq.conf with full DHCP pool and captive portal wildcard
 cat << 'EOF' > "$MOUNT_DIR/etc/dnsmasq.conf"
 bogus-priv
 dhcp-lease-max=20000
@@ -174,13 +156,13 @@ domain=ecofi.local
 local=/ecofi.local/
 listen-address=10.0.0.1,127.0.0.1
 
-# LAN Hotspot Interface: USB-to-Ethernet Adapter (Access Point)
-interface=eth1
-dhcp-range=eth1,10.0.0.100,10.0.31.254,255.255.224.0,72h
-dhcp-option=eth1,3,10.0.0.1
-dhcp-option=eth1,6,10.0.0.1,1.1.1.1,1.0.0.1
-dhcp-option=eth1,114,http://10.0.0.1/
-dhcp-option=eth1,160,http://10.0.0.1/
+# Auto-configured interface: eth0 in Bench Mode (default), eth1 in Production Mode
+interface=eth0
+dhcp-range=10.0.0.100,10.0.31.254,255.255.224.0,72h
+dhcp-option=3,10.0.0.1
+dhcp-option=6,10.0.0.1,1.1.1.1,1.0.0.1
+dhcp-option=114,http://10.0.0.1/
+dhcp-option=160,http://10.0.0.1/
 
 address=/#/10.0.0.1
 address=/localhost/127.0.0.1
@@ -213,30 +195,39 @@ for iface in eth1 $(ls -1 /sys/class/net 2>/dev/null | grep -E '^(usb[0-9]|enx)'
 done
 
 if [[ -n "$LAN_IFACE" ]]; then
-    # PRODUCTION MODE: USB-to-Ethernet adapter detected -> AP is on $LAN_IFACE, ISP is on eth0
+    # =========================================================================
+    # DUAL-PORT PRODUCTION MODE:
+    # USB Adapter ($LAN_IFACE) = LAN for Access Point (Static 10.0.0.1/19 + DHCP)
+    # Onboard Port (eth0)      = WAN for ISP Router (Dynamic DHCP Client)
+    # =========================================================================
+    ip addr flush dev "$LAN_IFACE" 2>/dev/null || true
     ip addr add 10.0.0.1/19 dev "$LAN_IFACE" 2>/dev/null || true
     ip link set "$LAN_IFACE" up
 
-    # Bind dnsmasq to USB-LAN adapter
+    # Bind dnsmasq to USB-LAN adapter only
     sed -i "s/^interface=.*/interface=$LAN_IFACE/" /etc/dnsmasq.conf 2>/dev/null || true
-    sed -i "s/^dhcp-range=[^,]*,/dhcp-range=$LAN_IFACE,/" /etc/dnsmasq.conf 2>/dev/null || true
 
-    # Ensure eth0 is UP and requests WAN IP from ISP Router
-    ip link set eth0 up 2>/dev/null || true
-    if ! ip addr show dev eth0 | grep -q 'inet '; then
-        dhclient -4 -nw eth0 2>/dev/null || true
-    fi
+    # Prepare eth0 for WAN (ISP Router)
+    ip addr flush dev eth0 2>/dev/null || true
+    ip link set eth0 up
+    killall -9 dhclient 2>/dev/null || true
+    dhclient -4 -nw -pf /run/dhclient.eth0.pid eth0 2>/dev/null || true
 else
-    # BENCH TEST MODE: No USB-to-Ethernet adapter present -> Single-port bench testing on eth0
+    # =========================================================================
+    # SINGLE-PORT BENCH TEST MODE:
+    # No USB adapter detected. Use onboard port (eth0) as LAN (10.0.0.1/19 + DHCP).
+    # Allows direct connection to PC or single Access Point with instant DHCP.
+    # =========================================================================
+    killall -9 dhclient 2>/dev/null || true
+    ip addr flush dev eth0 2>/dev/null || true
     ip addr add 10.0.0.1/19 dev eth0 2>/dev/null || true
     ip link set eth0 up
 
     # Bind dnsmasq to eth0 so connected PC receives DHCP IP automatically
     sed -i "s/^interface=.*/interface=eth0/" /etc/dnsmasq.conf 2>/dev/null || true
-    sed -i "s/^dhcp-range=[^,]*,/dhcp-range=eth0,/" /etc/dnsmasq.conf 2>/dev/null || true
 fi
 
-# Restart dnsmasq to activate DHCP on whichever interface is currently active
+# Restart dnsmasq cleanly so DHCP is 100% active on the designated LAN interface
 systemctl restart dnsmasq 2>/dev/null || true
 
 # Dynamic WAN NAT Masquerade out to Internet (whichever route is default)
