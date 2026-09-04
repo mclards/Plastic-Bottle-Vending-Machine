@@ -22,7 +22,7 @@ try:
     import openpyxl
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
-except ImportError:
+except (ImportError, SyntaxError, Exception):
     openpyxl = None
 try:
     import serial
@@ -136,7 +136,8 @@ def set_config(key, value):
 def _initialize_secret_key():
     secret = get_config('flask_secret_key', '')
     if not secret:
-        secret = secrets.token_hex(32)
+        import binascii
+        secret = binascii.hexlify(os.urandom(32)).decode('ascii')
         set_config('flask_secret_key', secret)
     return secret
 app.secret_key = _initialize_secret_key()
