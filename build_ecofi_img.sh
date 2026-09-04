@@ -39,6 +39,8 @@ rm -f "$MOUNT_DIR/etc/systemd/system/pisofi_"* 2>/dev/null || true
 rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/pisofi_"* 2>/dev/null || true
 rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/zerotier-one.service" 2>/dev/null || true
 rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/php7.0-fpm.service" 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/mariadb.service" 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/mysql.service" 2>/dev/null || true
 rm -rf "$MOUNT_DIR/var/www/html/pisofi" 2>/dev/null || true
 rm -rf "$MOUNT_DIR/var/www/html/"* 2>/dev/null || true
 rm -rf "$MOUNT_DIR/.cache" 2>/dev/null || true
@@ -107,8 +109,8 @@ EOF
 ln -sf ../sites-available/ecofi "$MOUNT_DIR/etc/nginx/sites-enabled/ecofi"
 
 
-# Force dynamic LAN interface and static IP 10.0.0.1
-echo "[4/6.5] Enforcing 10.0.0.1 static IP with /19 subnet mask and IP routing..."
+# Force static LAN interface on eth0 and static IP 10.0.0.1/19
+echo "[4/6.5] Enforcing 10.0.0.1/19 static IP on eth0 and authoritative dnsmasq DHCP..."
 
 # Permanent IPv4 Forwarding in sysctl
 mkdir -p "$MOUNT_DIR/etc/sysctl.d"
@@ -119,42 +121,77 @@ sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' "$MOUNT_DIR/etc/sysctl.
 echo "ecofi-vendo" > "$MOUNT_DIR/etc/hostname"
 sed -i 's/pisofi/ecofi-vendo/g' "$MOUNT_DIR/etc/hosts" 2>/dev/null || true
 
+# Set root and pi console login passwords to "root" for HDMI/serial console
+ROOT_HASH='$6$JpJzc5Fnsdll3j83$D9xx8MwvyG9KoulpMUVrD8JfSWwfOV5QkcxAdI0z4GeT5FpbC6HyeKeUNYoc1tBMtz2SjNVRFtrGd6TQ7v0UA0'
+sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$MOUNT_DIR/etc/shadow"
+sed -i "s|^pi:[^:]*:|pi:${ROOT_HASH}:|" "$MOUNT_DIR/etc/shadow"
+
+# Configure /etc/network/interfaces for static 10.0.0.1/19 on eth0
+cat << 'EOF' > "$MOUNT_DIR/etc/network/interfaces"
+auto lo
+iface lo inet loopback
+
+auto eth0
+allow-hotplug eth0
+iface eth0 inet static
+    address 10.0.0.1
+    netmask 255.255.224.0
+    broadcast 10.0.31.255
+EOF
+rm -rf "$MOUNT_DIR/etc/network/interfaces.d/"* 2>/dev/null || true
+
+# Configure /etc/dnsmasq.conf with full DHCP pool and captive portal wildcard
+cat << 'EOF' > "$MOUNT_DIR/etc/dnsmasq.conf"
+bogus-priv
+dhcp-lease-max=20000
+no-negcache
+no-resolv
+dns-forward-max=1024
+domain-needed
+bind-dynamic
+
+domain=ecofi.local
+local=/ecofi.local/
+listen-address=10.0.0.1,127.0.0.1
+
+interface=eth0
+dhcp-range=eth0,10.0.0.100,10.0.31.254,255.255.224.0,72h
+dhcp-option=eth0,3,10.0.0.1
+dhcp-option=eth0,6,10.0.0.1,1.1.1.1,1.0.0.1
+dhcp-option=eth0,114,http://10.0.0.1/
+dhcp-option=eth0,160,http://10.0.0.1/
+
+address=/#/10.0.0.1
+address=/localhost/127.0.0.1
+address=/ecofi-vendo/10.0.0.1
+
+server=1.1.1.1
+server=1.0.0.1
+EOF
+rm -rf "$MOUNT_DIR/etc/dnsmasq.d/"* 2>/dev/null || true
+
 mkdir -p "$MOUNT_DIR/opt/ecofi"
 cat << 'EOF' > "$MOUNT_DIR/opt/ecofi/setup_network.sh"
 #!/bin/bash
 # Enable Kernel IPv4 Packet Forwarding
 sysctl -w net.ipv4.ip_forward=1 &>/dev/null
 
-# Dynamically detect LAN and WAN interfaces
-WAN=$(ip route | grep default | awk '{print $5}')
-SET_LAN=0
-for iface in eth0 eth1 br-lan; do
-    if [[ "$iface" != "$WAN" ]] && ip link show "$iface" &>/dev/null; then
-        ip addr flush dev "$iface"
-        ip addr add 10.0.0.1/19 dev "$iface"
-        ip link set "$iface" up
-        # Update dnsmasq interface dynamically
-        sed -i "s/interface=.*/interface=$iface/" /etc/dnsmasq.conf
-        systemctl restart dnsmasq
-        echo "LAN interface set: $iface = 10.0.0.1/19"
-        SET_LAN=1
-        break
-    fi
-done
-if [ "$SET_LAN" -eq 0 ]; then
-    echo "WARNING: No dedicated LAN interface detected! Defaulting to eth0."
-    ip addr add 10.0.0.1/19 dev eth0 2>/dev/null || true
-fi
+# Ensure eth0 is UP with 10.0.0.1/19
+ip addr add 10.0.0.1/19 dev eth0 2>/dev/null || true
+ip link set eth0 up
 
-# Ensure WAN NAT Masquerade is active
-if [[ -n "$WAN" ]]; then
+# Restart dnsmasq to ensure DHCP is active on eth0
+systemctl restart dnsmasq 2>/dev/null || true
+
+# Dynamic WAN NAT Masquerade if secondary WAN exists (USB eth, wlan, etc.)
+WAN=$(ip route | grep default | awk '{print $5}' | head -n 1)
+if [[ -n "$WAN" && "$WAN" != "eth0" ]]; then
     iptables -t nat -C POSTROUTING -o "$WAN" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o "$WAN" -j MASQUERADE
 else
     iptables -t nat -C POSTROUTING -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -j MASQUERADE
 fi
 EOF
 chmod +x "$MOUNT_DIR/opt/ecofi/setup_network.sh"
-rm -f "$MOUNT_DIR/etc/network/interfaces.d/eth0" 2>/dev/null || true
 
 # Step 5: Inject Offline Python 3.5 Packages and ECO-Fi Software Stack
 echo "[5/6] Injecting offline Python 3.5 dependencies into rootfs..."
