@@ -105,7 +105,7 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (10, 180, '10 Bottles = 3 Hours')")
         c.execute("INSERT OR IGNORE INTO walled_garden (domain, note) VALUES ('connectivitycheck.gstatic.com', 'Android Captive Probe')")
         c.execute("INSERT OR IGNORE INTO walled_garden (domain, note) VALUES ('captive.apple.com', 'Apple Captive Probe')")
-        default_hash = generate_password_hash('admin123')
+        default_hash = generate_password_hash('admin123', method='pbkdf2:sha256')
         c.execute("INSERT OR IGNORE INTO admins (username, password_hash) VALUES ('admin', ?)", (default_hash,))
         conn.commit()
 init_db()
@@ -744,7 +744,7 @@ def api_transfer_generate():
         transfer_sec = mins_to_transfer * 60
         sess['remaining_seconds'] = max(0, rem - transfer_sec)
         sync_client_firewall(client_ip)
-        code = ''.join(random.choices(string.digits, k=6))
+        code = ''.join(random.choice(string.digits) for _ in range(6))
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('INSERT INTO time_transfers (code, from_ip, from_mac, seconds, created_at) VALUES (?, ?, ?, ?, ?)', (code, client_ip, sess['mac'], transfer_sec, time.time()))
@@ -786,7 +786,7 @@ def api_member_register():
         return jsonify({'success': False, 'error': 'Username must be 3-20 characters (letters, numbers, underscores only).'})
     if not pin or not re.match('^\\d{4,6}$', pin):
         return jsonify({'success': False, 'error': 'PIN must be strictly 4 to 6 numeric digits.'})
-    pin_hash = generate_password_hash(pin)
+    pin_hash = generate_password_hash(pin, method='pbkdf2:sha256')
     try:
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
@@ -1107,19 +1107,21 @@ FORCE_PASS_HTML = '\n<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charse
 
 @app.before_request
 def admin_security_guard():
-    if request.path == '/admin' or request.path.startswith('/admin/'):
+    is_admin_route = request.path == '/admin' or request.path.startswith('/admin/')
+    is_sim_route = request.path == '/simulator' or request.path.startswith('/simulator/')
+    if is_admin_route or is_sim_route:
         if request.path == '/admin/login':
             return None
         if not session.get('admin_logged_in'):
-            if request.path in ['/admin', '/admin/force_password_change', '/admin/api/export_xlsx', '/admin/api/export_csv'] or not request.path.startswith('/admin/api/'):
-                return redirect('/admin/login')
-            return (jsonify({'error': 'unauthorized', 'message': 'Authentication required.'}), 401)
+            if request.path.startswith('/admin/api/') or request.path.startswith('/simulator/api/'):
+                return (jsonify({'error': 'unauthorized', 'message': 'Admin authentication required.'}), 401)
+            return redirect('/admin/login')
         if session.get('must_change_password'):
             allowed_during_pw_change = ['/admin/force_password_change', '/admin/logout']
             if request.path not in allowed_during_pw_change:
-                if request.path in ['/admin', '/admin/api/export_xlsx', '/admin/api/export_csv'] or not request.path.startswith('/admin/api/'):
-                    return redirect('/admin/force_password_change')
-                return (jsonify({'error': 'password_change_required', 'message': 'Default password must be changed first.'}), 403)
+                if request.path.startswith('/admin/api/') or request.path.startswith('/simulator/api/'):
+                    return (jsonify({'error': 'password_change_required', 'message': 'Default password must be changed first.'}), 403)
+                return redirect('/admin/force_password_change')
 
 @app.route('/admin/force_password_change', methods=['GET', 'POST'])
 def admin_force_password_change():
@@ -1130,7 +1132,7 @@ def admin_force_password_change():
         if new_pw and len(new_pw) >= 6 and (new_pw != 'admin123'):
             admin_user = session.get('admin_username', 'admin')
             with sqlite3.connect(DB_PATH) as conn:
-                conn.execute('UPDATE admins SET password_hash=? WHERE username=?', (generate_password_hash(new_pw), admin_user))
+                conn.execute('UPDATE admins SET password_hash=? WHERE username=?', (generate_password_hash(new_pw, method='pbkdf2:sha256'), admin_user))
             session.pop('must_change_password', None)
             return redirect('/admin')
     return render_template_string(FORCE_PASS_HTML)
@@ -1312,7 +1314,7 @@ def admin_generate_vouchers():
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         for _ in range(qty):
-            code = prefix + ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+            code = prefix + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(6))
             c.execute('INSERT OR REPLACE INTO vouchers (code, minutes, created_at, note) VALUES (?, ?, ?, ?)', (code, minutes, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), note))
             created.append({'code': code, 'minutes': minutes, 'note': note})
         conn.commit()
@@ -1352,7 +1354,7 @@ def admin_api_members_add():
         return (jsonify({'success': False, 'error': 'Username must be at least 3 characters.'}), 400)
     if not pin or not re.match('^\\d{4,6}$', pin):
         return (jsonify({'success': False, 'error': 'PIN must be 4 to 6 digits.'}), 400)
-    pin_hash = generate_password_hash(pin)
+    pin_hash = generate_password_hash(pin, method='pbkdf2:sha256')
     try:
         with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
@@ -1741,7 +1743,10 @@ def admin_export_xlsx():
     wb.save(buf)
     buf.seek(0)
     filename = 'ECO_Fi_Operations_Report_{}.xlsx'.format(datetime.now().strftime('%Y%m%d'))
-    return send_file(buf, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=filename)
+    try:
+        return send_file(buf, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, download_name=filename)
+    except TypeError:
+        return send_file(buf, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', as_attachment=True, attachment_filename=filename)
 
 @app.route('/admin/api/export_csv')
 def admin_export_csv():
