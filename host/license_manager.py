@@ -6,10 +6,37 @@ and offline activation validation.
 import hashlib
 import json
 import os
+import re
 import time
 LICENSE_FILE = '/opt/ecofi/license.key'
 HWID_OVERRIDE_FILE = '/opt/ecofi/hwid_override.txt'
 VENDOR_SECRET_SALT = 'ECOFI_MASTER_SOVEREIGN_KEY_2026_SECURE_SALT_v1'
+
+def normalize_hwid(hwid: str) -> str:
+    """
+    Normalizes any raw, partial, or user-copied HWID string into canonical
+    format: ECOFI-XXXX-XXXX-XXXX-XXXX (16 hexadecimal characters with ECOFI- prefix).
+    
+    Accepts:
+      - Full copied string: 'ECOFI-AADD-284E-E7A4-309C'
+      - Accidental double prefix: 'ECOFI-ECOFI-AADD-284E-E7A4-309C'
+      - Stripped / raw hex: 'AADD284EE7A4309C'
+      - Standard 4x4 blocks: 'AADD-284E-E7A4-309C'
+      - Lowercase: 'ecofi-aadd-284e-e7a4-309c'
+      - Spaces instead of dashes: 'ECOFI AADD 284E E7A4 309C'
+      - Extra leading/trailing quotes or spaces: ' "ECOFI-AADD-284E-E7A4-309C" '
+    """
+    if not hwid:
+        return ""
+    raw = str(hwid).strip().strip('"\'').upper()
+    raw = re.sub(r'^(ECO[-_]?FI[-_:\s]*)+', '', raw)
+    hex_chars = re.sub(r'[^0-9A-F]', '', raw)
+    if len(hex_chars) >= 16:
+        h = hex_chars[:16]
+        return 'ECOFI-{}-{}-{}-{}'.format(h[0:4], h[4:8], h[8:12], h[12:16])
+    if hex_chars:
+        return 'ECOFI-{}'.format(hex_chars)
+    return str(hwid).strip().upper()
 
 def get_machine_hwid() -> str:
     """
@@ -21,7 +48,7 @@ def get_machine_hwid() -> str:
             with open(HWID_OVERRIDE_FILE, 'r') as f:
                 override = f.read().strip()
                 if override:
-                    return override
+                    return normalize_hwid(override)
         except Exception:
             pass
     cpu_serial = 'CPU_GENERIC_OPI'
@@ -59,8 +86,9 @@ def compute_activation_pin(hwid: str, tier: str='COMMERCIAL') -> str:
     """
     Computes the mathematical activation PIN for a specific HWID.
     Used by both the vendor key generator and the on-device validator.
+    Normalizes the HWID so any copied format is guaranteed to match.
     """
-    clean_hwid = hwid.strip().upper()
+    clean_hwid = normalize_hwid(hwid)
     clean_tier = tier.strip().upper()
     payload = '{}::{}::{}'.format(clean_hwid, clean_tier, VENDOR_SECRET_SALT)
     sha = hashlib.sha256(payload.encode('utf-8')).hexdigest().upper()
@@ -101,11 +129,13 @@ def verify_license() -> dict:
 def activate_machine(activation_pin: str, licensee_name: str='Store Owner', tier: str='COMMERCIAL') -> dict:
     """
     Activates the machine using an offline 16-character alphanumeric PIN.
+    Accepts PIN with or without dashes, with spaces, or lowercase.
     """
     current_hwid = get_machine_hwid()
     expected_pin = compute_activation_pin(current_hwid, tier)
-    clean_pin = activation_pin.strip().upper().replace(' ', '')
-    if clean_pin != expected_pin:
+    clean_pin = re.sub(r'[^0-9A-F]', '', str(activation_pin).strip().upper())
+    expected_clean = re.sub(r'[^0-9A-F]', '', expected_pin.strip().upper())
+    if clean_pin != expected_clean:
         return {'success': False, 'message': 'Invalid Activation PIN. Please check your Hardware ID and try again.'}
     license_data = {'vendor': 'ECO-Fi Technologies', 'licensee': licensee_name, 'machine_hwid': current_hwid, 'tier': tier, 'activation_key': expected_pin, 'activated_at': time.strftime('%Y-%m-%d %H:%M:%S'), 'expiry_date': 'PERPETUAL'}
     try:

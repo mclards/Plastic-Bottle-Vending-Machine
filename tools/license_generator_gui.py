@@ -13,13 +13,13 @@ from tkinter import ttk, messagebox
 
 # Import license engine logic
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "host"))
-from license_manager import compute_activation_pin
+from license_manager import compute_activation_pin, normalize_hwid
 
 class LicenseGeneratorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("ECO-Fi Vendo - Master License Key Generator")
-        self.root.geometry("620x580")
+        self.root.geometry("640x600")
         self.root.resizable(False, False)
         self.root.configure(bg="#0F172A")
 
@@ -62,8 +62,11 @@ class LicenseGeneratorApp:
         )
         hwid_lbl.pack(anchor="w", pady=(0, 4))
 
+        hwid_row = tk.Frame(form_frame, bg="#0F172A")
+        hwid_row.pack(fill="x", pady=(0, 15))
+
         self.hwid_entry = tk.Entry(
-            form_frame,
+            hwid_row,
             font=("Consolas", 12),
             bg="#1E293B",
             fg="#38BDF8",
@@ -73,8 +76,22 @@ class LicenseGeneratorApp:
             highlightbackground="#334155",
             highlightcolor="#10B981"
         )
-        self.hwid_entry.pack(fill="x", ipady=6, pady=(0, 15))
-        self.hwid_entry.insert(0, "ECOFI-")
+        self.hwid_entry.pack(side="left", fill="x", expand=True, ipady=6)
+        self.hwid_entry.bind("<FocusOut>", self.on_hwid_blur)
+
+        btn_paste_hwid = tk.Button(
+            hwid_row,
+            text="📋 Paste HWID",
+            font=("Segoe UI", 9, "bold"),
+            bg="#334155",
+            fg="#10B981",
+            activebackground="#1E293B",
+            activeforeground="#34D399",
+            relief="flat",
+            cursor="hand2",
+            command=self.paste_hwid
+        )
+        btn_paste_hwid.pack(side="right", padx=(8, 0), ipady=6, ipadx=10)
 
         # 2. Licensee / Client Name
         client_lbl = tk.Label(
@@ -200,13 +217,45 @@ class LicenseGeneratorApp:
         )
         btn_save.pack(side="right", fill="x", expand=True, padx=(5, 0), ipady=4)
 
+    def paste_hwid(self):
+        try:
+            clipboard_text = self.root.clipboard_get().strip()
+            if not clipboard_text:
+                messagebox.showwarning("Clipboard Empty", "Your clipboard does not contain any text.")
+                return
+            formatted = normalize_hwid(clipboard_text)
+            self.hwid_entry.delete(0, tk.END)
+            self.hwid_entry.insert(0, formatted)
+        except Exception as e:
+            messagebox.showerror("Paste Error", f"Could not read clipboard: {e}")
+
+    def on_hwid_blur(self, event=None):
+        val = self.hwid_entry.get().strip()
+        if val:
+            formatted = normalize_hwid(val)
+            self.hwid_entry.delete(0, tk.END)
+            self.hwid_entry.insert(0, formatted)
+
     def generate_key(self):
-        hwid = self.hwid_entry.get().strip().upper()
+        raw_hwid = self.hwid_entry.get().strip()
         tier = self.tier_var.get()
 
-        if not hwid or hwid == "ECOFI-":
+        if not raw_hwid or raw_hwid == "ECOFI-":
             messagebox.showerror("Validation Error", "Please enter the Target Machine Hardware ID (HWID).")
             return
+
+        hwid = normalize_hwid(raw_hwid)
+        # Update entry with cleanly formatted HWID
+        self.hwid_entry.delete(0, tk.END)
+        self.hwid_entry.insert(0, hwid)
+
+        import re
+        if not re.match(r'^ECOFI-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$', hwid):
+            messagebox.showwarning(
+                "HWID Format Warning",
+                f"The entered HWID [{hwid}] does not appear to contain 16 hex characters.\n\n"
+                "Please ensure you copied the entire HWID (e.g. ECOFI-AADD-284E-E7A4-309C)."
+            )
 
         pin = compute_activation_pin(hwid, tier)
 

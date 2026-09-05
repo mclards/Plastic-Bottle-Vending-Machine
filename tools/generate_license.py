@@ -9,7 +9,7 @@ import os
 
 # Import license engine logic
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "host"))
-from license_manager import compute_activation_pin
+from license_manager import compute_activation_pin, normalize_hwid
 
 def main():
     print("================================================================")
@@ -19,11 +19,11 @@ def main():
     print()
 
     if len(sys.argv) >= 2:
-        hwid = sys.argv[1].strip().upper()
+        raw_hwid = sys.argv[1].strip()
         tier = sys.argv[2].strip().upper() if len(sys.argv) >= 3 else "COMMERCIAL"
     else:
-        hwid = input("Enter Client Machine Hardware ID (e.g. ECOFI-XXXX-XXXX-XXXX-XXXX): ").strip().upper()
-        if not hwid:
+        raw_hwid = input("Enter Client Machine Hardware ID (e.g. ECOFI-XXXX-XXXX-XXXX-XXXX): ").strip()
+        if not raw_hwid:
             print("Error: Hardware ID is required.")
             return
 
@@ -40,11 +40,13 @@ def main():
         }
         tier = tier_map.get(choice, "COMMERCIAL")
 
+    hwid = normalize_hwid(raw_hwid)
     pin = compute_activation_pin(hwid, tier)
 
     print()
     print("----------------------------------------------------------------")
-    print(f" TARGET HWID:       {hwid}")
+    print(f" INPUT HWID:        {raw_hwid}")
+    print(f" NORMALIZED HWID:   {hwid}")
     print(f" LICENSE TIER:      {tier}")
     print(f" ACTIVATION PIN:    {pin}")
     print("----------------------------------------------------------------")
