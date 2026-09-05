@@ -3,13 +3,14 @@
 # ECO-Fi OS Image Rebuilder & Customizer
 # Deep Cleaning, Hardening & ECO-Fi Integration for Orange Pi One
 # Base: resources/PisoFi_Opi1&PC_v5.3.0-05-10-26_EXT.img
-# Target: resources/EcoFi_Opi_v1.3.img
+# Target: resources/EcoFi_Opi_v1.4.img
 # ==============================================================================
 
 set -e
 
+# Configuration
 BASE_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/PisoFi_Opi1&PC_v5.3.0-05-10-26_EXT.img"
-TARGET_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/EcoFi_Opi_v1.3.img"
+TARGET_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/EcoFi_Opi_v1.4.img"
 MOUNT_DIR="/tmp/ecofi_mount"
 SOURCE_HOST="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/host"
 
@@ -238,6 +239,14 @@ echo "[5/6] Injecting offline Python 3.5 dependencies into rootfs..."
 mkdir -p "$MOUNT_DIR/usr/local/lib/python3.5/dist-packages"
 if [ -d "/var/cache/ecofi_wheels_py35" ]; then
     cp -r /var/cache/ecofi_wheels_py35/* "$MOUNT_DIR/usr/local/lib/python3.5/dist-packages/"
+fi
+
+# Inject ipset binary and shared library
+DEBS_DIR="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/debs"
+if [ -d "$DEBS_DIR" ]; then
+    echo "Injecting ipset & libipset3 packages into rootfs..."
+    dpkg-deb -x "$DEBS_DIR/libipset3_6.30-2_armhf.deb" "$MOUNT_DIR"
+    dpkg-deb -x "$DEBS_DIR/ipset_6.30-2_armhf.deb" "$MOUNT_DIR"
 fi
 
 echo "[5/6.5] Injecting ECO-Fi software stack into /opt/ecofi..."
