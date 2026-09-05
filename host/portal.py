@@ -1534,6 +1534,22 @@ def admin_api_settings_save():
                 if c.rowcount == 0:
                     c.execute('INSERT INTO announcements (id, message, active) VALUES (1, ?, 1)', (str(v),))
                 conn.commit()
+
+    # If default bandwidth limits changed, push new rates to ALL active clients
+    # that are still running on the default speed (not per-MAC overridden).
+    if 'default_dl_kbps' in data or 'default_ul_kbps' in data:
+        new_dl = int(get_config('default_dl_kbps', '3072'))
+        new_ul = int(get_config('default_ul_kbps', '1536'))
+        with active_clients_lock:
+            for ip, sess in active_clients.items():
+                if sess.get('remaining_seconds', 0) > 0 and not sess.get('is_paused'):
+                    # Only update clients whose speed wasn't individually overridden
+                    # (i.e. they still carry the previous default or no custom value)
+                    sess['dl_kbps'] = new_dl
+                    sess['ul_kbps'] = new_ul
+                    sync_client_firewall(ip)
+        save_sessions_to_db()
+
     return jsonify({'success': True})
 
 @app.route('/admin/api/mac_control/list')
