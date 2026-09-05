@@ -605,6 +605,59 @@ PORTAL_HTML = '\n<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="U
 def page_not_found(e):
     return redirect('http://10.0.0.1/')
 
+# ── Windows NCSI probe ────────────────────────────────────────────────────────
+# Windows hits http://www.msftconnecttest.com/connecttest.txt and expects the
+# exact string "Microsoft Connect Test".  If we return anything else (or a
+# redirect) the taskbar shows "Action needed, no internet" even when the client
+# has a working connection.  We serve the correct response when the client has
+# active time; otherwise we redirect to the portal so they can buy time.
+@app.route('/connecttest.txt')
+def ncsi_connecttest():
+    client_ip = get_client_ip()
+    sess = active_clients.get(client_ip)
+    if sess and sess.get('remaining_seconds', 0) > 0 and not sess.get('is_paused'):
+        return Response('Microsoft Connect Test', mimetype='text/plain', status=200)
+    return redirect('http://10.0.0.1/')
+
+@app.route('/ncsi.txt')
+def ncsi_txt():
+    client_ip = get_client_ip()
+    sess = active_clients.get(client_ip)
+    if sess and sess.get('remaining_seconds', 0) > 0 and not sess.get('is_paused'):
+        return Response('Microsoft NCSI', mimetype='text/plain', status=200)
+    return redirect('http://10.0.0.1/')
+
+# ── Android / Chrome OS connectivity probe ────────────────────────────────────
+@app.route('/generate_204')
+@app.route('/gen_204')
+def generate_204():
+    client_ip = get_client_ip()
+    sess = active_clients.get(client_ip)
+    if sess and sess.get('remaining_seconds', 0) > 0 and not sess.get('is_paused'):
+        return Response('', status=204)
+    return redirect('http://10.0.0.1/')
+
+# ── Apple iOS / macOS captive portal probe ────────────────────────────────────
+@app.route('/hotspot-detect.html')
+@app.route('/library/test/success.html')
+@app.route('/canonical.html')
+def apple_captive():
+    client_ip = get_client_ip()
+    sess = active_clients.get(client_ip)
+    if sess and sess.get('remaining_seconds', 0) > 0 and not sess.get('is_paused'):
+        return Response('<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>',
+                        mimetype='text/html', status=200)
+    return redirect('http://10.0.0.1/')
+
+# ── Firefox connectivity probe ────────────────────────────────────────────────
+@app.route('/success.txt')
+def firefox_success():
+    client_ip = get_client_ip()
+    sess = active_clients.get(client_ip)
+    if sess and sess.get('remaining_seconds', 0) > 0 and not sess.get('is_paused'):
+        return Response('success', mimetype='text/plain', status=200)
+    return redirect('http://10.0.0.1/')
+
 @app.route('/')
 def index():
     client_ip = get_client_ip()
