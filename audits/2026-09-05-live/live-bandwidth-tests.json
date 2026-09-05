@@ -4,8 +4,8 @@
     "configured_kbps": 3072,
     "observed": {
       "bytes": 2097152,
-      "seconds": 6.169,
-      "kbps": 2719.4
+      "seconds": 6.165,
+      "kbps": 2721.5
     },
     "passed": true
   },
@@ -14,8 +14,8 @@
     "configured_kbps": 1536,
     "observed": {
       "bytes": 524288,
-      "seconds": 2.834,
-      "kbps": 1480.1
+      "seconds": 2.825,
+      "kbps": 1484.5
     },
     "passed": true
   },
@@ -24,8 +24,8 @@
     "configured_kbps": 1024,
     "observed": {
       "bytes": 2097152,
-      "seconds": 17.028,
-      "kbps": 985.3
+      "seconds": 16.995,
+      "kbps": 987.2
     },
     "passed": true
   },
@@ -34,8 +34,8 @@
     "configured_kbps": 512,
     "observed": {
       "bytes": 524288,
-      "seconds": 8.46,
-      "kbps": 495.8
+      "seconds": 8.461,
+      "kbps": 495.7
     },
     "passed": true
   }
