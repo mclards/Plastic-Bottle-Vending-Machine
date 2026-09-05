@@ -19,13 +19,14 @@ If you make changes to the Python backend (`host/*.py`) or the web UI (`portal_t
    wsl --user root bash build_ecofi_img.sh
    ```
 4. The script will output progress logs. It takes about 1-2 minutes to copy the base image and inject the new files.
-5. Once successful, the new image will be output to the `resources/` folder (e.g., `resources/EcoFi_Opi_v1.3.img`).
+5. Once successful, the new image will be output to the `resources/` folder (e.g., `resources/EcoFi_Opi_v1.7.img`).
 
-## Flashing to SD Card
+---
 
-1. Download and install [BalenaEtcher](https://etcher.balena.io/) or [Rufus](https://rufus.ie/).
-2. Insert a high-quality MicroSD card (at least 8GB, Class 10 recommended) into your PC.
-3. Open BalenaEtcher, select the newly built `EcoFi_Opi_v1.3.img` file.
+### Step 3: Flash to MicroSD Card
+1. Insert your MicroSD card (16GB or 32GB recommended) into your PC card reader.
+2. Download and launch **BalenaEtcher** or **Raspberry Pi Imager**.
+3. Open BalenaEtcher, select the newly built `EcoFi_Opi_v1.7.img` file.
 4. Select your MicroSD card as the target.
 5. Click **Flash!**
 
@@ -46,3 +47,4 @@ Once the SD card is flashed and inserted into the Orange Pi:
 - **502 Bad Gateway:** If you see this on `http://10.0.0.1`, the Nginx web server is running but the Python backend (`portal.py`) crashed. Ensure all `.py` dependencies were copied properly in the `build_ecofi_img.sh` script.
 - **10.0.0.1 Not Loading / Routing Issues:** Make sure you wait for the USB Wi-Fi dongle to initialize on boot. If routing acts strange, verify that the USB adapter was plugged in *before* turning on the machine so the firewall configures `eth1` properly.
 - **Unlicensed Vendo Message:** Ensure the active license Activation PIN in the admin dashboard matches the physical hardware (CPU Serial, SD CID, MAC Address). Licenses are strictly bound to the hardware and cannot be transferred by just copying the SD card.
+
