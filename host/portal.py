@@ -235,6 +235,7 @@ def record_bottle_drop(count=1):
         c.execute('INSERT OR IGNORE INTO stats (date, total_bottles) VALUES (?, 0)', (today,))
         c.execute('UPDATE stats SET total_bottles = total_bottles + ? WHERE date = ?', (count, today))
         conn.commit()
+    print('[ECO-FI STATS] +{} bottle(s) recorded in database for {}.'.format(count, today), flush=True)
 
 def send_telegram_alert(custom_msg=None):
     bot_token = get_config('telegram_bot_token')
@@ -257,18 +258,22 @@ def on_esp32_uart_output(raw_msg):
         data = json.loads(raw_msg)
         event = data.get('event')
         if event == 'CREDIT_ADD':
+            bottles = int(data.get('bottles', 1))
             session_total = data.get('sessionTotal')
             if session_total is not None:
-                if session_total > esp32.current_session_bottles:
-                    diff = session_total - esp32.current_session_bottles
-                    esp32.current_session_bottles = session_total
-                    record_bottle_drop(diff)
+                esp32.current_session_bottles = session_total
             else:
-                bottles = int(data.get('bottles', 1))
                 esp32.current_session_bottles += bottles
-                record_bottle_drop(bottles)
+            record_bottle_drop(bottles)
+            print('[ECO-FI VENDO] Bottle drop credit added: {} bottle(s), session total: {}'.format(bottles, esp32.current_session_bottles), flush=True)
+            with active_clients_lock:
+                if active_depositor_ip and active_depositor_ip in active_clients:
+                    active_clients[active_depositor_ip]['pending_bottles'] = (
+                        active_clients[active_depositor_ip].get('pending_bottles', 0) + bottles
+                    )
             if active_depositor_ip:
                 timeout = int(get_config('drop_timeout', '60') or 60)
+                active_depositor_timeout = time.time() + timeout + 5
                 transmit_to_esp32({'cmd': 'OPEN_GATE', 'timeout': timeout})
         elif event == 'REJECTED':
             if active_depositor_ip:
