@@ -568,6 +568,8 @@ def time_daemon():
                     session_data['remaining_seconds'] = max(0, session_data['remaining_seconds'] - elapsed)
                     if session_data['remaining_seconds'] <= 0:
                         sync_client_firewall(ip)
+                    elif tick % 10 == 0:
+                        sync_client_firewall(ip)
         time.sleep(1)
 
 def ensure_client_session(ip):
