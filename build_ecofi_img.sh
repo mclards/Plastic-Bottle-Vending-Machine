@@ -163,19 +163,6 @@ dhcp-option=6,10.0.0.1
 dhcp-option=114,http://10.0.0.1/
 dhcp-option=160,http://10.0.0.1/
 
-# Explicit Captive Portal Probes (Windows NCSI, Android, Apple iOS/macOS, Firefox)
-address=/msftconnecttest.com/10.0.0.1
-address=/www.msftconnecttest.com/10.0.0.1
-address=/ipv6.msftconnecttest.com/10.0.0.1
-address=/msftncsi.com/10.0.0.1
-address=/www.msftncsi.com/10.0.0.1
-address=/connectivitycheck.gstatic.com/10.0.0.1
-address=/connectivitycheck.android.com/10.0.0.1
-address=/clients3.google.com/10.0.0.1
-address=/apple.com/10.0.0.1
-address=/captive.apple.com/10.0.0.1
-address=/detectportal.firefox.com/10.0.0.1
-
 address=/localhost/127.0.0.1
 address=/ecofi-vendo/10.0.0.1
 
