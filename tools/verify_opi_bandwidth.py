@@ -49,7 +49,8 @@ def measure(direction):
 
 def main():
     c=connect(); k=admin_cookie(c); results=[]
-    original=next(x for x in api('/admin/api/clients',cookie=k) if x['ip']==CLIENT)
+    clients = api('/admin/api/clients',cookie=k)
+    original = next((x for x in clients if x['ip']==CLIENT), {'remaining_seconds': 0, 'dl_kbps': 0, 'ul_kbps': 0})
     if original['remaining_seconds']!=0: raise RuntimeError('Test requires zero original credit.')
     server_path='/tmp/ecofi-audit-throughput.py'
     with c.open_sftp() as sftp:

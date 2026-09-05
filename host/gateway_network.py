@@ -123,14 +123,14 @@ def setup(lan='eth1', wan='eth0'):
 def setup_shaping():
     _shaped.clear()
     run(['modprobe', 'ifb', 'numifbs=1'])
-    run(['modprobe', 'sch_fq_codel'], check=False)
+    run(['modprobe', 'sch_sfq'], check=False)
     run(['ip', 'link', 'set', 'ifb0', 'up'])
     for device in [LAN, 'ifb0']:
         run(['tc', 'qdisc', 'del', 'dev', device, 'root'], check=False)
         run(['tc', 'qdisc', 'add', 'dev', device, 'root', 'handle', '1:', 'htb', 'default', '99'])
         run(['tc', 'class', 'add', 'dev', device, 'parent', '1:', 'classid', '1:1', 'htb', 'rate', '100mbit'])
         run(['tc', 'class', 'add', 'dev', device, 'parent', '1:1', 'classid', '1:99', 'htb', 'rate', '100mbit'])
-        run(['tc', 'qdisc', 'add', 'dev', device, 'parent', '1:99', 'handle', '99:', 'fq_codel'])
+        run(['tc', 'qdisc', 'add', 'dev', device, 'parent', '1:99', 'handle', '99:', 'sfq', 'perturb', '10'])
     run(['tc', 'qdisc', 'del', 'dev', LAN, 'ingress'], check=False)
     run(['tc', 'qdisc', 'add', 'dev', LAN, 'ingress'])
     run(['tc', 'filter', 'add', 'dev', LAN, 'parent', 'ffff:', 'protocol', 'ip', 'u32', 'match', 'u32', '0', '0',
@@ -146,9 +146,10 @@ def shape(ip, dl, ul):
     for device, direction, rate in [(LAN, 'dst', values[0]), ('ifb0', 'src', values[1])]:
         run(['tc', 'class', 'replace', 'dev', device, 'parent', '1:1', 'classid', classid, 'htb',
              'rate', '{}kbit'.format(rate), 'ceil', '{}kbit'.format(rate), 'burst', '15k'])
-        run(['tc', 'qdisc', 'replace', 'dev', device, 'parent', classid, 'handle', '{:x}:'.format(mark), 'fq_codel'])
-        run(['tc', 'filter', 'replace', 'dev', device, 'protocol', 'ip', 'parent', '1:', 'prio', str(mark),
-             'u32', 'match', 'ip', direction, ip + '/32', 'flowid', classid])
+        if ip not in _shaped:
+            run(['tc', 'qdisc', 'add', 'dev', device, 'parent', classid, 'handle', '{:x}:'.format(mark), 'sfq', 'perturb', '10'], check=False)
+            run(['tc', 'filter', 'add', 'dev', device, 'protocol', 'ip', 'parent', '1:', 'prio', str(mark),
+                 'u32', 'match', 'ip', direction, ip + '/32', 'flowid', classid])
     _shaped[ip] = values
 
 
