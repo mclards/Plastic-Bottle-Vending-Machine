@@ -496,10 +496,15 @@ def save_sessions_to_db():
             ensure_session_schema(conn)
             conn.execute('DELETE FROM active_sessions')
             for ip, s in active_clients.items():
-                if ip in ('127.0.0.1', '10.0.0.1', '::1', 'localhost'): continue
+                if ip in ('127.0.0.1', '10.0.0.1', '::1', 'localhost') or ip.startswith('saved:'): continue
+                rem = s.get('remaining_seconds', 0)
+                is_p = s.get('is_paused', False)
+                pending = s.get('pending_bottles', 0)
+                if rem <= 0 and not is_p and pending <= 0:
+                    continue
                 conn.execute('INSERT INTO active_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                    (ip, s['mac'], s['remaining_seconds'], int(s.get('is_paused', False)),
-                     s.get('dl_kbps', 3072), s.get('ul_kbps', 1536), s.get('pending_bottles', 0),
+                    (ip, s.get('mac', '00:00:00:00:00:00'), rem, int(is_p),
+                     s.get('dl_kbps', 3072), s.get('ul_kbps', 1536), pending,
                      s.get('paused_at', 0), s.get('expires_at', 0), time.time(), json.dumps(s)))
 
 def restore_sessions_from_db():
@@ -1431,11 +1436,16 @@ def admin_api_client_action():
                 sync_client_firewall(ip)
             elif action == 'kick':
                 update_firewall(ip, 'del')
+                mac = active_clients[ip].get('mac', '')
                 del active_clients[ip]
+                if mac and ('saved:' + mac) in active_clients:
+                    del active_clients['saved:' + mac]
                 if active_depositor_ip == ip:
                     active_depositor_ip = None
                     active_depositor_timeout = 0
             save_sessions_to_db()
+            with db_connection() as conn:
+                conn.execute('DELETE FROM active_sessions WHERE ip = ?', (ip,))
             return jsonify({'success': True})
         elif action == 'kick':
             update_firewall(ip, 'del')
