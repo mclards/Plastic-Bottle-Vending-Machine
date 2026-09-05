@@ -152,7 +152,7 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('vendo_subtitle', 'Recycle Bottles for Fast WiFi')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('announcement', '')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_bg', '/static/audio/eco_loop.wav')")
-        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_insert', '/static/audio/eco_chime.wav')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_insert', '/static/audio/bottle_success.wav')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_success', '/static/audio/eco_success.wav')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_preset', '/static/audio/eco_chime.wav')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_custom_url', '')")
