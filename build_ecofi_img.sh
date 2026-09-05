@@ -111,6 +111,21 @@ sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' "$MOUNT_DIR/etc/sysctl.
 echo "ecofi-vendo" > "$MOUNT_DIR/etc/hostname"
 sed -i 's/pisofi/ecofi-vendo/g' "$MOUNT_DIR/etc/hosts" 2>/dev/null || true
 
+# Timezone & NTP Configuration: Set Asia/Manila (PHT, UTC+8) and Philippine NTP pool
+echo "[4/6.2] Setting timezone to Asia/Manila (PHT, UTC+8) and configuring NTP..."
+ln -sf /usr/share/zoneinfo/Asia/Manila "$MOUNT_DIR/etc/localtime"
+echo "Asia/Manila" > "$MOUNT_DIR/etc/timezone"
+
+cat << 'EOF' > "$MOUNT_DIR/etc/systemd/timesyncd.conf"
+[Time]
+NTP=0.ph.pool.ntp.org 1.ph.pool.ntp.org 2.ph.pool.ntp.org time.google.com time.cloudflare.com
+FallbackNTP=0.pool.ntp.org 1.pool.ntp.org 2.pool.ntp.org 3.pool.ntp.org
+EOF
+
+mkdir -p "$MOUNT_DIR/etc/systemd/system/sysinit.target.wants"
+ln -sf /lib/systemd/system/systemd-timesyncd.service "$MOUNT_DIR/etc/systemd/system/sysinit.target.wants/systemd-timesyncd.service" 2>/dev/null || true
+date -u +"%Y-%m-%d %H:%M:%S" > "$MOUNT_DIR/etc/fake-hwclock.data" 2>/dev/null || true
+
 # Set root and pi console login passwords to "root" for HDMI/serial console
 ROOT_HASH='$6$JpJzc5Fnsdll3j83$D9xx8MwvyG9KoulpMUVrD8JfSWwfOV5QkcxAdI0z4GeT5FpbC6HyeKeUNYoc1tBMtz2SjNVRFtrGd6TQ7v0UA0'
 sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$MOUNT_DIR/etc/shadow"

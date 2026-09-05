@@ -536,8 +536,8 @@ def time_daemon():
     while True:
         tick += 1
         now = time.time()
-        if last_tick_time is None:
-            elapsed = 0
+        if last_tick_time is None or now < last_tick_time or (now - last_tick_time) > 10:
+            elapsed = 1
         else:
             elapsed = max(1, int(round(now - last_tick_time)))
         last_tick_time = now
