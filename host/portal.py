@@ -164,7 +164,19 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (3, 40, '3 Bottles = 40 mins')")
         c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (5, 75, '5 Bottles = 1h 15m')")
         c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (10, 180, '10 Bottles = 3 Hours')")
-        c.execute("DELETE FROM walled_garden WHERE domain IN ('connectivitycheck.gstatic.com', 'captive.apple.com', 'clients3.google.com', 'www.msftconnecttest.com')")
+        # Ensure required captive-portal detection domains are always in the walled garden.
+        # These must be freely reachable by unauthenticated clients so iOS/Android can
+        # auto-detect internet access and dismiss the captive portal modal automatically.
+        _captive_domains = [
+            ('captive.apple.com', 'Apple CNA captive detection'),
+            ('www.apple.com', 'Apple connectivity check'),
+            ('apple.com', 'Apple connectivity check'),
+            ('connectivitycheck.gstatic.com', 'Android/Chrome connectivity check'),
+            ('clients3.google.com', 'Android connectivity check'),
+            ('www.msftconnecttest.com', 'Windows/Microsoft connectivity check'),
+        ]
+        for _domain, _note in _captive_domains:
+            c.execute("INSERT OR IGNORE INTO walled_garden (domain, note) VALUES (?, ?)", (_domain, _note))
         default_hash = generate_password_hash('admin123', method='pbkdf2:sha256')
         c.execute("INSERT OR IGNORE INTO admins (username, password_hash) VALUES ('admin', ?)", (default_hash,))
         conn.commit()
@@ -436,6 +448,20 @@ def apply_walled_garden_and_macs():
         blocked = {row[0].lower() for row in conn.execute("SELECT mac FROM mac_control WHERE type='block'")}
         domains = [row[0] for row in conn.execute('SELECT domain FROM walled_garden')]
     addresses = set()
+    # Hardcoded fallback IPs for critical captive-portal detection endpoints.
+    # These ensure the walled garden works even if DNS is not yet available at startup.
+    _BUILTIN_CAPTIVE_IPS = {
+        # Apple captive.apple.com / captive.g.aaplimg.com IP ranges
+        '17.253.85.135', '17.253.85.138', '17.253.84.135', '17.253.84.138',
+        '17.253.68.135', '17.253.68.138', '17.57.144.135', '17.57.144.138',
+        # connectivitycheck.gstatic.com
+        '142.250.185.227', '142.250.68.227', '142.251.42.195',
+        # clients3.google.com
+        '142.250.185.100', '142.250.68.100',
+        # www.msftconnecttest.com
+        '13.107.4.52', '13.107.5.52',
+    }
+    addresses.update(_BUILTIN_CAPTIVE_IPS)
     for domain in domains:
         try:
             for result in socket.getaddrinfo(domain, None, socket.AF_INET):
@@ -446,6 +472,7 @@ def apply_walled_garden_and_macs():
     gateway_network.policies(blocked, addresses)
     with active_clients_lock:
         for ip in list(active_clients): sync_client_firewall(ip)
+
 
 def setup_firewall():
     if platform.system() == 'Windows': return
