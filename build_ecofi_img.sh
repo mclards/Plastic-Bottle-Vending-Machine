@@ -304,7 +304,7 @@ After=network.target
 [Service]
 Type=oneshot
 ExecStart=/opt/ecofi/setup_network.sh
-ExecStartPost=/bin/bash -c "sysctl -w net.ipv4.ip_forward=1; ipset create ecofi_auth hash:ip timeout 86400 -exist; iptables -P FORWARD DROP; iptables -A FORWARD -m set --match-set ecofi_auth src -j ACCEPT; iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT; iptables -A FORWARD -p udp --dport 53 -j ACCEPT; iptables -A FORWARD -p tcp --dport 53 -j ACCEPT; iptables -t nat -A PREROUTING -m set ! --match-set ecofi_auth src -p udp --dport 53 -j REDIRECT --to-port 53; iptables -t nat -A PREROUTING -m set ! --match-set ecofi_auth src -p tcp --dport 80 -j REDIRECT --to-port 80; iptables -t nat -A POSTROUTING -j MASQUERADE"
+ExecStartPost=/bin/bash -c "sysctl -w net.ipv4.ip_forward=1"
 RemainAfterExit=yes
 
 [Install]
