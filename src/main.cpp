@@ -86,7 +86,8 @@ enum EventMsg {
     MSG_REJECT_NIR,
     MSG_VALIDATE_START,
     MSG_BOTTLE_SAVED,
-    MSG_DROP_TIMEOUT
+    MSG_DROP_TIMEOUT,
+    MSG_GATE_TIMEOUT
 };
 
 void IRAM_ATTR isrTopIr() { topIrTriggered = true; }
@@ -261,10 +262,12 @@ void sensorTaskCode(void* parameter) {
             
             unsigned long openTime = millis();
             bool dropped = false;
+            bool wasForced = false;
             
             while (millis() - openTime < (config.entrance_gate_timeout * 1000UL)) {
                 if (topIrTriggered || forceGateClose) {
                     if (topIrTriggered) dropped = true;
+                    if (forceGateClose) wasForced = true;
                     break;
                 }
                 vTaskDelay(pdMS_TO_TICKS(20));
@@ -274,8 +277,10 @@ void sensorTaskCode(void* parameter) {
             forceGateClose = false;
             
             if (!dropped) {
-                EventMsg failMsg = MSG_DROP_TIMEOUT;
-                xQueueSend(eventQueue, &failMsg, portMAX_DELAY);
+                if (!wasForced) {
+                    EventMsg timeoutMsg = MSG_GATE_TIMEOUT;
+                    xQueueSend(eventQueue, &timeoutMsg, portMAX_DELAY);
+                }
                 continue;
             }
             
@@ -415,6 +420,14 @@ void commTaskCode(void* parameter) {
                     digitalWrite(PIN_LED_RED, LOW);
                     lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
                     lcd.setCursor(0, 2); lcd.print("Rate: 1 Bottle = 15m");
+                    break;
+
+                case MSG_GATE_TIMEOUT:
+                    digitalWrite(PIN_LED_GREEN, LOW);
+                    digitalWrite(PIN_LED_RED, LOW);
+                    lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
+                    lcd.setCursor(0, 2); lcd.print("Rate: 1 Bottle = 15m");
+                    Serial.println("{\"event\":\"TIMEOUT\"}");
                     break;
             }
             xSemaphoreGive(uiMutex);

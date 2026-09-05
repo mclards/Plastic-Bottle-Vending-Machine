@@ -183,10 +183,13 @@ class ESP32Simulator:
         self.set_lcd(line0='=== ECO-Fi VENDO ===', line1='GATE OPEN: INSERT...', line2='Drop within {}s   '.format(self.entrance_gate_timeout), line3='Session Bottles: {:<3}'.format(self.current_session_bottles))
         start_time = time.time()
         dropped = False
+        was_forced = False
         while time.time() - start_time < self.entrance_gate_timeout:
             if self.top_ir_triggered or self.force_gate_close:
                 if self.top_ir_triggered:
                     dropped = True
+                if self.force_gate_close:
+                    was_forced = True
                 break
             time.sleep(0.02)
         with self.lock:
@@ -194,9 +197,15 @@ class ESP32Simulator:
             self.force_gate_close = False
             self.pipe_item_stage = 'airlock' if dropped else 'idle'
         if not dropped:
-            self.pipe_item_stage = 'idle'
-            self.pipe_item_type = 'none'
-            self._handle_reject('Drop / Sensor Error ', 'REJECTED')
+            with self.lock:
+                self.pipe_item_stage = 'idle'
+                self.pipe_item_type = 'none'
+                self.entrance_servo_angle = self.ent_close_angle
+                self.led_green = False
+                self.led_red = False
+            self.set_lcd(line0='=== ECO-Fi VENDO ===', line1='Ready for Deposit   ', line2='Rate: 1 Bottle = 10m', line3='Session Bottles: {:<3}'.format(self.current_session_bottles))
+            if not was_forced:
+                self.send_uart({'event': 'TIMEOUT'})
             return
         with self.lock:
             self.pipe_item_stage = 'scanning'
