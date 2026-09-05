@@ -176,8 +176,6 @@ interface=eth0
 dhcp-range=10.0.0.100,10.0.31.254,255.255.224.0,72h
 dhcp-option=3,10.0.0.1
 dhcp-option=6,10.0.0.1
-dhcp-option=114,http://10.0.0.1/
-dhcp-option=160,http://10.0.0.1/
 
 address=/localhost/127.0.0.1
 address=/ecofi-vendo/10.0.0.1
@@ -300,6 +298,8 @@ EOF
 
 # GAP-06 & NET-05: Update DNS Hijacking
 sed -i 's/portal.pisofiapp.com/10.0.0.1/g' "$MOUNT_DIR/etc/dnsmasq.conf" 2>/dev/null || true
+sed -i '/dhcp-option=114/d' "$MOUNT_DIR/etc/dnsmasq.conf" 2>/dev/null || true
+sed -i '/dhcp-option=160/d' "$MOUNT_DIR/etc/dnsmasq.conf" 2>/dev/null || true
 rm -f "$MOUNT_DIR/etc/dnsmasq.d/ecofi_captive.conf" 2>/dev/null || true
 
 # BUILD-06: Log Rotation
