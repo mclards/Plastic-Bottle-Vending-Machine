@@ -1,12 +1,6 @@
 import os
 import shutil
 import atexit
-import copy
-import functools
-import uuid
-import signal
-from contextlib import contextmanager
-import gateway_network
 import ipaddress
 import re
 import sqlite3
@@ -41,14 +35,7 @@ import license_manager
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 app = Flask(__name__, static_folder='static')
-class LocalProxy:
-    def __init__(self, application):
-        self.raw = application
-        self.proxy = ProxyFix(application, x_for=1, x_proto=1, x_host=0)
-    def __call__(self, environ, start_response):
-        application = self.proxy if environ.get('REMOTE_ADDR') in ('127.0.0.1', '::1') else self.raw
-        return application(environ, start_response)
-app.wsgi_app = LocalProxy(app.wsgi_app)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vendo_sessions.db')
 active_clients = {}
 active_clients_lock = threading.RLock()
@@ -57,53 +44,21 @@ active_depositor_timeout = 0
 ser = None
 
 def get_client_ip():
-    # Proxy headers are interpreted only for our loopback nginx connection.
-    value = request.remote_addr or '127.0.0.1'
-    try:
-        return str(ipaddress.ip_address(value))
-    except ValueError:
-        return '127.0.0.1'
-
-
-@contextmanager
-def db_connection():
-    connection = sqlite3.connect(DB_PATH, timeout=15)
-    try:
-        with connection:
-            yield connection
-    finally:
-        connection.close()
-
-def atomic_credit_change(function):
-    return function
-
-def license_valid():
-    return bool(license_manager.verify_license().get('valid'))
-
-def session_expired(sess):
-    if sess.get('is_paused') and sess.get('expires_at', 0) and time.time() >= sess['expires_at']:
-        sess.update(remaining_seconds=0, expires_at=0, is_paused=False)
-        return True
-    return False
-
-def resume_session(sess):
-    session_expired(sess)
-    if sess.get('admin_paused'):
-        return False
-    sess.update(is_paused=False, user_paused=False, auto_paused=False, paused_at=0, expires_at=0)
-    return True
-
-def ensure_session_schema(conn):
-    conn.execute('CREATE TABLE IF NOT EXISTS active_sessions (ip TEXT PRIMARY KEY, mac TEXT, remaining_seconds INTEGER, is_paused INTEGER, dl_kbps INTEGER, ul_kbps INTEGER, pending_bottles INTEGER, paused_at REAL, expires_at REAL, saved_at REAL, state_json TEXT)')
-    fields = {row[1] for row in conn.execute('PRAGMA table_info(active_sessions)')}
-    for name, kind in [('paused_at', 'REAL DEFAULT 0'), ('expires_at', 'REAL DEFAULT 0'), ('state_json', 'TEXT')]:
-        if name not in fields:
-            conn.execute('ALTER TABLE active_sessions ADD COLUMN ' + name + ' ' + kind)
+    xff = request.headers.get('X-Forwarded-For')
+    if xff:
+        ip = xff.split(',')[0].strip()
+        if ip:
+            return ip
+    x_real = request.headers.get('X-Real-IP')
+    if x_real:
+        ip = x_real.strip()
+        if ip:
+            return ip
+    return request.remote_addr or '127.0.0.1'
 
 def init_db():
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
-        ensure_session_schema(conn)
         c.execute('CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)')
         c.execute('CREATE TABLE IF NOT EXISTS stats (date TEXT PRIMARY KEY, total_bottles INTEGER)')
         c.execute('CREATE TABLE IF NOT EXISTS admins (username TEXT PRIMARY KEY, password_hash TEXT)')
@@ -172,14 +127,14 @@ def init_db():
 init_db()
 
 def get_config(key, default=''):
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT value FROM config WHERE key=?', (key,))
         row = c.fetchone()
         return row[0] if row else default
 
 def get_all_config():
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT key, value FROM config')
         cfg = {row[0]: row[1] for row in c.fetchall()}
@@ -189,7 +144,7 @@ def get_all_config():
         return cfg
 
 def set_config(key, value):
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('REPLACE INTO config (key, value) VALUES (?, ?)', (key, str(value)))
         conn.commit()
@@ -209,7 +164,7 @@ def calculate_minutes_for_bottles(bottles_count):
         return 0
     total_minutes = 0
     remaining_bottles = bottles_count
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT bottles, minutes FROM promo_rates ORDER BY bottles DESC')
         rates = c.fetchall()
@@ -230,7 +185,7 @@ def calculate_minutes_for_bottles(bottles_count):
 
 def record_bottle_drop(count=1):
     today = datetime.now().strftime('%Y-%m-%d')
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('INSERT OR IGNORE INTO stats (date, total_bottles) VALUES (?, 0)', (today,))
         c.execute('UPDATE stats SET total_bottles = total_bottles + ? WHERE date = ?', (count, today))
@@ -257,16 +212,7 @@ def on_esp32_uart_output(raw_msg):
         data = json.loads(raw_msg)
         event = data.get('event')
         if event == 'CREDIT_ADD':
-            session_total = data.get('sessionTotal')
-            if session_total is not None:
-                if session_total > esp32.current_session_bottles:
-                    diff = session_total - esp32.current_session_bottles
-                    esp32.current_session_bottles = session_total
-                    record_bottle_drop(diff)
-            else:
-                bottles = int(data.get('bottles', 1))
-                esp32.current_session_bottles += bottles
-                record_bottle_drop(bottles)
+            record_bottle_drop(1)
             if active_depositor_ip:
                 timeout = int(get_config('drop_timeout', '60') or 60)
                 transmit_to_esp32({'cmd': 'OPEN_GATE', 'timeout': timeout})
@@ -313,21 +259,31 @@ def check_network_health():
         pass
 
 def get_lan_interface():
-    return os.environ.get('ECOFI_LAN_IFACE', 'eth1')
+    """Find the active LAN interface (eth1, br-lan, wlan0, eth0)."""
+    if platform.system() == 'Windows':
+        return 'eth0'
+    try:
+        wan_iface = subprocess.run("ip route | grep default | awk '{print $5}'", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout.strip()
+        all_ifaces = subprocess.run('ls /sys/class/net', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True).stdout.split()
+        for iface in ['eth1', 'br-lan', 'wlan0', 'eth0']:
+            if iface in all_ifaces and iface != wan_iface:
+                return iface
+        return wan_iface or 'eth1'
+    except Exception:
+        return 'eth1'
 
 def get_arp_table():
     if platform.system() == 'Windows':
         return {}
     try:
-        res = subprocess.run(['ip', '-4', 'neigh', 'show', 'dev', get_lan_interface()], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=5)
-        result = {}
+        res = subprocess.run(['arp', '-n'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        arp_map = {}
         for line in res.stdout.splitlines():
             parts = line.split()
-            if 'lladdr' in parts and not any(state in parts for state in ('FAILED', 'INCOMPLETE')):
-                result[parts[0]] = parts[parts.index('lladdr') + 1].lower()
-        return result
+            if len(parts) >= 3 and parts[1] == 'ether':
+                arp_map[parts[0]] = parts[2].lower()
+        return arp_map
     except Exception:
-        log.exception('Cannot read LAN neighbors')
         return {}
 
 def get_connected_ips():
@@ -391,62 +347,151 @@ def remove_client_bandwidth(ip):
 
 def sync_client_firewall(ip):
     with active_clients_lock:
-        sess = active_clients.get(ip)
-        if sess is None:
-            update_firewall(ip, 'del')
+        if ip not in active_clients:
             return
-        session_expired(sess)
-        with db_connection() as conn:
-            policy = conn.execute('SELECT type, dl_kbps, ul_kbps FROM mac_control WHERE lower(mac)=?', (sess.get('mac', '').lower(),)).fetchone()
-        blocked = policy and policy[0] == 'block'
-        free = policy and policy[0] == 'whitelist'
+        sess = active_clients[ip]
         dl = sess.get('dl_kbps') or int(get_config('default_dl_kbps', '3072'))
         ul = sess.get('ul_kbps') or int(get_config('default_ul_kbps', '1536'))
-        if free:
-            dl, ul = policy[1] or dl, policy[2] or ul
-        allowed = license_valid() and not blocked and (free or (sess['remaining_seconds'] > 0 and not sess.get('is_paused')))
-        if allowed:
-            ok = update_firewall(ip, 'add', 30 if free else sess['remaining_seconds'], dl, ul)
-            sess['access_error'] = '' if ok is not False else 'Network authorization unavailable; credit is preserved.'
+        if sess['remaining_seconds'] > 0 and (not sess.get('is_paused', False)):
+            update_firewall(ip, 'add', sess['remaining_seconds'], dl, ul)
         else:
             update_firewall(ip, 'del')
-            sess['access_error'] = ''
 
 def apply_walled_garden_and_macs():
-    if platform.system() == 'Windows': return
-    with db_connection() as conn:
-        blocked = {row[0].lower() for row in conn.execute("SELECT mac FROM mac_control WHERE type='block'")}
-        domains = [row[0] for row in conn.execute('SELECT domain FROM walled_garden')]
-    addresses = set()
-    for domain in domains:
+    if platform.system() == 'Windows':
+        return
+    subprocess.run(['iptables', '-t', 'nat', '-N', 'ECOFI_WALLED_GARDEN'], stderr=subprocess.DEVNULL)
+    subprocess.run(['iptables', '-t', 'nat', '-F', 'ECOFI_WALLED_GARDEN'], stderr=subprocess.DEVNULL)
+    res = subprocess.run(['iptables', '-t', 'nat', '-C', 'PREROUTING', '-j', 'ECOFI_WALLED_GARDEN'], stderr=subprocess.DEVNULL)
+    if res.returncode != 0:
+        subprocess.run(['iptables', '-t', 'nat', '-I', 'PREROUTING', '1', '-j', 'ECOFI_WALLED_GARDEN'])
+    subprocess.run(['iptables', '-N', 'ECOFI_MAC_BLOCK'], stderr=subprocess.DEVNULL)
+    subprocess.run(['iptables', '-F', 'ECOFI_MAC_BLOCK'], stderr=subprocess.DEVNULL)
+    res = subprocess.run(['iptables', '-C', 'FORWARD', '-j', 'ECOFI_MAC_BLOCK'], stderr=subprocess.DEVNULL)
+    if res.returncode != 0:
+        subprocess.run(['iptables', '-I', 'FORWARD', '1', '-j', 'ECOFI_MAC_BLOCK'])
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
         try:
-            for result in socket.getaddrinfo(domain, None, socket.AF_INET):
-                address = ipaddress.ip_address(result[4][0])
-                if address.is_global: addresses.add(str(address))
-        except socket.gaierror:
-            log.warning('Walled garden DNS unavailable: %s', domain)
-    gateway_network.policies(blocked, addresses)
-    with active_clients_lock:
-        for ip in list(active_clients): sync_client_firewall(ip)
+            c.execute('SELECT domain FROM walled_garden')
+            for row in c.fetchall():
+                domain = row[0]
+                ips = socket.getaddrinfo(domain, None)
+                for ip_info in ips:
+                    ip = ip_info[4][0]
+                    subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_WALLED_GARDEN', '-d', ip, '-j', 'ACCEPT'])
+        except Exception:
+            pass
+        try:
+            c.execute("SELECT mac FROM mac_control WHERE type='block'")
+            for row in c.fetchall():
+                mac = row[0]
+                subprocess.run(['iptables', '-A', 'ECOFI_MAC_BLOCK', '-m', 'mac', '--mac-source', mac, '-j', 'DROP'])
+        except Exception:
+            pass
 
 def setup_firewall():
-    if platform.system() == 'Windows': return
-    gateway_network.setup(get_lan_interface(), os.environ.get('ECOFI_WAN_IFACE', 'eth0'))
-    gateway_network.set_license(license_valid())
-    apply_walled_garden_and_macs()
+    if platform.system() == 'Windows':
+        return
+    try:
+        subprocess.run(['sysctl', '-w', 'net.ipv4.ip_forward=1'], stderr=subprocess.DEVNULL)
+        has_ipset = shutil.which('ipset') is not None
+        if has_ipset:
+            subprocess.run(['ipset', 'create', 'ecofi_auth', 'hash:ip', 'timeout', '86400', '-exist'], stderr=subprocess.DEVNULL)
+
+        # FORWARD chain setup
+        subprocess.run(['iptables', '-N', 'ECOFI_AUTH'], stderr=subprocess.DEVNULL)
+        subprocess.run(['iptables', '-F', 'ECOFI_AUTH'], stderr=subprocess.DEVNULL)
+        subprocess.run(['iptables', '-P', 'FORWARD', 'DROP'], stderr=subprocess.DEVNULL)
+
+        res = subprocess.run(['iptables', '-C', 'FORWARD', '-j', 'ECOFI_AUTH'], stderr=subprocess.DEVNULL)
+        if res.returncode != 0:
+            subprocess.run(['iptables', '-I', 'FORWARD', '1', '-j', 'ECOFI_AUTH'])
+
+        if has_ipset:
+            res = subprocess.run(['iptables', '-C', 'FORWARD', '-m', 'set', '--match-set', 'ecofi_auth', 'src', '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
+            if res.returncode != 0:
+                subprocess.run(['iptables', '-A', 'FORWARD', '-m', 'set', '--match-set', 'ecofi_auth', 'src', '-j', 'ACCEPT'])
+
+        res = subprocess.run(['iptables', '-C', 'FORWARD', '-m', 'state', '--state', 'ESTABLISHED,RELATED', '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
+        if res.returncode != 0:
+            subprocess.run(['iptables', '-A', 'FORWARD', '-m', 'state', '--state', 'ESTABLISHED,RELATED', '-j', 'ACCEPT'])
+
+        res = subprocess.run(['iptables', '-C', 'FORWARD', '-p', 'udp', '--dport', '53', '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
+        if res.returncode != 0:
+            subprocess.run(['iptables', '-A', 'FORWARD', '-p', 'udp', '--dport', '53', '-j', 'ACCEPT'])
+        res = subprocess.run(['iptables', '-C', 'FORWARD', '-p', 'tcp', '--dport', '53', '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
+        if res.returncode != 0:
+            subprocess.run(['iptables', '-A', 'FORWARD', '-p', 'tcp', '--dport', '53', '-j', 'ACCEPT'])
+
+        # NAT PREROUTING captive redirect
+        subprocess.run(['iptables', '-t', 'nat', '-N', 'ECOFI_PORTAL'], stderr=subprocess.DEVNULL)
+        subprocess.run(['iptables', '-t', 'nat', '-N', 'ECOFI_AUTH_NAT'], stderr=subprocess.DEVNULL)
+        subprocess.run(['iptables', '-t', 'nat', '-F', 'ECOFI_AUTH_NAT'], stderr=subprocess.DEVNULL)
+        res = subprocess.run(['iptables', '-t', 'nat', '-C', 'PREROUTING', '-j', 'ECOFI_PORTAL'], stderr=subprocess.DEVNULL)
+        if res.returncode != 0:
+            subprocess.run(['iptables', '-t', 'nat', '-I', 'PREROUTING', '1', '-j', 'ECOFI_PORTAL'])
+
+        subprocess.run(['iptables', '-t', 'nat', '-F', 'ECOFI_PORTAL'], stderr=subprocess.DEVNULL)
+        subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_PORTAL', '-d', '10.0.0.1', '-j', 'RETURN'])
+        subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_PORTAL', '-p', 'udp', '--dport', '53', '-j', 'RETURN'])
+        subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_PORTAL', '-p', 'tcp', '--dport', '53', '-j', 'RETURN'])
+        if has_ipset:
+            subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_PORTAL', '-m', 'set', '--match-set', 'ecofi_auth', 'src', '-j', 'ACCEPT'])
+        subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_PORTAL', '-j', 'ECOFI_AUTH_NAT'])
+        subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_PORTAL', '-p', 'tcp', '--dport', '80', '-j', 'REDIRECT', '--to-port', '80'])
+
+        # NAT POSTROUTING Masquerade
+        res = subprocess.run(['iptables', '-t', 'nat', '-C', 'POSTROUTING', '-o', 'eth0', '-j', 'MASQUERADE'], stderr=subprocess.DEVNULL)
+        if res.returncode != 0:
+            subprocess.run(['iptables', '-t', 'nat', '-A', 'POSTROUTING', '-o', 'eth0', '-j', 'MASQUERADE'])
+
+        if get_config('anti_tethering', '1') == '1':
+            res = subprocess.run(['iptables', '-t', 'mangle', '-C', 'POSTROUTING', '-j', 'TTL', '--ttl-set', '64'], stderr=subprocess.DEVNULL)
+            if res.returncode != 0:
+                subprocess.run(['iptables', '-t', 'mangle', '-A', 'POSTROUTING', '-j', 'TTL', '--ttl-set', '64'], stderr=subprocess.DEVNULL)
+
+        lan_iface = get_lan_interface()
+        setup_bandwidth_control(lan_iface)
+        apply_walled_garden_and_macs()
+    except Exception as e:
+        log.error('setup_firewall error: %s', e)
 
 def update_firewall(ip, action, timeout_sec=0, dl_kbps=3072, ul_kbps=1536):
-    if platform.system() == 'Windows': return True
+    if platform.system() == 'Windows':
+        return
     try:
-        if ipaddress.ip_address(ip) not in gateway_network.SUBNET or ip == '10.0.0.1': return False
-        if action == 'del':
-            gateway_network.revoke(ip)
-            return True
-        mac = get_arp_table().get(ip)
-        return gateway_network.grant(ip, mac, timeout_sec, dl_kbps, ul_kbps)
+        ip = str(ipaddress.ip_address(ip))
+    except ValueError:
+        return
+    if ip in ('127.0.0.1', '10.0.0.1', '::1', 'localhost'):
+        return
+    has_ipset = shutil.which('ipset') is not None
+    try:
+        if action == 'add':
+            res = subprocess.run(['iptables', '-C', 'ECOFI_AUTH', '-s', ip, '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
+            if res.returncode != 0:
+                subprocess.run(['iptables', '-A', 'ECOFI_AUTH', '-s', ip, '-j', 'ACCEPT'], check=True)
+            res = subprocess.run(['iptables', '-t', 'nat', '-C', 'ECOFI_AUTH_NAT', '-s', ip, '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
+            if res.returncode != 0:
+                subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_AUTH_NAT', '-s', ip, '-j', 'ACCEPT'], check=True)
+            if has_ipset:
+                subprocess.run(['ipset', 'add', 'ecofi_auth', ip, 'timeout', str(int(timeout_sec)), '-exist'], stderr=subprocess.DEVNULL)
+            apply_client_bandwidth(ip, dl_kbps, ul_kbps)
+        elif action == 'del':
+            while True:
+                res = subprocess.run(['iptables', '-D', 'ECOFI_AUTH', '-s', ip, '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
+                if res.returncode != 0:
+                    break
+            while True:
+                res = subprocess.run(['iptables', '-t', 'nat', '-D', 'ECOFI_AUTH_NAT', '-s', ip, '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
+                if res.returncode != 0:
+                    break
+            if has_ipset:
+                subprocess.run(['ipset', 'del', 'ecofi_auth', ip, '-exist'], stderr=subprocess.DEVNULL)
+            remove_client_bandwidth(ip)
     except Exception as e:
-        log.error('Client enforcement failed for %s: %s', ip, e)
-        return False
+        log.error('update_firewall error: %s', e)
 
 import math
 
@@ -473,50 +518,47 @@ def compute_session_expiration(remaining_seconds, paused_at=None):
 
 def save_sessions_to_db():
     with active_clients_lock:
-        with db_connection() as conn:
-            ensure_session_schema(conn)
-            conn.execute('DELETE FROM active_sessions')
+        with sqlite3.connect(DB_PATH) as conn:
+            c = conn.cursor()
+            c.execute('CREATE TABLE IF NOT EXISTS active_sessions (\n                ip TEXT PRIMARY KEY, mac TEXT, remaining_seconds INTEGER, \n                is_paused INTEGER, dl_kbps INTEGER, ul_kbps INTEGER, \n                pending_bottles INTEGER, paused_at REAL, expires_at REAL, saved_at REAL)')
+            c.execute('DELETE FROM active_sessions')
             for ip, s in active_clients.items():
-                if ip in ('127.0.0.1', '10.0.0.1', '::1', 'localhost'): continue
-                conn.execute('INSERT INTO active_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                    (ip, s['mac'], s['remaining_seconds'], int(s.get('is_paused', False)),
-                     s.get('dl_kbps', 3072), s.get('ul_kbps', 1536), s.get('pending_bottles', 0),
-                     s.get('paused_at', 0), s.get('expires_at', 0), time.time(), json.dumps(s)))
+                if ip in ('127.0.0.1', '10.0.0.1', '::1', 'localhost'):
+                    continue
+                c.execute('INSERT INTO active_sessions \n                    (ip, mac, remaining_seconds, is_paused, dl_kbps, ul_kbps, pending_bottles, paused_at, expires_at, saved_at)\n                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (ip, s['mac'], s['remaining_seconds'], 1 if s.get('is_paused', False) else 0, s.get('dl_kbps', 3072), s.get('ul_kbps', 1536), s.get('pending_bottles', 0), s.get('paused_at', 0), s.get('expires_at', 0), time.time()))
+            conn.commit()
 
 def restore_sessions_from_db():
-    with active_clients_lock:
-        with db_connection() as conn:
-            ensure_session_schema(conn)
-            rows = conn.execute('SELECT ip, mac, remaining_seconds, is_paused, dl_kbps, ul_kbps, pending_bottles, paused_at, expires_at, state_json FROM active_sessions').fetchall()
-        for ip, mac, remaining, paused, dl, ul, pending, paused_at, expires_at, state in rows:
-            if ip in ('127.0.0.1', '10.0.0.1', '::1') or (remaining <= 0 and not pending): continue
-            sess = json.loads(state) if state else {}
-            sess.update(mac=mac, remaining_seconds=remaining, is_paused=bool(paused),
-                        dl_kbps=dl or int(get_config('default_dl_kbps', '3072')),
-                        ul_kbps=ul or int(get_config('default_ul_kbps', '1536')),
-                        pending_bottles=pending or 0, paused_at=paused_at or 0, expires_at=expires_at or 0)
-            if paused and not state: sess['user_paused'] = True
-            # Accepted but unfinalized bottles survive a restart as earned time.
-            if pending:
-                sess['remaining_seconds'] += calculate_minutes_for_bottles(pending) * 60
-                sess['pending_bottles'] = 0
-            session_expired(sess)
-            active_clients[ip] = sess
-            sync_client_firewall(ip)
-        save_sessions_to_db()
+    default_dl = int(get_config('default_dl_kbps', '3072'))
+    default_ul = int(get_config('default_ul_kbps', '1536'))
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        try:
+            c.execute('CREATE TABLE IF NOT EXISTS active_sessions (\n                ip TEXT PRIMARY KEY, mac TEXT, remaining_seconds INTEGER, \n                is_paused INTEGER, dl_kbps INTEGER, ul_kbps INTEGER, \n                pending_bottles INTEGER, paused_at REAL, expires_at REAL, saved_at REAL)')
+            c.execute('SELECT ip, mac, remaining_seconds, is_paused, dl_kbps, ul_kbps, pending_bottles, paused_at, expires_at FROM active_sessions')
+            rows = c.fetchall()
+            now = time.time()
+            with active_clients_lock:
+                for row in rows:
+                    ip, mac, remaining, is_paused, dl, ul, pending, paused_at, expires_at = row
+                    if is_paused and expires_at and (expires_at > 0) and (now > expires_at):
+                        continue
+                    if remaining > 0 and ip not in ('127.0.0.1', '10.0.0.1', '::1', 'localhost'):
+                        client_dl = dl if dl and dl not in [5120, 2048] else default_dl
+                        client_ul = ul if ul and ul not in [5120, 1024] else default_ul
+                        active_clients[ip] = {'mac': mac, 'remaining_seconds': remaining, 'is_paused': bool(is_paused), 'dl_kbps': client_dl, 'ul_kbps': client_ul, 'pending_bottles': pending, 'paused_at': paused_at or 0, 'expires_at': expires_at or 0}
+                        sync_client_firewall(ip)
+            c.execute('DELETE FROM active_sessions')
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass
 atexit.register(save_sessions_to_db)
 
 def time_daemon():
     tick = 0
-    last_tick_time = None
     while True:
         tick += 1
         now = time.time()
-        if last_tick_time is None:
-            elapsed = 0
-        else:
-            elapsed = max(1, int(round(now - last_tick_time)))
-        last_tick_time = now
         if tick % 30 == 0:
             save_sessions_to_db()
         if tick % 60 == 0:
@@ -524,7 +566,7 @@ def time_daemon():
             connected_ips = set(arp_table.keys())
             if platform.system() != 'Windows':
                 try:
-                    with db_connection() as conn:
+                    with sqlite3.connect(DB_PATH) as conn:
                         c = conn.cursor()
                         c.execute("SELECT mac FROM mac_control WHERE type='whitelist'")
                         whitelisted_macs = {row[0].lower() for row in c.fetchall()}
@@ -534,7 +576,7 @@ def time_daemon():
                 except Exception:
                     pass
             auto_pause_enabled = get_config('auto_pause_disconnect', '0') == '1'
-            if auto_pause_enabled and platform.system() != 'Windows':
+            if auto_pause_enabled and platform.system() != 'Windows' and (len(connected_ips) > 0):
                 with active_clients_lock:
                     for ip, session_data in list(active_clients.items()):
                         if ip != '127.0.0.1' and session_data['remaining_seconds'] > 0:
@@ -564,46 +606,38 @@ def time_daemon():
                         sync_client_firewall(ip)
                         continue
                 was_active = session_data['remaining_seconds'] > 0 and (not session_data.get('is_paused', False))
-                if was_active and elapsed > 0:
-                    session_data['remaining_seconds'] = max(0, session_data['remaining_seconds'] - elapsed)
+                if was_active:
+                    session_data['remaining_seconds'] -= 1
                     if session_data['remaining_seconds'] <= 0:
                         sync_client_firewall(ip)
         time.sleep(1)
 
 def ensure_client_session(ip):
     with active_clients_lock:
-        dummy = {'mac': '00:00:00:00:00:00', 'pending_bottles': 0, 'remaining_seconds': 0, 'is_paused': False, 'paused_at': 0, 'expires_at': 0, 'dl_kbps': 0, 'ul_kbps': 0}
-        if ip in ('127.0.0.1', '10.0.0.1', '::1', 'localhost'): return dummy
-        mac = get_arp_table().get(ip, '').lower()
-        existing = active_clients.get(ip)
-        if existing and (not mac or existing.get('mac') == mac): return existing
-        if existing:
-            # Keep the previous owner's balance under a non-routable identity.
-            old_mac = existing.get('mac', '')
-            update_firewall(ip, 'del')
-            if existing.get('remaining_seconds', 0) > 0:
-                active_clients['saved:' + old_mac] = existing
-            del active_clients[ip]
-        if mac:
-            for old_ip, old_sess in list(active_clients.items()):
-                if old_ip != ip and old_sess.get('mac', '').lower() == mac:
-                    if not old_ip.startswith('saved:'):
-                        update_firewall(old_ip, 'del')
-                    active_clients[ip] = old_sess
-                    del active_clients[old_ip]
-                    sync_client_firewall(ip)
-                    return old_sess
-        sess = dict(dummy)
-        sess.update(mac=mac, dl_kbps=int(get_config('default_dl_kbps', '3072')), ul_kbps=int(get_config('default_ul_kbps', '1536')))
-        active_clients[ip] = sess
-        return sess
+        if ip in ('127.0.0.1', '10.0.0.1', '::1', 'localhost'):
+            return {'mac': '00:00:00:00:00:00', 'pending_bottles': 0, 'remaining_seconds': 0, 'is_paused': False, 'paused_at': 0, 'expires_at': 0, 'dl_kbps': 0, 'ul_kbps': 0}
+        if ip in active_clients:
+            return active_clients[ip]
+        arp_table = get_arp_table()
+        mac = arp_table.get(ip, '').lower()
+        if not mac:
+            octets = ['{:02X}'.format(hash(ip + str(i)) & 255) for i in range(6)]
+            mac = ':'.join(octets).lower()
+        for old_ip, old_sess in list(active_clients.items()):
+            if old_ip != ip and old_sess.get('mac', '').lower() == mac and (old_sess.get('remaining_seconds', 0) > 0):
+                active_clients[ip] = old_sess
+                del active_clients[old_ip]
+                sync_client_firewall(ip)
+                return active_clients[ip]
+        active_clients[ip] = {'mac': mac, 'pending_bottles': 0, 'remaining_seconds': 0, 'is_paused': False, 'paused_at': 0, 'expires_at': 0, 'dl_kbps': int(get_config('default_dl_kbps', '3072')), 'ul_kbps': int(get_config('default_ul_kbps', '1536'))}
+        return active_clients[ip]
 PORTAL_HTML = '\n<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <title>{{ vendo_name }} - Reverse Vending WiFi Portal</title>\n    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">\n    <link rel="stylesheet" href="/static/vendor/fontawesome/css/all.min.css">\n    <style>\n        * { box-sizing: border-box; }\n        img { max-width: 100%; height: auto; }\n        body { \n            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; \n            margin: 0; padding: 12px 10px 24px 10px; min-height: 100vh;\n            background: linear-gradient(rgba(15, 23, 42, 0.94), rgba(15, 23, 42, 0.98)), url(\'/static/banner.jpg\') no-repeat center center fixed;\n            background-size: cover;\n            color: #f1f5f9; \n            display: flex; justify-content: center; align-items: flex-start;\n            overflow-x: hidden;\n            width: 100%;\n        }\n\n        .portal-container {\n            width: 100%; max-width: 375px;\n            background: rgba(30, 41, 59, 0.88);\n            backdrop-filter: blur(16px);\n            -webkit-backdrop-filter: blur(16px);\n            border-radius: 14px;\n            border: 1px solid rgba(255, 255, 255, 0.1);\n            padding: 12px 14px;\n            text-align: center;\n            position: relative;\n            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);\n            overflow: hidden;\n        }\n\n        .brand-banner-box {\n            width: 100%;\n            border-radius: 9px;\n            overflow: hidden;\n            margin-bottom: 9px;\n            border: 1px solid rgba(255, 255, 255, 0.12);\n        }\n        .brand-banner-img {\n            width: 100%;\n            height: auto;\n            display: block;\n            object-fit: cover;\n        }\n\n        .announcement-bar {\n            background: rgba(16, 185, 129, 0.1); border-left: 3px solid #10b981;\n            padding: 5px 9px; border-radius: 5px; font-size: 10.5px; color: #a7f3d0;\n            margin-bottom: 9px; text-align: left;\n        }\n\n        .bin-full-banner {\n            background: rgba(239, 68, 68, 0.15); border-left: 3px solid #ef4444;\n            padding: 6px 9px; border-radius: 5px; font-size: 11px; color: #fca5a5;\n            margin-bottom: 9px; text-align: left; display: none; font-weight: 600;\n        }\n\n        .status-box {\n            background: rgba(15, 23, 42, 0.65);\n            border-radius: 9px; padding: 8px 10px; margin-bottom: 9px;\n            border: 1px solid rgba(255, 255, 255, 0.08);\n        }\n        .status-text { \n            font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; \n            color: #94a3b8; font-weight: 600; margin-bottom: 2px;\n        }\n        .time-display { \n            font-size: 24px; font-family: "SF Mono", "Roboto Mono", "Courier New", monospace; \n            font-weight: 700; color: #10b981; margin: 2px 0 3px 0; \n            letter-spacing: 1px;\n        }\n        .status-badge { \n            display: inline-block; padding: 2px 8px; border-radius: 12px; \n            font-size: 9px; font-weight: 600; letter-spacing: 0.4px;\n        }\n        .bg-active { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.35); }\n        .bg-paused { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.35); }\n        .bg-inactive { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); }\n        .bg-binfull { background: rgba(239, 68, 68, 0.25); color: #fca5a5; border: 1px solid #ef4444; }\n\n        \n        \n        \n        \n        \n        \n        .btn-pause { \n            background: rgba(245, 158, 11, 0.2); border: 1px solid rgba(245, 158, 11, 0.4); \n            color: #fbbf24; height: 35px; font-size: 11.5px;\n        }\n        .btn-pause:hover { background: rgba(245, 158, 11, 0.3); }\n        .btn-resume { \n            background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); \n            color: #60a5fa; height: 35px; font-size: 11.5px;\n        }\n        .btn-resume:hover { background: rgba(59, 130, 246, 0.3); }\n\n        .nav-tabs {\n            display: flex; gap: 3px; margin-bottom: 9px; background: rgba(15, 23, 42, 0.55);\n            padding: 3px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.06);\n            width: 100%;\n        }\n        .tab-btn {\n            flex: 1; padding: 6px 1px; font-size: 11px; font-weight: 500; color: #94a3b8;\n            background: transparent; border: none; border-radius: 5px; cursor: pointer;\n            transition: all 0.15s ease; text-align: center; white-space: nowrap;\n        }\n        .tab-btn.active { \n            background: #1e293b; color: #10b981; font-weight: 600;\n            border: 1px solid rgba(16, 185, 129, 0.25);\n            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);\n        }\n\n        .tab-content { display: none; text-align: left; width: 100%; }\n        .tab-content.active { display: block; }\n\n        .custom-input {\n            width: 100%; height: 35px; padding: 6px 9px; border-radius: 6px; \n            background: rgba(15, 23, 42, 0.7);\n            border: 1px solid rgba(255, 255, 255, 0.12); color: #f8fafc; font-size: 12px; margin-bottom: 7px;\n            box-sizing: border-box; transition: border-color 0.15s ease;\n        }\n        .custom-input:focus { border-color: #10b981; outline: none; box-shadow: 0 0 0 1px rgba(16, 185, 129, 0.3); }\n\n        .table-info {\n            width: 100%; border-collapse: collapse; font-size: 11.5px; color: #cbd5e1;\n            margin-top: 3px; table-layout: fixed;\n        }\n        .table-info tr { border-bottom: 1px solid rgba(255, 255, 255, 0.05); }\n        .table-info tr:last-child { border-bottom: none; }\n        .table-info td { padding: 6px 2px; }\n\n        \n        \n\n        .modal-overlay {\n            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;\n            background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px);\n            z-index: 1000; align-items: center; justify-content: center;\n        }\n        .modal-box {\n            width: 90%; max-width: 360px; background: #1e293b; border-radius: 14px;\n            padding: 20px 16px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);\n            text-align: center; position: relative; overflow: hidden;\n        }\n        .countdown-circle {\n            font-size: 32px; font-weight: 700; color: #f59e0b; margin: 8px 0;\n            font-family: monospace;\n        }\n        .bottle-counter {\n            font-size: 20px; font-weight: 700; color: #10b981; margin-bottom: 10px;\n        }\n        .progress-bar-bg {\n            width: 100%; height: 8px; background: #334155; border-radius: 6px;\n            overflow: hidden; margin-bottom: 10px;\n        }\n        .progress-bar-fill {\n            height: 100%; width: 100%; background: linear-gradient(90deg, #10b981, #34d399);\n            transition: width 0.3s ease;\n        }\n        .chute-stage-box {\n            background: rgba(15, 23, 42, 0.6); padding: 7px 9px; border-radius: 7px;\n            font-size: 11px; color: #94a3b8; margin-bottom: 10px; border: 1px dashed rgba(16, 185, 129, 0.3);\n        }\n        @keyframes drop-in {\n            0% { transform: translateY(-30px) rotate(0deg) scale(0.6); opacity: 0; }\n            50% { transform: translateY(0) rotate(10deg) scale(1.1); opacity: 1; }\n            100% { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }\n        }\n        .bottle-pop {\n            display: inline-block; animation: drop-in 0.35s ease-out;\n        }\n    \n        /* Tactile Physical Appliance Button Structure */\n        .btn-tactile {\n            display: flex;\n            align-items: center;\n            justify-content: center;\n            outline: none;\n            cursor: pointer;\n            width: 100%;\n            height: 44px;\n            background-image: linear-gradient(to top, #D8D9DB 0%, #fff 80%, #FDFDFD 100%);\n            border-radius: 30px;\n            border: 1px solid #8F9092;\n            transition: transform 0.1s ease, filter 0.15s ease;\n            font-family: "Source Sans Pro", -apple-system, BlinkMacSystemFont, sans-serif;\n            font-size: 13.5px;\n            font-weight: 600;\n            color: #374151;\n            text-shadow: 0 1px #fff;\n            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);\n            letter-spacing: 0.2px;\n            text-decoration: none;\n            gap: 7px;\n            margin-bottom: 8px;\n        }\n\n        /* Removed hover glowing box-shadow completely */\n        .btn-tactile:hover {\n            filter: brightness(0.97);\n            color: #1f2937;\n        }\n\n        .btn-tactile:active {\n            transform: translateY(1px);\n            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), inset 0 1px 3px rgba(0, 0, 0, 0.2);\n        }\n\n        .btn-tactile:focus {\n            outline: none;\n        }\n\n        .btn-tactile:disabled {\n            opacity: 0.55;\n            cursor: not-allowed;\n            background-image: linear-gradient(to top, #bbb 0%, #ddd 100%) !important;\n            box-shadow: none !important;\n            color: #777 !important;\n            filter: none !important;\n        }\n\n        /* Hero Insert Button: Distinct 18px gap to separate clearly from the tab bar */\n        .btn-tactile-green {\n            color: #065f46;\n            font-weight: 700;\n            font-size: 14px;\n            border-color: #059669;\n            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.9);\n            margin-bottom: 18px !important;\n        }\n        .btn-tactile-green i {\n            color: #10b981;\n            font-size: 15px;\n        }\n\n        /* Tactile Compact variant for side-by-side buttons */\n        .btn-tactile-sm {\n            height: 38px;\n            font-size: 12.5px;\n            border-radius: 20px;\n            margin-bottom: 0;\n        }\n\n    </style>\n</head>\n<body>\n\n    <div class="portal-container" style="margin-top: 15px;">\n        <div class="brand-banner-box">\n            <img src="/static/banner-main.jpg" alt="Smart ECO-Fi Vendo" class="brand-banner-img">\n        </div>\n\n        {% if announcement %}\n        <div class="announcement-bar">\n            <i class="fas fa-bullhorn"></i> {{ announcement }}\n        </div>\n        {% endif %}\n\n        <div id="bin-full-banner" class="bin-full-banner">\n            <i class="fas fa-exclamation-triangle"></i> Storage bin is currently full. Machine cannot accept new bottles at this moment.\n        </div>\n\n        <div class="status-box">\n            <div class="status-text">Available Internet Time</div>\n            <div class="time-display" id="time-display">0d 00h:00m:00s</div>\n            <div id="status-badge" class="status-badge bg-inactive">DISCONNECTED</div>\n        </div>\n\n        <!-- MAIN ACTION: PULSING INSERT BOTTLE BUTTON -->\n        <button id="btn-insert" class="btn-tactile btn-tactile-green" onclick="startDepositSession()">\n            <i class="fas fa-recycle mr-1"></i> Insert Plastic Bottle\n        </button>\n\n        <div id="pause-ctrl-box" style="display:none;">\n            <button id="btn-pause" class="btn-tactile btn-tactile-sm" style="color:#b45309; font-weight:700;" onclick="togglePause(\'pause\')">\n                <i class="fas fa-pause"></i> PAUSE TIME\n            </button>\n            <button id="btn-resume" class="btn-tactile btn-tactile-sm" style="color:#1d4ed8; font-weight:700;" style="display:none;" onclick="togglePause(\'resume\')">\n                <i class="fas fa-play"></i> RESUME TIME\n            </button>\n        </div>\n\n        <!-- MULTI-TAB FEATURES -->\n        <div class="nav-tabs">\n            <button class="tab-btn active" onclick="switchTab(\'tab-rates\')">Rates</button>\n            <button class="tab-btn" onclick="switchTab(\'tab-voucher\')">Voucher</button>\n            <button class="tab-btn" onclick="switchTab(\'tab-transfer\')">Transfer</button>\n            <button class="tab-btn" onclick="switchTab(\'tab-member\')">Member</button>\n        </div>\n\n        <!-- TAB 1: PROMO RATES -->\n        <div id="tab-rates" class="tab-content active">\n            <div style="font-size: 11.5px; color:#94a3b8; font-weight:600; margin-bottom:6px;"><i class="fas fa-tags text-success mr-1"></i> RATES & PACKAGES</div>\n            <table class="table-info">\n                {% for r in promo_rates %}\n                <tr>\n                    <td style="padding: 7px 6px;"><strong style="color:#34d399; font-size:13px;">{{ r.bottles }} Bottle{% if r.bottles > 1 %}s{% endif %}</strong></td>\n                    <td style="text-align:right; font-weight:700; color:#f8fafc; font-size:13px; padding: 7px 6px;">\n                        {% if r.minutes >= 60 %}\n                            {% set hrs = (r.minutes // 60) %}\n                            {% set mins = (r.minutes % 60) %}\n                            {% if mins == 0 %}\n                                {{ hrs }} Hour{% if hrs > 1 %}s{% endif %}\n                            {% else %}\n                                {{ hrs }}h {{ mins }}m\n                            {% endif %}\n                        {% else %}\n                            {{ r.minutes }} mins\n                        {% endif %}\n                    </td>\n                </tr>\n                {% endfor %}\n            </table>\n        </div>\n\n        <!-- TAB 2: VOUCHER REDEMPTION -->\n        <div id="tab-voucher" class="tab-content">\n            <div style="font-size: 13px; color:#94a3b8; font-weight:700; margin-bottom:6px;">ENTER VOUCHER CODE:</div>\n            <input type="text" id="voucher-code-input" class="custom-input" placeholder="e.g. ECO-XXXX" oninput="this.value = this.value.toUpperCase().replace(/[^A-Z0-9-]/g, \'\')">\n            <button class="btn-tactile btn-tactile-green" style="height:36px; font-size:12px; margin-bottom:0;" onclick="redeemVoucher()">\n                <i class="fas fa-ticket-alt mr-1"></i> Redeem Voucher\n            </button>\n            <div id="voucher-msg" style="font-size:12px; margin-top:4px;"></div>\n        </div>\n\n        <!-- TAB 3: TIME TRANSFER -->\n        <div id="tab-transfer" class="tab-content">\n            <div style="font-size: 12px; color:#94a3b8; font-weight:700; margin-bottom:6px;">SHARE / TRANSFER YOUR TIME:</div>\n            <div style="display:flex; gap:6px; margin-bottom:6px;">\n                <input type="number" id="transfer-mins-input" class="custom-input" placeholder="Minutes to Share (e.g. 5)" min="1" style="margin-bottom:0; flex:1;">\n                <button class="btn-tactile btn-tactile-sm" style="width:auto; padding:0 16px; white-space:nowrap;" onclick="generateTransferCode()">\n                    <i class="fas fa-share-alt"></i> Share\n                </button>\n            </div>\n            <div id="transfer-code-display" style="font-size:12.5px; font-weight:700; color:#38bdf8; margin:4px 0; text-align:center;"></div>\n            \n            <hr style="border:0; border-top:1px solid rgba(255,255,255,0.08); margin:8px 0;">\n            <div style="font-size: 11.5px; color:#94a3b8; font-weight:600; margin-bottom:4px;">CLAIM A TRANSFER CODE:</div>\n            <div style="display:flex; gap:6px;">\n                <input type="text" id="claim-code-input" class="custom-input" placeholder="6-Digit Code" maxlength="6" style="margin-bottom:0; flex:1;" oninput="this.value = this.value.replace(/[^0-9]/g,\'\')">\n                <button class="btn-tactile btn-tactile-green" style="width:auto; padding:0 12px; height:36px; font-size:11.5px; margin-bottom:0; white-space:nowrap;" onclick="claimTransferCode()">\n                    <i class="fas fa-download"></i> Claim\n                </button>\n            </div>\n            <div id="claim-status-msg" style="font-size:11px; margin-top:4px; text-align:center;"></div>\n        </div>\n\n        <!-- TAB 4: MEMBER WALLET -->\n        <div id="tab-member" class="tab-content">\n            <div id="mem-auth-section">\n                <div style="background:rgba(16,185,129,0.08); border-left:3px solid #10b981; padding:6px 9px; border-radius:6px; font-size:10.5px; color:#a7f3d0; margin-bottom:8px; text-align:left; line-height:1.35;">\n                    <i class="fas fa-shield-alt text-success"></i> <strong>Zero-Expiry Storage:</strong> Register once to save Wi-Fi minutes across your devices.\n                </div>\n                <div style="font-size: 13px; color:#94a3b8; font-weight:700; margin-bottom:6px;">MEMBER LOGIN / REGISTER:</div>\n                <input type="text" id="member-user" class="custom-input" placeholder="Username (letters & numbers)" maxlength="20">\n                <input type="password" id="member-pin" class="custom-input" placeholder="4 to 6-Digit Secret PIN" maxlength="6" inputmode="numeric">\n                <div style="display:flex; gap:8px; margin-top:2px;">\n                    <button class="btn-tactile btn-tactile-green" style="height:36px; font-size:12px; margin-bottom:0; flex:1;" onclick="memberLogin()"><i class="fas fa-sign-in-alt"></i> Login</button>\n                    <button class="btn-tactile btn-tactile-sm" style="flex:1;" onclick="memberRegister()"><i class="fas fa-user-plus"></i> Register</button>\n                </div>\n                <div id="member-status" style="font-size:12px; margin-top:8px;"></div>\n            </div>\n\n            <!-- Logged In Wallet Manager -->\n            <div id="mem-wallet-section" style="display:none; text-align:left;">\n                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">\n                    <span style="font-weight:700; color:#38bdf8;" id="mem-welcome-user">Member</span>\n                    <button class="btn btn-xs" style="background:#ef4444; color:white; border:none; border-radius:6px; padding:3px 8px; font-size:11px; cursor:pointer;" onclick="memberLogout()"><i class="fas fa-sign-out-alt"></i> Logout</button>\n                </div>\n                <div style="background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.3); padding:12px; border-radius:12px; margin-bottom:12px; text-align:center;">\n                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">\n                        <span style="font-size:11px; color:#94a3b8; text-transform:uppercase;">Stored Wallet Balance</span>\n                        <span style="background:rgba(16,185,129,0.3); color:#bbf7d0; font-size:10px; padding:2px 8px; border-radius:12px; font-weight:700;"><i class="fas fa-infinity"></i> PERPETUAL (Zero Expiry)</span>\n                    </div>\n                    <div style="font-size:28px; font-weight:800; color:#34d399;" id="mem-wallet-mins">0 Mins</div>\n                </div>\n                <div style="margin-bottom:8px;">\n                    <label style="font-size:11px; color:#94a3b8;">Use Stored Minutes on this Device:</label>\n                    <div style="display:flex; gap:6px;">\n                        <input type="number" id="use-wallet-mins" class="custom-input" placeholder="Mins" style="margin-bottom:0; width:90px;" min="1">\n                        <button class="btn-tactile btn-tactile-green" style="padding:8px 12px; margin-bottom:0; font-size:12px;" onclick="useMemberWallet()"><i class="fas fa-wifi"></i> Connect</button>\n                    </div>\n                </div>\n                <button class="btn-tactile btn-tactile-sm" style="color:#b45309; font-weight:700;" style="padding:8px 12px; font-size:12px; margin-top:6px;" onclick="saveSessionToWallet()">\n                    <i class="fas fa-save"></i> Save Active Session to Wallet\n                </button>\n            </div>\n        </div>\n\n        <!-- VISUAL GUIDE: ALLOWED VS NOT ALLOWED BOTTLES -->\n        <img src="/static/info-graphic.jpg" alt="Bottle Acceptance Guide" style="width: 100%; max-width: 100%; border-radius: 9px; margin-top: 12px; border: 1px solid rgba(255, 255, 255, 0.12); display: block;">\n\n        <div style="font-size:11px; color:#64748b; margin-top:18px;">\n            IP: {{ client_ip }} | MAC: {{ client_mac }}\n        </div>\n    </div>\n\n    <!-- LIVE DEPOSIT MODAL WITH ANIMATED BOTTLE DROP & STATUS -->\n    <div id="deposit-modal" class="modal-overlay">\n        <div class="modal-box">\n            <h3 style="margin-top:0; color:#34d399;"><i class="fas fa-door-open"></i> AIRLOCK GATE OPEN</h3>\n            <div class="chute-stage-box" id="modal-stage-text">\n                <i class="fas fa-spinner fa-spin text-success"></i> Ready! Drop your PET plastic bottle into the chute...\n            </div>\n            \n            <div class="countdown-circle" id="modal-timer">30s</div>\n            <div class="progress-bar-bg">\n                <div id="modal-progress-bar" class="progress-bar-fill"></div>\n            </div>\n\n            <div class="bottle-counter">\n                <span id="modal-bottle-icon" class="bottle-pop"><i class="fas fa-wine-bottle"></i></span>\n                <span id="modal-bottles">0</span> Bottles (<span id="modal-added-time">+0m</span>)\n            </div>\n\n            <button class="btn-tactile btn-tactile-green" onclick="closeDepositSession()">\n                <i class="fas fa-check-circle"></i> DONE / START BROWSING\n            </button>\n        </div>\n    </div>\n\n    <script>\n        const audioBgSrc = "{{ audio_bg }}";\n        const audioInsertSrc = "{{ audio_insert }}";\n        const audioSuccessSrc = "{{ audio_success }}";\n        const audioVolume = (parseInt("{{ audio_volume or 80 }}") || 80) / 100.0;\n\n        let bgAudioElem = null;\n        if (audioBgSrc && audioBgSrc !== \'silent\') {\n            bgAudioElem = new Audio(audioBgSrc);\n            bgAudioElem.loop = true;\n            bgAudioElem.volume = audioVolume * 0.5;\n        }\n\n        let insertAudioElem = null;\n        if (audioInsertSrc && audioInsertSrc !== \'silent\' && audioInsertSrc !== \'arcade_powerup\' && audioInsertSrc !== \'voice_filipino\') {\n            insertAudioElem = new Audio(audioInsertSrc);\n            insertAudioElem.volume = audioVolume;\n            insertAudioElem.load();\n        }\n\n        let successAudioElem = null;\n        if (audioSuccessSrc && audioSuccessSrc !== \'silent\' && audioSuccessSrc !== \'crystal_bell\') {\n            successAudioElem = new Audio(audioSuccessSrc);\n            successAudioElem.volume = audioVolume;\n            successAudioElem.load();\n        }\n\n        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();\n        \n        function unlockAudio() {\n            if (audioCtx && audioCtx.state === \'suspended\') audioCtx.resume();\n            if (insertAudioElem) { insertAudioElem.play().then(()=>insertAudioElem.pause()).catch(()=>{}); }\n            if (successAudioElem) { successAudioElem.play().then(()=>successAudioElem.pause()).catch(()=>{}); }\n        }\n        \n        document.addEventListener(\'click\', unlockAudio, { once: true });\n        \n        function playChimeTone(freq, type, duration, gainVal=0.3) {\n            try {\n                const osc = audioCtx.createOscillator();\n                const gain = audioCtx.createGain();\n                osc.type = type; osc.frequency.value = freq;\n                osc.connect(gain); gain.connect(audioCtx.destination);\n                osc.start();\n                gain.gain.setValueAtTime(gainVal * audioVolume, audioCtx.currentTime);\n                gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);\n                osc.stop(audioCtx.currentTime + duration);\n            } catch(e){}\n        }\n\n        function playInsertChime() {\n            if (audioInsertSrc === \'arcade_powerup\') {\n                playChimeTone(493.88, \'square\', 0.08);\n                setTimeout(() => playChimeTone(659.25, \'square\', 0.08), 80);\n                setTimeout(() => playChimeTone(987.77, \'square\', 0.25), 160);\n            } else if (audioInsertSrc === \'voice_filipino\') {\n                playChimeTone(587.33, \'sine\', 0.2);\n                if (\'speechSynthesis\' in window) {\n                    const utter = new SpeechSynthesisUtterance("Salamat sa pag-recycle! Dagdag minuto.");\n                    utter.lang = \'tl-PH\';\n                    window.speechSynthesis.speak(utter);\n                }\n            } else if (insertAudioElem) {\n                insertAudioElem.currentTime = 0;\n                insertAudioElem.play().catch(e => {\n                    playChimeTone(587.33, \'sine\', 0.18);\n                    setTimeout(() => playChimeTone(880.00, \'sine\', 0.35), 140);\n                });\n            } else {\n                playChimeTone(587.33, \'sine\', 0.18);\n                setTimeout(() => playChimeTone(880.00, \'sine\', 0.35), 140);\n            }\n        }\n\n        function playSuccessChime() {\n            if (audioSuccessSrc === \'crystal_bell\') {\n                playChimeTone(1046.50, \'sine\', 0.6, 0.4);\n            } else if (successAudioElem) {\n                successAudioElem.currentTime = 0;\n                successAudioElem.play().catch(e => {\n                    playChimeTone(880.00, \'sine\', 0.4);\n                });\n            } else if (!audioSuccessSrc || audioSuccessSrc !== \'silent\') {\n                playChimeTone(880.00, \'sine\', 0.4);\n            }\n        }\n\n        let depositActive = false;\n        let depositTimer = null;\n        let depositSec = 60;\n        let initialDepositTimeout = 60;\n        let lastBottleCount = 0;\n        let localRemainingSeconds = 0;\n        let isClientPaused = false;\n        let isSystemBinFull = false;\n\n        function switchTab(tabId) {\n            document.querySelectorAll(\'.tab-content\').forEach(el => el.classList.remove(\'active\'));\n            document.querySelectorAll(\'.tab-btn\').forEach(el => el.classList.remove(\'active\'));\n            document.getElementById(tabId).classList.add(\'active\');\n            const btn = document.querySelector(`button[onclick="switchTab(\'${tabId}\')"]`);\n            if (btn) btn.classList.add(\'active\');\n        }\n\n        function formatTime(totalSec) {\n            if (totalSec <= 0) return \'0d 00h:00m:00s\';\n            const d = Math.floor(totalSec / 86400);\n            const h = Math.floor((totalSec % 86400) / 3600).toString().padStart(2, \'0\');\n            const m = Math.floor((totalSec % 3600) / 60).toString().padStart(2, \'0\');\n            const s = (totalSec % 60).toString().padStart(2, \'0\');\n            return `${d}d ${h}h:${m}m:${s}s`;\n        }\n\n        function formatAddedTime(mins) {\n            if (mins === 0) return \'+0m\';\n            let res = \'\';\n            const d = Math.floor(mins / 1440);\n            const h = Math.floor((mins % 1440) / 60);\n            const m = mins % 60;\n            if (d > 0) res += `${d}d `;\n            if (h > 0) res += `${h}h `;\n            res += `${m}m`;\n            return \'+\' + res.trim();\n        }\n\n        // Local ticker for smooth countdown\n        setInterval(() => {\n            if (localRemainingSeconds > 0 && !isClientPaused) {\n                localRemainingSeconds--;\n                document.getElementById(\'time-display\').innerText = formatTime(localRemainingSeconds);\n                if (localRemainingSeconds <= 0) {\n                    syncPortal();\n                }\n            }\n        }, 1000);\n\n        function syncPortal() {\n            fetch(\'/api/vendo/status\')\n                .then(r => r.json())\n                .then(data => {\n                    localRemainingSeconds = data.client_time_remaining || data.remaining_seconds || 0;\n                    isClientPaused = data.is_paused || false;\n                    isSystemBinFull = data.bin_full || false;\n                    \n                    document.getElementById(\'time-display\').innerText = formatTime(localRemainingSeconds);\n                    \n                    const badge = document.getElementById(\'status-badge\');\n                    const pauseBox = document.getElementById(\'pause-ctrl-box\');\n                    const btnPause = document.getElementById(\'btn-pause\');\n                    const btnResume = document.getElementById(\'btn-resume\');\n                    const btnInsert = document.getElementById(\'btn-insert\');\n                    const binBanner = document.getElementById(\'bin-full-banner\');\n\n                    // 1. Bin full handling\n                    if (isSystemBinFull) {\n                        binBanner.style.display = \'block\';\n                        if (!depositActive) {\n                            btnInsert.disabled = true;\n                            btnInsert.innerHTML = \'<i class="fas fa-ban"></i> BIN FULL - TEMPORARILY DISABLED\';\n                            // btnInsert.classList.remove(\'pulse-btn\');\n                        }\n                    } else {\n                        binBanner.style.display = \'none\';\n                        if (!depositActive) {\n                            btnInsert.disabled = false;\n                            btnInsert.innerHTML = \'<i class="fas fa-recycle mr-1"></i> Insert Plastic Bottle\';\n                            // btnInsert.classList.add(\'pulse-btn\');\n                        }\n                    }\n\n                    // 2. Connection and pause status\n                    if (localRemainingSeconds > 0) {\n                        pauseBox.style.display = \'block\';\n                        if (isClientPaused) {\n                            badge.className = \'status-badge bg-paused\';\n                            badge.innerText = \'PAUSED\';\n                            btnPause.style.display = \'none\';\n                            btnResume.style.display = \'flex\';\n                        } else {\n                            badge.className = \'status-badge bg-active\';\n                            badge.innerText = \'CONNECTED\';\n                            btnPause.style.display = \'flex\';\n                            btnResume.style.display = \'none\';\n                        }\n                    } else {\n                        badge.className = \'status-badge bg-inactive\';\n                        badge.innerText = isSystemBinFull ? \'BIN FULL\' : \'DISCONNECTED\';\n                        pauseBox.style.display = \'none\';\n                    }\n\n                    // 3. Deposit modal sync\n                    if (depositActive) {\n                        const bottles = data.session_bottles || 0;\n                        const addedMins = data.session_added_minutes !== undefined ? data.session_added_minutes : 0;\n                        document.getElementById(\'modal-bottles\').innerText = bottles;\n                        document.getElementById(\'modal-added-time\').innerText = formatAddedTime(addedMins);\n                        if (bottles > lastBottleCount) {\n                            playInsertChime();\n                            \n                            const icon = document.getElementById(\'modal-bottle-icon\');\n                            icon.classList.remove(\'bottle-pop\');\n                            void icon.offsetWidth;\n                            icon.classList.add(\'bottle-pop\');\n\n                            document.getElementById(\'modal-stage-text\').innerHTML = \n                                `<span class="text-success font-weight-bold"><i class="fas fa-check-circle"></i> PET Bottle Verified! +${addedMins}m Added.</span>`;\n                            \n                            lastBottleCount = bottles;\n                            depositSec = initialDepositTimeout; // Refresh countdown for next bottle\n                        }\n                    }\n                }).catch(()=>{});\n        }\n\n        setInterval(syncPortal, 1200);\n\n        function startDepositSession() {\n            const btn = document.getElementById(\'btn-insert\');\n            if (btn.disabled || depositActive || isSystemBinFull) return;\n            btn.disabled = true;\n            \n            unlockAudio();\n            \n            lastBottleCount = 0;\n            document.getElementById(\'modal-bottles\').innerText = \'0\';\n            document.getElementById(\'modal-added-time\').innerText = \'+0m\';\n            document.getElementById(\'modal-stage-text\').innerHTML = \n                \'<i class="fas fa-spinner fa-spin text-success"></i> Airlock opening... Please wait.\';\n            \n            fetch(\'/api/vendo/open_gate\', { method: \'POST\' })\n                .then(r => r.json())\n                .then(data => {\n                    if (!data.success) {\n                        alert(data.error || "Machine is in use.");\n                        btn.disabled = isSystemBinFull;\n                        return;\n                    }\n                    depositActive = true;\n                    initialDepositTimeout = data.timeout || 60;\n                    depositSec = initialDepositTimeout;\n                    lastBottleCount = 0;\n                    document.getElementById(\'deposit-modal\').style.display = \'flex\';\n                    document.getElementById(\'modal-stage-text\').innerHTML = \n                        \'<i class="fas fa-arrow-down text-success"></i> Gate Open! Drop your PET bottle into the chute...\';\n                    \n                    if (bgAudioElem) {\n                        bgAudioElem.currentTime = 0;\n                        bgAudioElem.play().catch(()=>{});\n                    }\n\n                    if (depositTimer) clearInterval(depositTimer);\n                    depositTimer = setInterval(() => {\n                        depositSec--;\n                        document.getElementById(\'modal-timer\').innerText = `${depositSec}s`;\n                        const pct = Math.max(0, (depositSec / initialDepositTimeout) * 100);\n                        document.getElementById(\'modal-progress-bar\').style.width = `${pct}%`;\n                        if (depositSec <= 0) {\n                            closeDepositSession();\n                        }\n                    }, 1000);\n                }).catch(err => {\n                    btn.disabled = isSystemBinFull;\n                });\n        }\n\n        function closeDepositSession() {\n            if (!depositActive) return;\n            depositActive = false;\n            clearInterval(depositTimer);\n            document.getElementById(\'deposit-modal\').style.display = \'none\';\n            document.getElementById(\'btn-insert\').disabled = isSystemBinFull;\n            \n            if (bgAudioElem) {\n                bgAudioElem.pause();\n                bgAudioElem.currentTime = 0;\n            }\n            playSuccessChime();\n            \n            fetch(\'/api/vendo/done\', { method: \'POST\' }).then(() => {\n                syncPortal();\n                setTimeout(() => {\n                    fetch(\'/generate_204\', { mode: \'no-cors\' }).catch(()=>{});\n                }, 300);\n            });\n        }\n\n        function togglePause(action) {\n            fetch(\'/api/client/pause\', {\n                method: \'POST\',\n                headers: { \'Content-Type\': \'application/json\' },\n                body: JSON.stringify({ action: action })\n            }).then(()=>syncPortal());\n        }\n\n        function redeemVoucher() {\n            const code = document.getElementById(\'voucher-code-input\').value.trim();\n            if (!code) return;\n            fetch(\'/api/voucher/redeem\', {\n                method: \'POST\',\n                headers: { \'Content-Type\': \'application/json\' },\n                body: JSON.stringify({ code: code })\n            }).then(r => r.json()).then(data => {\n                const msg = document.getElementById(\'voucher-msg\');\n                if (data.success) {\n                    msg.style.color = \'#34d399\';\n                    msg.innerText = data.message;\n                    document.getElementById(\'voucher-code-input\').value = \'\';\n                    playSuccessChime();\n                    syncPortal();\n                } else {\n                    msg.style.color = \'#f87171\';\n                    msg.innerText = data.error;\n                }\n            });\n        }\n\n        function generateTransferCode() {\n            const m = parseInt(document.getElementById(\'transfer-mins-input\').value) || 0;\n            const disp = document.getElementById(\'transfer-code-display\');\n            if (m <= 0) {\n                disp.style.color = \'#f87171\';\n                disp.innerText = \'Please enter the exact minutes to share.\';\n                return;\n            }\n            fetch(\'/api/transfer/generate\', {\n                method: \'POST\',\n                headers: { \'Content-Type\': \'application/json\' },\n                body: JSON.stringify({ minutes: m })\n            })\n            .then(r => r.json())\n            .then(data => {\n                if (data.success) {\n                    disp.style.color = \'#38bdf8\';\n                    disp.innerHTML = `TRANSFER CODE: <strong style="font-size:16px; letter-spacing:2px; color:#34d399;">${data.code}</strong> (${data.minutes} Mins)`;\n                    document.getElementById(\'transfer-mins-input\').value = \'\';\n                    syncPortal();\n                } else {\n                    disp.style.color = \'#f87171\';\n                    disp.innerText = data.error;\n                }\n            });\n        }\n\n        function claimTransferCode() {\n            const code = document.getElementById(\'claim-code-input\').value.trim();\n            const msg = document.getElementById(\'claim-status-msg\');\n            if (!code) {\n                msg.style.color = \'#f87171\';\n                msg.innerText = \'Please enter the 6-digit transfer code.\';\n                return;\n            }\n            fetch(\'/api/transfer/claim\', {\n                method: \'POST\',\n                headers: { \'Content-Type\': \'application/json\' },\n                body: JSON.stringify({ code: code })\n            }).then(r => r.json()).then(data => {\n                if (data.success) {\n                    msg.style.color = \'#34d399\';\n                    msg.innerText = data.message;\n                    document.getElementById(\'claim-code-input\').value = \'\';\n                    playInsertChime();\n                    syncPortal();\n                } else {\n                    msg.style.color = \'#f87171\';\n                    msg.innerText = data.error;\n                }\n            });\n        }\n\n        let loggedInMember = null;\n\n        function memberLogin() {\n            const u = document.getElementById(\'member-user\').value.trim();\n            const p = document.getElementById(\'member-pin\').value.trim();\n            if (!u || !p) {\n                alert(\'Please enter your username and PIN.\');\n                return;\n            }\n            fetch(\'/api/member/login\', {\n                method: \'POST\',\n                headers: { \'Content-Type\': \'application/json\' },\n                body: JSON.stringify({ username: u, pin: p })\n            }).then(r => r.json()).then(data => {\n                const s = document.getElementById(\'member-status\');\n                if (data.success) {\n                    loggedInMember = { username: u, pin: p, wallet_minutes: data.wallet_minutes };\n                    document.getElementById(\'mem-auth-section\').style.display = \'none\';\n                    document.getElementById(\'mem-wallet-section\').style.display = \'block\';\n                    document.getElementById(\'mem-welcome-user\').innerText = `👤 ${u}`;\n                    document.getElementById(\'mem-wallet-mins\').innerText = `${data.wallet_minutes} Mins`;\n                    s.innerText = \'\';\n                } else {\n                    s.style.color = \'#f87171\'; s.innerText = data.error;\n                }\n            });\n        }\n\n        function memberLogout() {\n            loggedInMember = null;\n            document.getElementById(\'mem-auth-section\').style.display = \'block\';\n            document.getElementById(\'mem-wallet-section\').style.display = \'none\';\n            document.getElementById(\'member-user\').value = \'\';\n            document.getElementById(\'member-pin\').value = \'\';\n        }\n\n        function memberRegister() {\n            const u = document.getElementById(\'member-user\').value.trim();\n            const p = document.getElementById(\'member-pin\').value.trim();\n            if (!u || !p) {\n                alert(\'Please enter a username and PIN.\');\n                return;\n            }\n            fetch(\'/api/member/register\', {\n                method: \'POST\',\n                headers: { \'Content-Type\': \'application/json\' },\n                body: JSON.stringify({ username: u, pin: p })\n            }).then(r => r.json()).then(data => {\n                const s = document.getElementById(\'member-status\');\n                if (data.success) {\n                    s.style.color = \'#34d399\';\n                    s.innerText = data.message;\n                    setTimeout(() => memberLogin(), 400);\n                } else {\n                    s.style.color = \'#f87171\';\n                    s.innerText = data.error;\n                }\n            });\n        }\n\n        function useMemberWallet() {\n            if (!loggedInMember) return;\n            const m = parseInt(document.getElementById(\'use-wallet-mins\').value) || 0;\n            if (m <= 0) {\n                alert(\'Please enter valid minutes to use.\');\n                return;\n            }\n            fetch(\'/api/member/use_wallet\', {\n                method: \'POST\',\n                headers: { \'Content-Type\': \'application/json\' },\n                body: JSON.stringify({ username: loggedInMember.username, pin: loggedInMember.pin, minutes: m })\n            }).then(r => r.json()).then(data => {\n                if (data.success) {\n                    loggedInMember.wallet_minutes = data.wallet_minutes;\n                    document.getElementById(\'mem-wallet-mins\').innerText = `${data.wallet_minutes} Mins`;\n                    document.getElementById(\'use-wallet-mins\').value = \'\';\n                    playInsertChime();\n                    syncPortal();\n                    alert(data.message);\n                } else {\n                    alert(data.error);\n                }\n            });\n        }\n\n        function saveSessionToWallet() {\n            if (!loggedInMember) return;\n            fetch(\'/api/member/save_time\', {\n                method: \'POST\',\n                headers: { \'Content-Type\': \'application/json\' },\n                body: JSON.stringify({ username: loggedInMember.username, pin: loggedInMember.pin })\n            }).then(r => r.json()).then(data => {\n                if (data.success) {\n                    loggedInMember.wallet_minutes = data.wallet_minutes;\n                    document.getElementById(\'mem-wallet-mins\').innerText = `${data.wallet_minutes} Mins`;\n                    playSuccessChime();\n                    syncPortal();\n                    alert(data.message);\n                } else {\n                    alert(data.error);\n                }\n            });\n        }\n    </script>\n</body>\n</html>\n'
 
 @app.route('/')
 def index():
     client_ip = get_client_ip()
     session_data = ensure_client_session(client_ip)
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT bottles, minutes, label FROM promo_rates ORDER BY bottles ASC')
         promos = [{'bottles': r[0], 'minutes': r[1], 'label': r[2]} for r in c.fetchall()]
@@ -637,8 +671,6 @@ def api_vendo_status():
 @app.route('/api/open_gate', methods=['POST'])
 def api_open_gate():
     global active_depositor_ip, active_depositor_timeout
-    if not license_valid():
-        return jsonify({'success': False, 'error': 'Machine is unlicensed or license is expired.'})
     client_ip = get_client_ip()
     is_bin_full = get_config('hw_bin_full', '0') == '1' or esp32.get_state().get('is_bin_full', False)
     if is_bin_full:
@@ -677,7 +709,6 @@ def api_vendo_done():
             sess['paused_at'] = 0
             sess['expires_at'] = 0
             sync_client_firewall(client_ip)
-            save_sessions_to_db()
         active_depositor_ip = None
         active_depositor_timeout = 0
     esp32.reset_session()
@@ -725,23 +756,8 @@ def api_client_pause():
                 sess['paused_at'] = time.time()
                 sess['expires_at'] = compute_session_expiration(sess['remaining_seconds'], sess['paused_at'])
             else:
-                if sess.get('admin_paused'):
-                    return jsonify({'success': False, 'error': 'Session paused by administrator.'})
-                if sess.get('expires_at', 0) > 0 and time.time() >= sess['expires_at']:
-                    sess['remaining_seconds'] = 0
-                    sess['expires_at'] = 0
-                    sess['is_paused'] = True
-                    sess['user_paused'] = False
-                    sync_client_firewall(client_ip)
-                    save_sessions_to_db()
-                    return jsonify({'success': False, 'error': 'Paused credit expired.'})
-                if sess.get('remaining_seconds', 0) <= 0:
-                    sess['remaining_seconds'] = 0
-                    sync_client_firewall(client_ip)
-                    return jsonify({'success': False, 'error': 'No remaining credit to resume.'})
                 sess['is_paused'] = False
                 sess['user_paused'] = False
-                sess['auto_paused'] = False
                 sess['paused_at'] = 0
                 sess['expires_at'] = 0
             sync_client_firewall(client_ip)
@@ -751,12 +767,10 @@ def api_client_pause():
 
 @app.route('/api/voucher/redeem', methods=['POST'])
 def api_voucher_redeem():
-    if not license_valid():
-        return jsonify({'success': False, 'error': 'Machine is unlicensed or license is expired.'})
     client_ip = get_client_ip()
     data = request.get_json() or {}
     code = data.get('code', '').strip().upper()
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT minutes, is_used FROM vouchers WHERE code = ?', (code,))
         row = c.fetchone()
@@ -765,9 +779,7 @@ def api_voucher_redeem():
         if row[1] == 1:
             return jsonify({'success': False, 'error': 'Voucher already redeemed.'})
         minutes = row[0]
-        c.execute('UPDATE vouchers SET is_used = 1, used_by = ? WHERE code = ? AND is_used = 0', (client_ip, code))
-        if c.rowcount <= 0:
-            return jsonify({'success': False, 'error': 'Voucher already redeemed.'})
+        c.execute('UPDATE vouchers SET is_used = 1, used_by = ? WHERE code = ?', (client_ip, code))
         conn.commit()
     with active_clients_lock:
         sess = ensure_client_session(client_ip)
@@ -777,7 +789,6 @@ def api_voucher_redeem():
         sess['paused_at'] = 0
         sess['expires_at'] = 0
         sync_client_firewall(client_ip)
-        save_sessions_to_db()
     return jsonify({'success': True, 'message': 'Successfully added {} minutes!'.format(minutes)})
 
 @app.route('/api/transfer/generate', methods=['POST'])
@@ -805,9 +816,8 @@ def api_transfer_generate():
         transfer_sec = mins_to_transfer * 60
         sess['remaining_seconds'] = max(0, rem - transfer_sec)
         sync_client_firewall(client_ip)
-        save_sessions_to_db()
         code = ''.join(random.choice(string.digits) for _ in range(6))
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('INSERT INTO time_transfers (code, from_ip, from_mac, seconds, created_at) VALUES (?, ?, ?, ?, ?)', (code, client_ip, sess['mac'], transfer_sec, time.time()))
         conn.commit()
@@ -818,7 +828,7 @@ def api_transfer_claim():
     client_ip = get_client_ip()
     data = request.get_json() or {}
     code = data.get('code', '').strip()
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT seconds, is_claimed FROM time_transfers WHERE code = ?', (code,))
         row = c.fetchone()
@@ -827,9 +837,7 @@ def api_transfer_claim():
         if row[1] == 1:
             return jsonify({'success': False, 'error': 'Transfer code already claimed.'})
         sec = row[0]
-        c.execute('UPDATE time_transfers SET is_claimed = 1 WHERE code = ? AND is_claimed = 0', (code,))
-        if c.rowcount <= 0:
-            return jsonify({'success': False, 'error': 'Transfer code already claimed.'})
+        c.execute('UPDATE time_transfers SET is_claimed = 1 WHERE code = ?', (code,))
         conn.commit()
     with active_clients_lock:
         sess = ensure_client_session(client_ip)
@@ -839,7 +847,6 @@ def api_transfer_claim():
         sess['paused_at'] = 0
         sess['expires_at'] = 0
         sync_client_firewall(client_ip)
-        save_sessions_to_db()
     return jsonify({'success': True, 'message': 'Claimed {} minutes successfully!'.format(sec // 60)})
 
 @app.route('/api/member/register', methods=['POST'])
@@ -853,7 +860,7 @@ def api_member_register():
         return jsonify({'success': False, 'error': 'PIN must be strictly 4 to 6 numeric digits.'})
     pin_hash = generate_password_hash(pin, method='pbkdf2:sha256')
     try:
-        with db_connection() as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
             c.execute('INSERT INTO members (username, pin_hash, wallet_minutes, created_at) VALUES (?, ?, 0, ?)', (username, pin_hash, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
             conn.commit()
@@ -877,7 +884,7 @@ def api_member_login():
             login_attempts[username] = [0, now]
     else:
         login_attempts[username] = [0, now]
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT pin_hash, wallet_minutes FROM members WHERE username = ?', (username,))
         row = c.fetchone()
@@ -901,7 +908,7 @@ def api_member_use_wallet():
         return jsonify({'success': False, 'error': 'Please enter a valid number of minutes.'})
     if minutes <= 0:
         return jsonify({'success': False, 'error': 'Invalid minutes specified.'})
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT pin_hash, wallet_minutes FROM members WHERE username = ?', (username,))
         row = c.fetchone()
@@ -910,9 +917,7 @@ def api_member_use_wallet():
         current_wallet = row[1]
         if current_wallet < minutes:
             return jsonify({'success': False, 'error': 'Insufficient wallet balance ({}m available).'.format(current_wallet)})
-        c.execute('UPDATE members SET wallet_minutes = wallet_minutes - ? WHERE username = ? AND wallet_minutes >= ?', (minutes, username, minutes))
-        if c.rowcount <= 0:
-            return jsonify({'success': False, 'error': 'Insufficient wallet balance.'})
+        c.execute('UPDATE members SET wallet_minutes = wallet_minutes - ? WHERE username = ?', (minutes, username))
         conn.commit()
     with active_clients_lock:
         sess = ensure_client_session(client_ip)
@@ -922,7 +927,6 @@ def api_member_use_wallet():
         sess['paused_at'] = 0
         sess['expires_at'] = 0
         sync_client_firewall(client_ip)
-        save_sessions_to_db()
     return jsonify({'success': True, 'message': 'Added {} minutes from wallet to session!'.format(minutes), 'wallet_minutes': current_wallet - minutes})
 
 @app.route('/api/member/save_time', methods=['POST'])
@@ -931,7 +935,7 @@ def api_member_save_time():
     data = request.get_json() or {}
     username = data.get('username', '').strip()
     pin = data.get('pin', '').strip()
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT pin_hash, wallet_minutes FROM members WHERE username = ?', (username,))
         row = c.fetchone()
@@ -948,7 +952,6 @@ def api_member_save_time():
             sess['paused_at'] = 0
             sess['expires_at'] = 0
             sync_client_firewall(client_ip)
-            save_sessions_to_db()
         c.execute('UPDATE members SET wallet_minutes = wallet_minutes + ? WHERE username = ?', (mins_to_save, username))
         conn.commit()
         c.execute('SELECT wallet_minutes FROM members WHERE username = ?', (username,))
@@ -999,7 +1002,7 @@ def validate_promo_rate_conflict(bottles, minutes, exclude_bottles=None):
     """
     if bottles <= 0 or minutes <= 0:
         return (False, 'Bottles and Minutes must be positive numbers.')
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT bottles, minutes FROM promo_rates ORDER BY bottles ASC')
         existing = [(r[0], r[1]) for r in c.fetchall() if r[0] != exclude_bottles]
@@ -1032,7 +1035,7 @@ def validate_promo_rate_conflict(bottles, minutes, exclude_bottles=None):
 def admin_api_rates_list():
     if not session.get('admin_logged_in'):
         return (jsonify({'error': 'unauthorized'}), 401)
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT bottles, minutes, label, speed_profile FROM promo_rates ORDER BY bottles ASC')
         return jsonify([{'bottles': r[0], 'minutes': r[1], 'label': r[2], 'speed_profile': r[3] or ''} for r in c.fetchall()])
@@ -1054,7 +1057,7 @@ def admin_api_rates_add():
     is_valid, err_msg = validate_promo_rate_conflict(bottles, minutes, exclude_bottles=orig_bottles)
     if not is_valid:
         return (jsonify({'success': False, 'error': err_msg}), 400)
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         if orig_bottles and orig_bottles != bottles:
             c.execute('DELETE FROM promo_rates WHERE bottles = ?', (orig_bottles,))
@@ -1072,7 +1075,7 @@ def admin_api_rates_delete():
     bottles = data.get('bottles')
     if not bottles:
         return (jsonify({'success': False, 'error': 'Missing bottles parameter.'}), 400)
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('DELETE FROM promo_rates WHERE bottles = ?', (int(bottles),))
         conn.commit()
@@ -1088,7 +1091,7 @@ def admin_api_rates_apply_preset():
     if preset_key not in PRESETS:
         return (jsonify({'success': False, 'error': "Unknown preset '{}'.".format(preset_key)}), 400)
     preset = PRESETS[preset_key]
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('DELETE FROM promo_rates')
         for bottles, minutes, label in preset['rates']:
@@ -1200,7 +1203,7 @@ def admin_force_password_change():
         new_pw = request.form.get('new_password', '').strip()
         if new_pw and len(new_pw) >= 6 and (new_pw != 'admin123'):
             admin_user = session.get('admin_username', 'admin')
-            with db_connection() as conn:
+            with sqlite3.connect(DB_PATH) as conn:
                 conn.execute('UPDATE admins SET password_hash=? WHERE username=?', (generate_password_hash(new_pw, method='pbkdf2:sha256'), admin_user))
             session.pop('must_change_password', None)
             return redirect('/admin')
@@ -1224,7 +1227,7 @@ def admin_login():
             admin_login_attempts[client_ip] = [0, now]
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
-        with db_connection() as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
             c.execute('SELECT password_hash FROM admins WHERE username=?', (username,))
             row = c.fetchone()
@@ -1258,7 +1261,7 @@ def admin_api_stats():
     if not session.get('admin_logged_in'):
         return (jsonify({'error': 'unauthorized'}), 401)
     today = datetime.now().strftime('%Y-%m-%d')
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT total_bottles FROM stats WHERE date=?', (today,))
         row = c.fetchone()
@@ -1323,18 +1326,15 @@ def admin_api_client_action():
                 sync_client_firewall(ip)
             elif action == 'pause':
                 active_clients[ip]['is_paused'] = True
-                active_clients[ip]['admin_paused'] = True
                 sync_client_firewall(ip)
             elif action == 'resume':
                 active_clients[ip]['is_paused'] = False
-                active_clients[ip]['admin_paused'] = False
                 sync_client_firewall(ip)
             elif action == 'kick':
                 active_clients[ip]['remaining_seconds'] = 0
                 active_clients[ip]['is_paused'] = False
-                active_clients[ip]['admin_paused'] = False
                 sync_client_firewall(ip)
-            save_sessions_to_db()
+                sync_client_firewall(ip)
             return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Client not found.'})
 
@@ -1364,7 +1364,7 @@ def admin_api_client_edit():
 def admin_api_vouchers_list():
     if not session.get('admin_logged_in'):
         return (jsonify({'error': 'unauthorized'}), 401)
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT code, minutes, is_used, created_at, used_by, note FROM vouchers ORDER BY created_at DESC LIMIT 50')
         rows = [{'code': r[0], 'minutes': r[1], 'is_used': r[2], 'created_at': r[3], 'used_by': r[4], 'note': r[5] or ''} for r in c.fetchall()]
@@ -1383,7 +1383,7 @@ def admin_generate_vouchers():
     note = data.get('note', '').strip()
     prefix = data.get('prefix', 'ECO-').strip().upper()
     created = []
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         for _ in range(qty):
             code = prefix + ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(6))
@@ -1398,7 +1398,7 @@ def admin_delete_voucher():
         return (jsonify({'error': 'unauthorized'}), 401)
     data = request.get_json() or {}
     code = data.get('code', '').strip().upper()
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('DELETE FROM vouchers WHERE code = ?', (code,))
         conn.commit()
@@ -1408,7 +1408,7 @@ def admin_delete_voucher():
 def admin_api_members_list():
     if not session.get('admin_logged_in'):
         return (jsonify({'error': 'unauthorized'}), 401)
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT username, wallet_minutes, created_at FROM members ORDER BY created_at DESC')
         rows = [{'username': r[0], 'wallet_minutes': r[1], 'created_at': r[2]} for r in c.fetchall()]
@@ -1428,7 +1428,7 @@ def admin_api_members_add():
         return (jsonify({'success': False, 'error': 'PIN must be 4 to 6 digits.'}), 400)
     pin_hash = generate_password_hash(pin, method='pbkdf2:sha256')
     try:
-        with db_connection() as conn:
+        with sqlite3.connect(DB_PATH) as conn:
             c = conn.cursor()
             c.execute('INSERT INTO members (username, pin_hash, wallet_minutes, created_at) VALUES (?, ?, ?, ?)', (username, pin_hash, mins, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
             conn.commit()
@@ -1443,7 +1443,7 @@ def admin_api_members_topup():
     data = request.get_json() or {}
     username = data.get('username')
     mins = int(data.get('minutes', 15))
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('UPDATE members SET wallet_minutes = MAX(0, wallet_minutes + ?) WHERE username = ?', (mins, username))
         conn.commit()
@@ -1455,7 +1455,7 @@ def admin_api_members_delete():
         return (jsonify({'error': 'unauthorized'}), 401)
     data = request.get_json() or {}
     username = data.get('username')
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('DELETE FROM members WHERE username = ?', (username,))
         conn.commit()
@@ -1469,7 +1469,7 @@ def admin_api_settings_save():
     for k, v in data.items():
         set_config(k, v)
         if k == 'announcement':
-            with db_connection() as conn:
+            with sqlite3.connect(DB_PATH) as conn:
                 c = conn.cursor()
                 c.execute('UPDATE announcements SET message = ? WHERE id = 1', (str(v),))
                 if c.rowcount == 0:
@@ -1481,7 +1481,7 @@ def admin_api_settings_save():
 def admin_api_mac_list():
     if not session.get('admin_logged_in'):
         return (jsonify({'error': 'unauthorized'}), 401)
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT mac, type, note, dl_kbps, ul_kbps FROM mac_control ORDER BY mac ASC')
         return jsonify([{'mac': r[0], 'type': r[1], 'note': r[2] or '', 'dl_kbps': r[3] or 0, 'ul_kbps': r[4] or 0} for r in c.fetchall()])
@@ -1503,12 +1503,11 @@ def admin_api_mac_add():
     note = data.get('note', '').strip()
     dl = int(data.get('dl_kbps', 0))
     ul = int(data.get('ul_kbps', 0))
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('REPLACE INTO mac_control (mac, type, note, dl_kbps, ul_kbps) VALUES (?, ?, ?, ?, ?)', (mac, m_type, note, dl, ul))
         conn.commit()
-    apply_walled_garden_and_macs()
-    return jsonify({'success': True, 'mac': mac})
+        return jsonify({'success': True, 'mac': mac})
 
 @app.route('/admin/api/mac_control/delete', methods=['POST'])
 def admin_api_mac_delete():
@@ -1516,18 +1515,17 @@ def admin_api_mac_delete():
         return (jsonify({'error': 'unauthorized'}), 401)
     data = request.get_json() or {}
     mac = data.get('mac', '').strip().upper()
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('DELETE FROM mac_control WHERE mac = ?', (mac,))
         conn.commit()
-    apply_walled_garden_and_macs()
-    return jsonify({'success': True})
+        return jsonify({'success': True})
 
 @app.route('/admin/api/walled_garden/list')
 def admin_api_walled_garden_list():
     if not session.get('admin_logged_in'):
         return (jsonify({'error': 'unauthorized'}), 401)
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT domain, note FROM walled_garden ORDER BY domain ASC')
         return jsonify([{'domain': r[0], 'note': r[1] or ''} for r in c.fetchall()])
@@ -1541,7 +1539,7 @@ def admin_api_walled_garden_add():
     note = data.get('note', '').strip()
     if not domain or '.' not in domain or len(domain) < 4:
         return (jsonify({'success': False, 'error': 'Invalid domain name. Example: gcash.com or deped.gov.ph'}), 400)
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('REPLACE INTO walled_garden (domain, note) VALUES (?, ?)', (domain, note))
         conn.commit()
@@ -1553,7 +1551,7 @@ def admin_api_walled_garden_delete():
         return (jsonify({'error': 'unauthorized'}), 401)
     data = request.get_json() or {}
     domain = data.get('domain', '').strip().lower()
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('DELETE FROM walled_garden WHERE domain = ?', (domain,))
         conn.commit()
@@ -1826,7 +1824,7 @@ def admin_export_xlsx():
 def admin_export_csv():
     if not session.get('admin_logged_in'):
         return redirect('/admin/login')
-    with db_connection() as conn:
+    with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
         c.execute('SELECT date, total_bottles FROM stats ORDER BY date DESC')
         rows = c.fetchall()

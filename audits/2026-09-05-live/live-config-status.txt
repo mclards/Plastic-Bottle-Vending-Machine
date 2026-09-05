@@ -1,0 +1,123 @@
+{"valid": true, "expiry": "PERPETUAL", "tier": "COMMERCIAL", "licensee": "Store Owner", "status": "ACTIVATED", "hwid": "ECOFI-AADD-284E-E7A4-309C", "message": "Genuine ECO-Fi COMMERCIAL License Activated."}
+# A sample configuration for dhcpcd.
+# See dhcpcd.conf(5) for details.
+
+# Allow users of this group to interact with dhcpcd via the control socket.
+#controlgroup wheel
+
+# Inform the DHCP server of our hostname for DDNS.
+hostname
+
+# Use the hardware address of the interface for the Client ID.
+clientid
+# or
+# Use the same DUID + IAID as set in DHCPv6 for DHCPv4 ClientID as per RFC4361.
+# Some non-RFC compliant DHCP servers do not reply with this set.
+# In this case, comment out duid and enable clientid above.
+#duid
+
+# Persist interface configuration when dhcpcd exits.
+persistent
+
+# Rapid commit support.
+# Safe to enable by default because it requires the equivalent option set
+# on the server to actually work.
+option rapid_commit
+
+# A list of options to request from the DHCP server.
+option domain_name_servers, domain_name, domain_search, host_name
+option classless_static_routes
+# Most distributions have NTP support.
+option ntp_servers
+# Respect the network MTU. This is applied to DHCP routes.
+option interface_mtu
+
+# A ServerID is required by RFC2131.
+require dhcp_server_identifier
+
+# Generate Stable Private IPv6 Addresses instead of hardware based ones
+slaac private
+
+# Example static IP configuration:
+#interface eth0
+#static ip_address=192.168.0.10/24
+#static ip6_address=fd51:42f8:caae:d92e::ff/64
+#static routers=192.168.0.1
+#static domain_name_servers=8.8.8.8 8.8.4.4 fd51:42f8:caae:d92e::1
+
+# It is possible to fall back to a static IP if DHCP fails:
+# define static profile
+#profile static_eth0
+#static ip_address=192.168.1.23/24
+#static routers=192.168.1.1
+#static domain_name_servers=8.8.8.8 8.8.4.4 
+
+# fallback to static profile on eth0
+#interface eth0
+#fallback static_eth0
+
+#interface eth0
+#    static domain_name_servers=8.8.8.8 8.8.4.4 
+
+#interface eth1
+#    static ip_address=10.0.0.1/19
+#    static domain_name_servers=8.8.8.8 8.8.4.4 
+
+#interface wlan0
+#    static ip_address=10.0.0.1/19
+#    static domain_name_servers=8.8.8.8 8.8.4.4 
+
+
+denyinterfaces eth1 usb0 enx*
+      Local time: Tue 2026-05-12 11:24:01 CST
+  Universal time: Tue 2026-05-12 03:24:01 UTC
+        RTC time: Thu 1970-01-01 11:07:36
+       Time zone: Asia/Taipei (CST, +0800)
+ Network time on: no
+NTP synchronized: no
+ RTC in local TZ: no
+/usr/bin/curl
+/usr/bin/iperf3
+dnsmasq	2.76-5+deb9u2
+iproute2	4.9.0-1+deb9u1
+1778812142 14:13:33:78:0f:91 10.0.5.148 * 01:14:13:33:78:0f:91
+1778771761 02:81:3b:70:4d:fa 10.0.24.34 orangepione 01:02:81:3b:70:4d:fa
+1778772666 f4:26:79:74:49:06 10.0.22.231 JERLAPTOP 01:f4:26:79:74:49:06
+1778598894 00:e0:4c:68:06:64 10.0.2.45 * 01:00:e0:4c:68:06:64
+1778812252 e2:d1:42:8e:8d:97 10.0.18.129 * 01:e2:d1:42:8e:8d:97
+1778815333 00:00:00:00:02:43 10.0.7.117 InverterEngr 01:00:00:00:00:02:43
+[Unit]
+Description=ECO-Fi Captive Portal & Web Engine
+After=network.target nginx.service ecofi_firewall.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ecofi
+ExecStart=/bin/bash -c "exec /usr/bin/python3 /opt/ecofi/portal.py >> /opt/ecofi/portal.log 2>&1"
+StandardOutput=journal
+StandardError=journal
+Restart=always
+RestartSec=3
+Environment=PORT=5000
+
+[Install]
+WantedBy=multi-user.target
+[Unit]
+Description=ECO-Fi Firewall Initialization
+Before=ecofi_portal.service
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ecofi/setup_network.sh
+ExecStartPost=/bin/bash -c "sysctl -w net.ipv4.ip_forward=1"
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+
+STDERR:
+dpkg-query: no packages found matching python3-flask
+dpkg-query: no packages found matching python3-serial
+dpkg-query: no packages found matching ipset

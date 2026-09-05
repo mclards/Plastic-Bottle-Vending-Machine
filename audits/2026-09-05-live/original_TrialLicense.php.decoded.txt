@@ -1,0 +1,118 @@
+<?php
+
+namespace App\Pisofi\Server\License;
+
+
+use Carbon\Carbon;
+
+use App\Models\PisofiSetting;
+
+use App\Pisofi\Server\IDeviceLicense;
+
+
+class TrialLicense implements IDeviceLicense
+{
+    private $licenseType;
+
+    private $registrationDate;
+
+    private $expirationDate;
+
+    private $remainingDays;
+
+
+    private $license;
+
+    private $licenseData;
+
+
+    public function __construct($license)
+    {
+        $this->license = $license;
+
+
+        $this->licenseData = json_decode($this->license->setting_value);
+
+
+        $this->licenseType = $this->licenseData->licenseType;
+
+
+        $this->registrationDate = is_object($this->licenseData->registrationDate) ? Carbon::parse($this->licenseData->registrationDate->date, $this->licenseData->registrationDate->timezone) : Carbon::parse($this->licenseData->registrationDate);
+
+        $this->expirationDate = is_object($this->licenseData->expirationDate) ? Carbon::parse($this->licenseData->expirationDate->date, $this->licenseData->expirationDate->timezone) : Carbon::parse($this->licenseData->expirationDate);
+
+        $this->remainingDays = (int) $this->licenseData->remaining;
+
+    }
+
+    public function hasLicense()
+    {
+        return true;
+
+    }
+
+    public function isTrial()
+    {
+        return true;
+
+    }
+
+    public function registeredVendos()
+    {
+        return ($this->licenseData && property_exists($this->licenseData, "vendos")) ? $this->licenseData->vendos : 0;
+
+    }
+
+    public function registeredPCs()
+    {
+        return ($this->licenseData && property_exists($this->licenseData, "desktops")) ? $this->licenseData->desktops : 0;
+
+    }
+
+    public function isLicensed()
+    {
+        return false;
+
+    }
+
+    public function licenseKey()
+    {
+        return "TRIAL LICENSE";
+
+    }
+
+    public function getLicenseType()
+    {
+        return IDeviceLicense::LICENSE_TYPE_TRIAL;
+
+    }
+
+    public function getExpirationDate()
+    {
+        return $this->expirationDate;
+
+    }
+
+    public function getRemainingDays()
+    {
+        return max( 0, Carbon::now()->diffInDays($this->getExpirationDate(), false) );
+
+    }
+
+    public function isExpired()
+    {
+        return $this->getRemainingDays() <= 0 ? true : false;
+
+    }
+
+    public function update()
+    {
+        $this->licenseData->remaining = $this->getRemainingDays();
+
+
+        $this->license->setting_value = json_encode($this->licenseData);
+
+        $this->license->save();
+
+    }
+}

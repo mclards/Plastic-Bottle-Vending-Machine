@@ -1,0 +1,60 @@
+{
+  "license": {
+    "expiry": "PERPETUAL",
+    "hwid": "ECOFI-AADD-284E-E7A4-309C",
+    "licensee": "Store Owner",
+    "message": "Genuine ECO-Fi COMMERCIAL License Activated.",
+    "status": "ACTIVATED",
+    "tier": "COMMERCIAL",
+    "valid": true
+  },
+  "clients": [
+    {
+      "dl_kbps": 3072,
+      "ip": "10.0.7.118",
+      "is_paused": false,
+      "mac": "cf:ae:87:67:43:3d",
+      "remaining_seconds": 0,
+      "ul_kbps": 1536
+    },
+    {
+      "dl_kbps": 3072,
+      "ip": "10.0.14.111",
+      "is_paused": false,
+      "mac": "8a:a5:64:9a:1a:6a",
+      "remaining_seconds": 1273,
+      "ul_kbps": 1536
+    },
+    {
+      "dl_kbps": 3072,
+      "ip": "10.0.7.200",
+      "is_paused": false,
+      "mac": "b8:69:f8:4f:67:f2",
+      "remaining_seconds": 4283,
+      "ul_kbps": 1536
+    },
+    {
+      "dl_kbps": 3072,
+      "ip": "10.0.7.117",
+      "is_paused": false,
+      "mac": "00:00:00:00:02:43",
+      "remaining_seconds": 0,
+      "ul_kbps": 1536
+    }
+  ],
+  "mac_control": [],
+  "test_client": {
+    "bin_full": false,
+    "client_time_remaining": 0,
+    "expires_at": 0,
+    "expires_str": "",
+    "gate_open": false,
+    "is_paused": false,
+    "paused_at": 0,
+    "remaining_seconds": 0,
+    "session_added_minutes": 0,
+    "session_bottles": 0,
+    "validity_hours": 0
+  },
+  "cleanup_checks": "active\nactive\nactive\ninactive\ntemporary_server_removed\ntemporary_license_backup_removed\n-N ECOFI_AUTH\n-A ECOFI_AUTH -s 10.0.14.111/32 -j ACCEPT\n-A ECOFI_AUTH -s 10.0.7.200/32 -j ACCEPT\n-N ECOFI_AUTH_NAT\n-A ECOFI_AUTH_NAT -s 10.0.14.111/32 -j ACCEPT\n-A ECOFI_AUTH_NAT -s 10.0.7.200/32 -j ACCEPT\n"
+}

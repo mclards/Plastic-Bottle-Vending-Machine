@@ -1,0 +1,122 @@
+<?php
+
+namespace App\Pisofi\Server;
+
+
+use Carbon\Carbon;
+
+use App\Models\PisofiSetting;
+
+
+use App\Pisofi\Server\License\NoLicense;
+
+use App\Pisofi\Server\License\TrialLicense;
+
+use App\Pisofi\Server\License\PisofiLicense;
+
+
+class DeviceLicense implements IDeviceLicense
+{
+
+    private $state;
+
+    private $licenseData;
+
+
+    public function __construct()
+    {
+        $license = PisofiSetting::find('license');
+
+        $this->licenseData = json_decode($license->setting_value);
+
+        if (is_object($this->licenseData) && property_exists($this->licenseData, "licenseType"))
+        {
+            $licenseType = $this->licenseData->licenseType;
+
+            if ($licenseType == IDeviceLicense::LICENSE_TYPE_LICENSED) {
+                $this->state = new PisofiLicense($license);
+
+            }
+            else {
+                $this->state = new TrialLicense($license);
+
+            }
+        }
+        else {
+            $this->state = new NoLicense($license);
+
+        }
+    }
+
+    public function hasCharging()
+    {
+        return $this->licenseData && property_exists($this->licenseData, "charging");
+
+    }
+
+    public function hasLicense()
+    {
+        return $this->state->hasLicense();
+
+    }
+
+    public function isTrial()
+    {
+        return $this->state->isTrial();
+
+    }
+
+    public function registeredVendos()
+    {
+        return $this->state->registeredVendos();
+
+    }
+
+    public function registeredPCs()
+    {
+        return $this->state->registeredPCs();
+
+    }
+
+    public function isLicensed()
+    {
+        return $this->state->isLicensed();
+
+    }
+
+    public function licenseKey()
+    {
+        return $this->state->licenseKey();
+
+    }
+
+    public function getLicenseType()
+    {
+        return $this->state->getLicenseType();
+
+    }
+
+    public function getExpirationDate()
+    {
+        return $this->state->getExpirationDate();
+
+    }
+
+    public function getRemainingDays()
+    {
+        return $this->state->getRemainingDays();
+
+    }
+
+    public function isExpired()
+    {
+        return $this->state->isExpired();
+
+    }
+
+    public function update()
+    {
+        return $this->state->update();
+
+    }
+}

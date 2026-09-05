@@ -1,0 +1,340 @@
+.cache/tmp/55/05/pfi/app/Controllers/Controller.php
+>view['bootup'] = $this->bootMgr;
+            $this->container->view['has_license'] = $this->license->hasLicense();
+            $this->container->view['is_licensed'] = $this->license->isLicensed();
+            $this->container->view['is_license_expired'] = false;
+            $this->container->view["license"]  = 
+] = $this->license->hasLicense();
+            $this->container->view['is_licensed'] = $this->license->isLicensed();
+            $this->container->view['is_license_expired'] = false;
+            $this->container->view["license"]  = $this->license;
+            $this->container->view['menus'] = new MenuBuilder($thi
+.cache/tmp/55/05/pfi/app/Controllers/DesktopPortalController.php
+anager();
+
+
+        if ($this->request->isXhr()) {
+        } else {
+
+            if (!$this->license->isLicensed()) {
+                $serverLicenseRaw = DeviceChecker::getLicenseSecured();
+                $key = PisofiSetting::getValue('cipher_key');
+                $licenseEncoded = PisofiHelper::decodeCipher(
+DM();;
+        $pc = $this->pc ? $this->pc : $this->dcm->getClient($ip);
+
+        if ($this->license->isExpired()) {
+            if ($pc) {
+                return $response->withRedirect($this->router->pathFor('desktop.home'));
+            } else {
+                return $response->withRedirect($this->router->p
+or('portal.connect.vendo', ['vendo' => md5($vendo_address)]));
+        }
+
+        if ($this->license->isExpired()) {
+            if ($pc) {
+                return $response->withRedirect($this->router->pathFor('desktop.home'));
+            } else {
+                return $response->withRedirect($this->router->p
+.cache/tmp/55/05/pfi/app/Controllers/PortalController.php
+();
+            $props['status_description']  = $s->getStatus();
+            $props['expired']  = $s->isExpired();
+            $props['expiration_date']  = $s->expirationDate();
+            $props['is_transferrable']  = $pm->canTransferTime() && $s->isTransferrable();
+
+            if ($transferCode) {
+         
+ceeded;
+            $props['is_convertible'] = $pm->canUseWipass() && $s->conversionAllowed() && !$s->isExpired() && $pm->canConvertRemainingTime() && !$s->isDataPlan();
+            return $props;
+        })->toArray();
+
+        usort($dto, function ($a, $b) {
+            return $a['order'] > $b['order'];
+     
+opMgr : new DesktopManager();
+        $pc = $desktopMgr->getClient($ip);
+
+        if ($this->license->isExpired()) {
+            if ($pc) {
+                return $response->withRedirect($this->router->pathFor('desktop.home'));
+            } else {
+                return $response->withRedirect($this->router->p
+athFor('desktop.connect.vendo', ['vendo' => $vendo_address]));
+        }
+
+        if ($this->license->isExpired()) {
+            if ($pc) {
+                return $response->withRedirect($this->router->pathFor('desktop.home'));
+            } else {
+                return $response->withRedirect($this->router->p
+                'speed' => $wipass->getConnectionSpeed(),
+                    'expired'   => $wipass->isExpired(),
+                    'shared'    => $wipass->isShared(),
+                    'sharecode' => $wipass->sharecode ?? '',
+                    'expiration'    => $wipass->getExpirationDate() ? Carbon::pa
+.cache/tmp/55/05/pfi/app/Controllers/ConnectionSessionController.php
+ion->isDataPlan()) {
+                $data['is_data'] = true;
+            }
+            if ($session->isExpired()) {
+                $data['expired'] = true;
+            }
+            return $data;
+        })->toArray();
+        
+        usort($formatted, function($a, $b){ return $a['order'] > $b['order']; });
+
+.cache/tmp/55/05/pfi/app/Controllers/AdminBaseController.php
+
+        } else {
+
+            // $license = new DeviceLicense();
+
+            // if ($this->license->isLicensed()) {
+            //     $rpi = new Rpi();
+            //     $serial = $rpi->serial();
+            //     $key = $this->license->licenseKey();
+            //     $hash = md5($serial . $key);
+         
+.cache/tmp/55/05/pfi/app/Controllers/DatatablesController.php
+  $obj = $d->toArray();
+                $obj['id'] = $d->id;
+                $obj['is_expired'] = $d->isExpired();
+                $obj['created_at'] = $d->created_at->format('Y-m-d H:i:s');
+                $obj['expiration_date'] = $d->expirationDate();
+                $obj['status_description'] = $d->getStatu
+ve();
+            $row['is_used_up'] = $reward->isUsedUp();
+            $row['is_expired'] = $reward->isExpired();
+            return $row;
+        })->toArray();
+
+
+        $data['token'] = $this->token;
+        return $response->withJson($data);
+    }
+
+    public function clientAccountSpinCredits($request, $re
+tive();
+            $row['is_used_up'] = $trans->isUsedUp();
+            $row['is_expired'] = $trans->isExpired();
+
+            // $usages = $spinCreditUsages[$row['id']] ?? [];
+            // $row['usages'] = collect($usages)->map(function ($u) {
+            //     $usage = (new SpinCreditUsage())->fill($u);
+ 
+  //         'is_claimed'    => $usage->isClaimed(),
+            //         'is_expired'   => $usage->isExpired(),
+            //         'claimed_at'   => $usage->getFormattedClaimedAt(),
+            //         'expiration_date' => $usage->getFormattedClaimExpiry(),
+            //         'status_text'   => $u
+(),
+                'is_claimed'    => $trans->isClaimed(),
+                'is_expired'   => $trans->isExpired(),
+                'is_claimable'   => $trans->isClaimable(),
+                'claimed_at'   => $trans->getFormattedClaimedAt(),
+                'expiration_date' => $trans->getFormattedClaimExpiry(),
+(),
+                'is_claimed'    => $trans->isClaimed(),
+                'is_expired'   => $trans->isExpired(),
+                'is_claimable'   => $trans->isClaimable(),
+                'claimed_at'   => $trans->getFormattedClaimedAt(),
+                'expiration_date' => $trans->getFormattedClaimExpiry(),
+.cache/tmp/55/05/pfi/app/Controllers/ConnectionApiController.php
+$response->withJson(['result' => $output, 'token' => $this->token]);
+        }
+
+        if ($session->isExpired()) {
+            $output = [
+                'status' => 'NG',
+                'message' => "This session is already expired",
+            ];
+            return $response->withJson(['result' => $outpu
+$response->withJson(['result' => $output, 'token' => $this->token]);
+        }
+
+        if ($session->isExpired()) {
+            $output = [
+                'status' => 'NG',
+                'message' => "This session is already expired",
+            ];
+            return $response->withJson(['result' => $outpu
+ger();
+
+        $ticket = PisofiTicket::find($code);
+        if ($ticket) {
+
+            if ($ticket->isExpired()) {
+                $unlock($hLock, $lockFile);
+                $output = [
+                    'status' => 'NG',
+                    'message' => "The wipass you are trying to use is already expired
+.cache/tmp/55/05/pfi/app/Controllers/WiPassController.php
+et->getCell("H{$rowNum}")->setValue($ticket->expirationDateForPrint());
+
+                if ($ticket->isExpired()) {
+                    $spreadsheet->getActiveSheet()->getStyle("H{$rowNum}")->getFont()->getColor()->setARGB(\PhpOffice\PhpSpreadsheet\Style\Color::COLOR_RED);
+                }
+
+                $w
+.cache/tmp/55/05/pfi/app/Middleware/DeviceConfigurationMiddleware.php
+ays($now) > 14 || ($license && $license->isTrial() && $last_check->diffInDays($now) > 1) || $license->isExpired()) {
+            $internet = PisofiSetting::getValue('online');
+            if ($internet) {
+                $rpi = new Rpi();
+                if (!DeviceChecker::isRegistered())
+                {
+   
+_net');
+                        $license = new DeviceLicense();
+                        if ($license->isExpired()) {
+                            $this->container->flash->addMessage('error', "Your license has expired. Please configure your device to use a new one or buy from our distributors: <a href='https://pi
+.cache/tmp/55/05/pfi/app/Models/ActiveClient.php
+}
+
+    public function getStatus()
+    {
+        if ($this->status === self::STATUS_ACTIVE && !$this->isExpired()) {
+            return "ACTIVE";
+        } elseif ($this->status === self::STATUS_PAUSED && !$this->isExpired()) {
+            return "PAUSED";
+        } elseif ($this->status === self::STATUS_DISCON
+()) {
+            return "ACTIVE";
+        } elseif ($this->status === self::STATUS_PAUSED && !$this->isExpired()) {
+            return "PAUSED";
+        } elseif ($this->status === self::STATUS_DISCONNECTED && !$this->isExpired()) {
+            return "DISCONNECTED";
+        } elseif ($this->status === self::S
+            return "PAUSED";
+        } elseif ($this->status === self::STATUS_DISCONNECTED && !$this->isExpired()) {
+            return "DISCONNECTED";
+        } elseif ($this->status === self::STATUS_EXPIRED || $this->isExpired()) {
+            return "EXPIRED";
+        } else {
+            return "UNKNOWN";
+ 
+            return "DISCONNECTED";
+        } elseif ($this->status === self::STATUS_EXPIRED || $this->isExpired()) {
+            return "EXPIRED";
+        } else {
+            return "UNKNOWN";
+        }
+    }
+
+    public function resume()
+    {
+        $this->status = self::STATUS_ACTIVE;
+        return $this-
+.cache/tmp/55/05/pfi/app/Models/ConnectionSession.php
+N_AUTO, 'type' => $data['type']])->first();
+        if ($autoSession) {
+            if ($autoSession->isExpired()) {
+                $autoSession->delete();
+            } else {
+                if ($data['type'] == self::TYPE_DATA_PLANS) {
+                    $autoSession->bandwidth_limit += $data['bandwidth_li
+        }
+        return 'N/A';
+    }
+
+    public function isTransferrable() {
+        return !$this->isExpired() && $this->origin != self::ORIGIN_FREE;
+    }
+
+    public function downloadRate() {
+        if ($this->download_rate > 0 && !$this->download_auto) {
+            return PisofiHelper::formatBytes($this
+.cache/tmp/55/05/pfi/app/Models/OldClient.php
+}
+
+    public function getStatus()
+    {
+        if ($this->status === self::STATUS_ACTIVE && !$this->isExpired()){
+            return "ACTIVE";
+        } elseif ($this->status === self::STATUS_PAUSED && !$this->isExpired()) {
+            return "PAUSED";
+        } elseif ($this->status === self::STATUS_DISCONN
+d()){
+            return "ACTIVE";
+        } elseif ($this->status === self::STATUS_PAUSED && !$this->isExpired()) {
+            return "PAUSED";
+        } elseif ($this->status === self::STATUS_DISCONNECTED && !$this->isExpired()) {
+            return "DISCONNECTED";
+        } elseif ($this->status === self::S
+            return "PAUSED";
+        } elseif ($this->status === self::STATUS_DISCONNECTED && !$this->isExpired()) {
+            return "DISCONNECTED";
+        } elseif ($this->status === self::STATUS_EXPIRED || $this->isExpired()) {
+            return "EXPIRED";
+        } else {
+            return "UNKNOWN";
+ 
+            return "DISCONNECTED";
+        } elseif ($this->status === self::STATUS_EXPIRED || $this->isExpired()) {
+            return "EXPIRED";
+        } else {
+            return "UNKNOWN";
+        }
+    }
+
+    public function isActive()
+    {
+        return $this->status === self::STATUS_ACTIVE;
+    }
+
+   
+.cache/tmp/55/05/pfi/app/Pisofi/Server/DeviceLicense.php
+>licenseData, "charging");
+    }
+
+    public function hasLicense()
+    {
+        return $this->state->hasLicense();
+    }
+
+    public function isTrial()
+    {
+        return $this->state->isTrial();
+    }
+
+    public function registeredVendos()
+    {
+        return $this->state->registeredVendos();
+    }
+
+    pu
+s->state->registeredPCs();
+    }
+
+    public function isLicensed()
+    {
+        return $this->state->isLicensed();
+    }
+
+    public function licenseKey()
+    {
+        return $this->state->licenseKey();
+    }
+
+    public function getLicenseType()
+    {
+        return $this->state->getLicenseType();
+    }
+
+    
+>state->getRemainingDays();
+    }
+
+    public function isExpired()
+    {
+        return $this->state->isExpired();
+    }
+
+    public function update()
+    {
+        return $this->state->update();
+    }
+}

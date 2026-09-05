@@ -1,0 +1,239 @@
+test_admin_api_requires_authentication (test_gateway_audit.GatewayAudit.test_admin_api_requires_authentication) ... ok
+test_admin_bandwidth_edit_updates_enforcement (test_gateway_audit.GatewayAudit.test_admin_bandwidth_edit_updates_enforcement) ... ok
+test_admin_pause_cannot_be_undone_by_client (test_gateway_audit.GatewayAudit.test_admin_pause_cannot_be_undone_by_client) ... FAIL
+test_auto_pause_when_last_client_disconnects (test_gateway_audit.GatewayAudit.test_auto_pause_when_last_client_disconnects) ... FAIL
+test_bin_full_blocks_gate (test_gateway_audit.GatewayAudit.test_bin_full_blocks_gate) ... ok
+test_custom_bandwidth_survives_restart (test_gateway_audit.GatewayAudit.test_custom_bandwidth_survives_restart) ... FAIL
+test_default_admin_requires_password_change (test_gateway_audit.GatewayAudit.test_default_admin_requires_password_change) ... ok
+test_duplicate_uart_event_not_counted_twice (test_gateway_audit.GatewayAudit.test_duplicate_uart_event_not_counted_twice) ... FAIL
+test_expired_paused_credit_cannot_be_resumed_before_next_tick (test_gateway_audit.GatewayAudit.test_expired_paused_credit_cannot_be_resumed_before_next_tick) ... FAIL
+test_forwarded_header_cannot_impersonate_another_client (test_gateway_audit.GatewayAudit.test_forwarded_header_cannot_impersonate_another_client) ... FAIL
+test_mac_block_change_applied_immediately (test_gateway_audit.GatewayAudit.test_mac_block_change_applied_immediately) ... FAIL
+test_mac_reassignment_does_not_inherit_credit (test_gateway_audit.GatewayAudit.test_mac_reassignment_does_not_inherit_credit) ... FAIL
+test_manual_pause_revokes_and_preserves_balance (test_gateway_audit.GatewayAudit.test_manual_pause_revokes_and_preserves_balance) ... ok
+test_member_wallet_round_trip (test_gateway_audit.GatewayAudit.test_member_wallet_round_trip) ... ok
+test_missing_license_blocks_existing_client_grant (test_gateway_audit.GatewayAudit.test_missing_license_blocks_existing_client_grant) ... FAIL
+test_missing_license_blocks_gate_open (test_gateway_audit.GatewayAudit.test_missing_license_blocks_gate_open) ... FAIL
+test_missing_license_blocks_voucher_redemption (test_gateway_audit.GatewayAudit.test_missing_license_blocks_voucher_redemption) ... FAIL
+test_pause_reason_survives_restart (test_gateway_audit.GatewayAudit.test_pause_reason_survives_restart) ... FAIL
+test_per_client_credit_isolation (test_gateway_audit.GatewayAudit.test_per_client_credit_isolation) ... ok
+test_promo_rates (test_gateway_audit.GatewayAudit.test_promo_rates) ... ok
+test_real_uart_bottle_awards_time (test_gateway_audit.GatewayAudit.test_real_uart_bottle_awards_time) ... FAIL
+test_redeemed_voucher_credit_is_durable_immediately (test_gateway_audit.GatewayAudit.test_redeemed_voucher_credit_is_durable_immediately) ... FAIL
+test_restore_retains_durable_record (test_gateway_audit.GatewayAudit.test_restore_retains_durable_record) ... FAIL
+test_roaming_revokes_old_ip (test_gateway_audit.GatewayAudit.test_roaming_revokes_old_ip) ... FAIL
+test_simulator_requires_authentication (test_gateway_audit.GatewayAudit.test_simulator_requires_authentication) ... ok
+test_timer_accounts_for_elapsed_time_when_loop_is_delayed (test_gateway_audit.GatewayAudit.test_timer_accounts_for_elapsed_time_when_loop_is_delayed) ... FAIL
+test_transfer_concurrent_claim_only_one_wins (test_gateway_audit.GatewayAudit.test_transfer_concurrent_claim_only_one_wins) ... FAIL
+test_transfer_conserves_balance_and_is_single_use (test_gateway_audit.GatewayAudit.test_transfer_conserves_balance_and_is_single_use) ... ok
+test_two_depositors_cannot_own_gate_simultaneously (test_gateway_audit.GatewayAudit.test_two_depositors_cannot_own_gate_simultaneously) ... ok
+test_voucher_concurrent_redemption_only_one_wins (test_gateway_audit.GatewayAudit.test_voucher_concurrent_redemption_only_one_wins) ... FAIL
+test_voucher_is_single_use_sequentially (test_gateway_audit.GatewayAudit.test_voucher_is_single_use_sequentially) ... ok
+test_wallet_concurrent_withdrawal_cannot_overspend (test_gateway_audit.GatewayAudit.test_wallet_concurrent_withdrawal_cannot_overspend) ... FAIL
+test_expired_license_rejected (test_gateway_audit.LicenseAudit.test_expired_license_rejected) ... ok
+test_invalid_expiry_fails_closed (test_gateway_audit.LicenseAudit.test_invalid_expiry_fails_closed) ... FAIL
+test_missing_license_reports_unlicensed (test_gateway_audit.LicenseAudit.test_missing_license_reports_unlicensed) ... ok
+test_valid_perpetual_license_accepted (test_gateway_audit.LicenseAudit.test_valid_perpetual_license_accepted) ... ok
+test_wrong_board_rejected (test_gateway_audit.LicenseAudit.test_wrong_board_rejected) ... ok
+test_wrong_signature_rejected (test_gateway_audit.LicenseAudit.test_wrong_signature_rejected) ... ok
+
+======================================================================
+FAIL: test_admin_pause_cannot_be_undone_by_client (test_gateway_audit.GatewayAudit.test_admin_pause_cannot_be_undone_by_client)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 127, in test_admin_pause_cannot_be_undone_by_client
+    self.assertTrue(self.p.active_clients['10.0.7.117']['is_paused'])
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_auto_pause_when_last_client_disconnects (test_gateway_audit.GatewayAudit.test_auto_pause_when_last_client_disconnects)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 214, in test_auto_pause_when_last_client_disconnects
+    self.assertTrue(s['is_paused'])
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_custom_bandwidth_survives_restart (test_gateway_audit.GatewayAudit.test_custom_bandwidth_survives_restart)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 179, in test_custom_bandwidth_survives_restart
+    self.assertEqual((s['dl_kbps'],s['ul_kbps']),(5120,1024))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Tuples differ: (3072, 1536) != (5120, 1024)
+
+First differing element 0:
+3072
+5120
+
+- (3072, 1536)
++ (5120, 1024)
+
+======================================================================
+FAIL: test_duplicate_uart_event_not_counted_twice (test_gateway_audit.GatewayAudit.test_duplicate_uart_event_not_counted_twice)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 155, in test_duplicate_uart_event_not_counted_twice
+    self.assertEqual(c.execute('SELECT SUM(total_bottles) FROM stats').fetchone()[0],1)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 2 != 1
+
+======================================================================
+FAIL: test_expired_paused_credit_cannot_be_resumed_before_next_tick (test_gateway_audit.GatewayAudit.test_expired_paused_credit_cannot_be_resumed_before_next_tick)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 121, in test_expired_paused_credit_cannot_be_resumed_before_next_tick
+    self.assertFalse(any(x.args[1]=='add' for x in self.fw.call_args_list))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_forwarded_header_cannot_impersonate_another_client (test_gateway_audit.GatewayAudit.test_forwarded_header_cannot_impersonate_another_client)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 93, in test_forwarded_header_cannot_impersonate_another_client
+    self.assertEqual(r.json['remaining_seconds'],0)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 600 != 0
+
+======================================================================
+FAIL: test_mac_block_change_applied_immediately (test_gateway_audit.GatewayAudit.test_mac_block_change_applied_immediately)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 226, in test_mac_block_change_applied_immediately
+    self.assertTrue(apply.called)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_mac_reassignment_does_not_inherit_credit (test_gateway_audit.GatewayAudit.test_mac_reassignment_does_not_inherit_credit)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 132, in test_mac_reassignment_does_not_inherit_credit
+    self.assertEqual(self.p.ensure_client_session('10.0.7.117')['remaining_seconds'],0)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 600 != 0
+
+======================================================================
+FAIL: test_missing_license_blocks_existing_client_grant (test_gateway_audit.GatewayAudit.test_missing_license_blocks_existing_client_grant)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 99, in test_missing_license_blocks_existing_client_grant
+    self.assertFalse(any(x.args[1]=='add' for x in self.fw.call_args_list))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_missing_license_blocks_gate_open (test_gateway_audit.GatewayAudit.test_missing_license_blocks_gate_open)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 104, in test_missing_license_blocks_gate_open
+    self.assertFalse(r.json.get('success',False))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_missing_license_blocks_voucher_redemption (test_gateway_audit.GatewayAudit.test_missing_license_blocks_voucher_redemption)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 110, in test_missing_license_blocks_voucher_redemption
+    self.assertFalse(r.json.get('success',False))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_pause_reason_survives_restart (test_gateway_audit.GatewayAudit.test_pause_reason_survives_restart)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 189, in test_pause_reason_survives_restart
+    self.assertTrue(self.p.active_clients['10.0.7.117'].get('user_paused',False))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_real_uart_bottle_awards_time (test_gateway_audit.GatewayAudit.test_real_uart_bottle_awards_time)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 148, in test_real_uart_bottle_awards_time
+    self.assertEqual(r.json['added_minutes'],10)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 10
+
+======================================================================
+FAIL: test_redeemed_voucher_credit_is_durable_immediately (test_gateway_audit.GatewayAudit.test_redeemed_voucher_credit_is_durable_immediately)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 173, in test_redeemed_voucher_credit_is_durable_immediately
+    self.assertEqual(self.p.active_clients.get('10.0.7.117',{}).get('remaining_seconds'),600)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: None != 600
+
+======================================================================
+FAIL: test_restore_retains_durable_record (test_gateway_audit.GatewayAudit.test_restore_retains_durable_record)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 184, in test_restore_retains_durable_record
+    self.assertIn('10.0.7.117',self.p.active_clients)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: '10.0.7.117' not found in {}
+
+======================================================================
+FAIL: test_roaming_revokes_old_ip (test_gateway_audit.GatewayAudit.test_roaming_revokes_old_ip)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 138, in test_roaming_revokes_old_ip
+    self.assertTrue(any(x.args[:2]==('10.0.7.117','del') for x in self.fw.call_args_list))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_timer_accounts_for_elapsed_time_when_loop_is_delayed (test_gateway_audit.GatewayAudit.test_timer_accounts_for_elapsed_time_when_loop_is_delayed)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 201, in test_timer_accounts_for_elapsed_time_when_loop_is_delayed
+    self.assertEqual(s['remaining_seconds'],90)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 97 != 90
+
+======================================================================
+FAIL: test_transfer_concurrent_claim_only_one_wins (test_gateway_audit.GatewayAudit.test_transfer_concurrent_claim_only_one_wins)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 280, in test_transfer_concurrent_claim_only_one_wins
+    self.assertEqual(sum(x.get('success',False) for x in results),1,results)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 2 != 1 : [{'message': 'Claimed 10 minutes successfully!', 'success': True}, {'message': 'Claimed 10 minutes successfully!', 'success': True}]
+
+======================================================================
+FAIL: test_voucher_concurrent_redemption_only_one_wins (test_gateway_audit.GatewayAudit.test_voucher_concurrent_redemption_only_one_wins)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 274, in test_voucher_concurrent_redemption_only_one_wins
+    self.assertEqual(sum(x.get('success',False) for x in results),1,results)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 2 != 1 : [{'message': 'Successfully added 10 minutes!', 'success': True}, {'message': 'Successfully added 10 minutes!', 'success': True}]
+
+======================================================================
+FAIL: test_wallet_concurrent_withdrawal_cannot_overspend (test_gateway_audit.GatewayAudit.test_wallet_concurrent_withdrawal_cannot_overspend)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 288, in test_wallet_concurrent_withdrawal_cannot_overspend
+    self.assertEqual(sum(x.get('success',False) for x in results),1,results)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 2 != 1 : [{'message': 'Added 10 minutes from wallet to session!', 'success': True, 'wallet_minutes': 0}, {'message': 'Added 10 minutes from wallet to session!', 'success': True, 'wallet_minutes': 0}]
+
+======================================================================
+FAIL: test_invalid_expiry_fails_closed (test_gateway_audit.LicenseAudit.test_invalid_expiry_fails_closed)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 320, in test_invalid_expiry_fails_closed
+    self.assertFalse(self.status(expiry_date='not-a-date')['valid'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+----------------------------------------------------------------------
+Ran 38 tests in 4.029s
+
+FAILED (failures=21)

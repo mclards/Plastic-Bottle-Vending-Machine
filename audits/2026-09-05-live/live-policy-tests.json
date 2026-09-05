@@ -1,0 +1,43 @@
+[
+  {
+    "test": "/admin/api/clients requires authentication",
+    "pass": true,
+    "status": 401
+  },
+  {
+    "test": "/simulator/api/state requires authentication",
+    "pass": true,
+    "status": 401
+  },
+  {
+    "test": "paid-client DNS resolves public website",
+    "pass": true,
+    "observed": {
+      "answers": 2,
+      "ends_with_gateway_A": false
+    }
+  },
+  {
+    "test": "paid-client Android probe reports online through nginx",
+    "pass": true,
+    "status": 204,
+    "location": null
+  },
+  {
+    "test": "backend paid probe",
+    "pass": true,
+    "status": 204,
+    "note": "Backend is directly reachable from LAN; this bypasses nginx."
+  },
+  {
+    "test": "supplied X-Forwarded-For cannot change client identity",
+    "pass": true,
+    "actual_pc_seconds": 59,
+    "with_forged_header_seconds": 59
+  },
+  {
+    "test": "admin MAC block stops internet immediately",
+    "pass": true,
+    "observed": "TimeoutError"
+  }
+]

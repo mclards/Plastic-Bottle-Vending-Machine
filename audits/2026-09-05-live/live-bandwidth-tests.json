@@ -1,0 +1,42 @@
+[
+  {
+    "test": "download",
+    "configured_kbps": 3072,
+    "observed": {
+      "bytes": 2097152,
+      "seconds": 6.169,
+      "kbps": 2719.4
+    },
+    "passed": true
+  },
+  {
+    "test": "upload",
+    "configured_kbps": 1536,
+    "observed": {
+      "bytes": 524288,
+      "seconds": 2.834,
+      "kbps": 1480.1
+    },
+    "passed": true
+  },
+  {
+    "test": "download",
+    "configured_kbps": 1024,
+    "observed": {
+      "bytes": 2097152,
+      "seconds": 17.028,
+      "kbps": 985.3
+    },
+    "passed": true
+  },
+  {
+    "test": "upload",
+    "configured_kbps": 512,
+    "observed": {
+      "bytes": 524288,
+      "seconds": 8.46,
+      "kbps": 495.8
+    },
+    "passed": true
+  }
+]

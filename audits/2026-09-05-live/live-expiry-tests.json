@@ -1,0 +1,22 @@
+[
+  {
+    "test": "one-minute credit expires",
+    "pass": true,
+    "elapsed_seconds": 61.44,
+    "remaining_seconds": 0
+  },
+  {
+    "test": "expiry stops established HTTPS",
+    "pass": false,
+    "observed": {
+      "status": 200,
+      "bytes": 186,
+      "will_close": false
+    }
+  },
+  {
+    "test": "expiry blocks new HTTPS",
+    "pass": true,
+    "observed": "TimeoutError"
+  }
+]

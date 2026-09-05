@@ -75,19 +75,6 @@ server {
     listen [::]:80 default_server;
     server_name _;
 
-    # Captive Portal Trigger Intercepts (Android, iOS, Windows, ChromeOS)
-    location /redirect { return 302 http://10.0.0.1/; }
-    location /generate_204 { return 302 http://10.0.0.1/; }
-    location /gen_204 { return 302 http://10.0.0.1/; }
-    location /ncsi.txt { return 302 http://10.0.0.1/; }
-    location /connecttest.txt { return 302 http://10.0.0.1/; }
-    location /hotspot-detect.html { return 302 http://10.0.0.1/; }
-    location /canonical.html { return 302 http://10.0.0.1/; }
-    location /connectivitycheck.gstatic.com { return 302 http://10.0.0.1/; }
-    location /connectivitycheck.android.com { return 302 http://10.0.0.1/; }
-    location /msftconnecttest.com { return 302 http://10.0.0.1/; }
-    location /success.txt { return 302 http://10.0.0.1/; }
-
     # Static Assets Cache
     location /static/ {
         alias /opt/ecofi/static/;
@@ -189,7 +176,6 @@ address=/apple.com/10.0.0.1
 address=/captive.apple.com/10.0.0.1
 address=/detectportal.firefox.com/10.0.0.1
 
-address=/#/10.0.0.1
 address=/localhost/127.0.0.1
 address=/ecofi-vendo/10.0.0.1
 

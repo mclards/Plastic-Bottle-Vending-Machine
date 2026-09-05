@@ -1,0 +1,51 @@
+[
+  {
+    "test": "zero credit blocks new HTTPS",
+    "pass": true,
+    "observed": "TimeoutError"
+  },
+  {
+    "test": "credit permits HTTPS through WAN",
+    "pass": true,
+    "observed": {
+      "status": 200,
+      "bytes": 181,
+      "will_close": false
+    }
+  },
+  {
+    "test": "active countdown",
+    "pass": true,
+    "observed": [
+      119,
+      116
+    ]
+  },
+  {
+    "test": "pause stops established HTTPS",
+    "pass": true,
+    "observed": "TimeoutError"
+  },
+  {
+    "test": "paused countdown freezes",
+    "pass": true,
+    "observed": [
+      116,
+      116
+    ]
+  },
+  {
+    "test": "pause blocks new HTTPS",
+    "pass": true,
+    "observed": "TimeoutError"
+  },
+  {
+    "test": "resume permits HTTPS",
+    "pass": true,
+    "observed": {
+      "status": 200,
+      "bytes": 187,
+      "will_close": false
+    }
+  }
+]

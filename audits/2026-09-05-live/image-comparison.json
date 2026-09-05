@@ -1,0 +1,7 @@
+{
+  "source_sha256": "d924075a26b538f98bec989869e9c0df0bf61310541b0cc3e5fd9d1d41027383",
+  "image_portal_sha256": "d15b99c427f821e3d9347c4c53aa4e83bf8810a101682c5f7062850749963251",
+  "identical_after_newline_normalization": false,
+  "identical_python_AST": false,
+  "image_ipset_binary_exists": false
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "test": "missing license is detected live",
+    "pass": true,
+    "status": "UNLICENSED"
+  },
+  {
+    "test": "unlicensed board denies newly granted client internet",
+    "pass": true,
+    "observed": "TimeoutError"
+  },
+  {
+    "test": "original license restored",
+    "pass": true,
+    "remote": "RESTORED",
+    "error": ""
+  }
+]
