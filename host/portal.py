@@ -1,4 +1,5 @@
 import os
+import shutil
 import atexit
 import ipaddress
 import re
@@ -35,7 +36,7 @@ log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 app = Flask(__name__, static_folder='static')
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
-DB_PATH = 'vendo_sessions.db'
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vendo_sessions.db')
 active_clients = {}
 active_clients_lock = threading.RLock()
 active_depositor_ip = None
@@ -295,18 +296,20 @@ def setup_bandwidth_control(interface):
         subprocess.run(['tc', 'qdisc', 'del', 'dev', interface, 'root'], stderr=subprocess.DEVNULL)
         subprocess.run(['tc', 'qdisc', 'add', 'dev', interface, 'root', 'handle', '1:', 'htb', 'default', '99'], check=True)
         subprocess.run(['tc', 'class', 'add', 'dev', interface, 'parent', '1:', 'classid', '1:1', 'htb', 'rate', '100mbit'], check=True)
-        subprocess.run(['tc', 'class', 'add', 'dev', interface, 'parent', '1:1', 'classid', '1:99', 'htb', 'rate', '64kbit', 'ceil', '128kbit'], check=True)
+        subprocess.run(['tc', 'class', 'add', 'dev', interface, 'parent', '1:1', 'classid', '1:99', 'htb', 'rate', '100mbit'], check=True)
+        
         subprocess.run(['modprobe', 'ifb', 'numifbs=1'], stderr=subprocess.DEVNULL)
         res = subprocess.run(['ip', 'link', 'set', 'dev', 'ifb0', 'up'], stderr=subprocess.DEVNULL)
         if res.returncode == 0:
+            subprocess.run(['tc', 'qdisc', 'del', 'dev', interface, 'ingress'], stderr=subprocess.DEVNULL)
             subprocess.run(['tc', 'qdisc', 'add', 'dev', interface, 'ingress'], stderr=subprocess.DEVNULL)
             subprocess.run(['tc', 'filter', 'add', 'dev', interface, 'parent', 'ffff:', 'protocol', 'ip', 'u32', 'match', 'u32', '0', '0', 'action', 'mirred', 'egress', 'redirect', 'dev', 'ifb0'], stderr=subprocess.DEVNULL)
             subprocess.run(['tc', 'qdisc', 'del', 'dev', 'ifb0', 'root'], stderr=subprocess.DEVNULL)
             subprocess.run(['tc', 'qdisc', 'add', 'dev', 'ifb0', 'root', 'handle', '1:', 'htb', 'default', '99'], check=True)
             subprocess.run(['tc', 'class', 'add', 'dev', 'ifb0', 'parent', '1:', 'classid', '1:1', 'htb', 'rate', '100mbit'], check=True)
-            subprocess.run(['tc', 'class', 'add', 'dev', 'ifb0', 'parent', '1:1', 'classid', '1:99', 'htb', 'rate', '64kbit', 'ceil', '128kbit'], check=True)
-    except Exception:
-        pass
+            subprocess.run(['tc', 'class', 'add', 'dev', 'ifb0', 'parent', '1:1', 'classid', '1:99', 'htb', 'rate', '100mbit'], check=True)
+    except Exception as e:
+        log.error('setup_bandwidth_control error: %s', e)
 
 def apply_client_bandwidth(ip, dl_kbps, ul_kbps):
     if platform.system() == 'Windows':
@@ -315,14 +318,16 @@ def apply_client_bandwidth(ip, dl_kbps, ul_kbps):
     try:
         ip_int = int(ipaddress.IPv4Address(ip))
         mark = 100 + (ip_int & 16383)
+        dl_kbps = max(64, int(dl_kbps))
+        ul_kbps = max(64, int(ul_kbps))
         subprocess.run(['tc', 'class', 'replace', 'dev', interface, 'parent', '1:1', 'classid', '1:{}'.format(mark), 'htb', 'rate', '{}kbit'.format(dl_kbps), 'ceil', '{}kbit'.format(dl_kbps), 'burst', '15k'], check=True)
         subprocess.run(['tc', 'filter', 'replace', 'dev', interface, 'protocol', 'ip', 'parent', '1:', 'prio', str(mark), 'u32', 'match', 'ip', 'dst', '{}/32'.format(ip), 'flowid', '1:{}'.format(mark)], check=True)
         res = subprocess.run(['ip', 'link', 'show', 'ifb0'], stderr=subprocess.DEVNULL)
         if res.returncode == 0:
             subprocess.run(['tc', 'class', 'replace', 'dev', 'ifb0', 'parent', '1:1', 'classid', '1:{}'.format(mark), 'htb', 'rate', '{}kbit'.format(ul_kbps), 'ceil', '{}kbit'.format(ul_kbps), 'burst', '15k'], check=True)
             subprocess.run(['tc', 'filter', 'replace', 'dev', 'ifb0', 'protocol', 'ip', 'parent', '1:', 'prio', str(mark), 'u32', 'match', 'ip', 'src', '{}/32'.format(ip), 'flowid', '1:{}'.format(mark)], check=True)
-    except Exception:
-        pass
+    except Exception as e:
+        log.error('apply_client_bandwidth error: %s', e)
 
 def remove_client_bandwidth(ip):
     if platform.system() == 'Windows':
@@ -337,8 +342,8 @@ def remove_client_bandwidth(ip):
         if res.returncode == 0:
             subprocess.run(['tc', 'filter', 'del', 'dev', 'ifb0', 'protocol', 'ip', 'parent', '1:', 'prio', str(mark)], stderr=subprocess.DEVNULL)
             subprocess.run(['tc', 'class', 'del', 'dev', 'ifb0', 'parent', '1:1', 'classid', '1:{}'.format(mark)], stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
+    except Exception as e:
+        log.error('remove_client_bandwidth error: %s', e)
 
 def sync_client_firewall(ip):
     with active_clients_lock:
@@ -389,31 +394,68 @@ def setup_firewall():
     if platform.system() == 'Windows':
         return
     try:
-        subprocess.run(['ipset', 'create', 'ecofi_auth', 'hash:ip', 'timeout', '86400', '-exist'], check=True)
-        res = subprocess.run(['iptables', '-t', 'nat', '-C', 'PREROUTING', '-m', 'set', '--match-set', 'ecofi_auth', 'dst', '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
+        subprocess.run(['sysctl', '-w', 'net.ipv4.ip_forward=1'], stderr=subprocess.DEVNULL)
+        has_ipset = shutil.which('ipset') is not None
+        if has_ipset:
+            subprocess.run(['ipset', 'create', 'ecofi_auth', 'hash:ip', 'timeout', '86400', '-exist'], stderr=subprocess.DEVNULL)
+
+        # FORWARD chain setup
+        subprocess.run(['iptables', '-N', 'ECOFI_AUTH'], stderr=subprocess.DEVNULL)
+        subprocess.run(['iptables', '-F', 'ECOFI_AUTH'], stderr=subprocess.DEVNULL)
+        subprocess.run(['iptables', '-P', 'FORWARD', 'DROP'], stderr=subprocess.DEVNULL)
+
+        res = subprocess.run(['iptables', '-C', 'FORWARD', '-j', 'ECOFI_AUTH'], stderr=subprocess.DEVNULL)
         if res.returncode != 0:
-            subprocess.run(['iptables', '-t', 'nat', '-I', 'PREROUTING', '1', '-m', 'set', '--match-set', 'ecofi_auth', 'dst', '-j', 'ACCEPT'], check=True)
-        if get_config('anti_tethering', '1') == '1':
-            res = subprocess.run(['iptables', '-t', 'mangle', '-C', 'POSTROUTING', '-j', 'TTL', '--ttl-set', '64'], stderr=subprocess.DEVNULL)
+            subprocess.run(['iptables', '-I', 'FORWARD', '1', '-j', 'ECOFI_AUTH'])
+
+        if has_ipset:
+            res = subprocess.run(['iptables', '-C', 'FORWARD', '-m', 'set', '--match-set', 'ecofi_auth', 'src', '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
             if res.returncode != 0:
-                subprocess.run(['iptables', '-t', 'mangle', '-A', 'POSTROUTING', '-j', 'TTL', '--ttl-set', '64'], check=True)
-        subprocess.run(['iptables', '-P', 'FORWARD', 'DROP'])
-        res = subprocess.run(['iptables', '-C', 'FORWARD', '-m', 'set', '--match-set', 'ecofi_auth', 'src', '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
-        if res.returncode != 0:
-            subprocess.run(['iptables', '-A', 'FORWARD', '-m', 'set', '--match-set', 'ecofi_auth', 'src', '-j', 'ACCEPT'])
+                subprocess.run(['iptables', '-A', 'FORWARD', '-m', 'set', '--match-set', 'ecofi_auth', 'src', '-j', 'ACCEPT'])
+
         res = subprocess.run(['iptables', '-C', 'FORWARD', '-m', 'state', '--state', 'ESTABLISHED,RELATED', '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
         if res.returncode != 0:
             subprocess.run(['iptables', '-A', 'FORWARD', '-m', 'state', '--state', 'ESTABLISHED,RELATED', '-j', 'ACCEPT'])
+
         res = subprocess.run(['iptables', '-C', 'FORWARD', '-p', 'udp', '--dport', '53', '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
         if res.returncode != 0:
             subprocess.run(['iptables', '-A', 'FORWARD', '-p', 'udp', '--dport', '53', '-j', 'ACCEPT'])
         res = subprocess.run(['iptables', '-C', 'FORWARD', '-p', 'tcp', '--dport', '53', '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
         if res.returncode != 0:
             subprocess.run(['iptables', '-A', 'FORWARD', '-p', 'tcp', '--dport', '53', '-j', 'ACCEPT'])
-        setup_bandwidth_control(get_lan_interface())
+
+        # NAT PREROUTING captive redirect
+        subprocess.run(['iptables', '-t', 'nat', '-N', 'ECOFI_PORTAL'], stderr=subprocess.DEVNULL)
+        subprocess.run(['iptables', '-t', 'nat', '-N', 'ECOFI_AUTH_NAT'], stderr=subprocess.DEVNULL)
+        subprocess.run(['iptables', '-t', 'nat', '-F', 'ECOFI_AUTH_NAT'], stderr=subprocess.DEVNULL)
+        res = subprocess.run(['iptables', '-t', 'nat', '-C', 'PREROUTING', '-j', 'ECOFI_PORTAL'], stderr=subprocess.DEVNULL)
+        if res.returncode != 0:
+            subprocess.run(['iptables', '-t', 'nat', '-I', 'PREROUTING', '1', '-j', 'ECOFI_PORTAL'])
+
+        subprocess.run(['iptables', '-t', 'nat', '-F', 'ECOFI_PORTAL'], stderr=subprocess.DEVNULL)
+        subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_PORTAL', '-d', '10.0.0.1', '-j', 'RETURN'])
+        subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_PORTAL', '-p', 'udp', '--dport', '53', '-j', 'RETURN'])
+        subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_PORTAL', '-p', 'tcp', '--dport', '53', '-j', 'RETURN'])
+        if has_ipset:
+            subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_PORTAL', '-m', 'set', '--match-set', 'ecofi_auth', 'src', '-j', 'ACCEPT'])
+        subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_PORTAL', '-j', 'ECOFI_AUTH_NAT'])
+        subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_PORTAL', '-p', 'tcp', '--dport', '80', '-j', 'REDIRECT', '--to-port', '80'])
+
+        # NAT POSTROUTING Masquerade
+        res = subprocess.run(['iptables', '-t', 'nat', '-C', 'POSTROUTING', '-o', 'eth0', '-j', 'MASQUERADE'], stderr=subprocess.DEVNULL)
+        if res.returncode != 0:
+            subprocess.run(['iptables', '-t', 'nat', '-A', 'POSTROUTING', '-o', 'eth0', '-j', 'MASQUERADE'])
+
+        if get_config('anti_tethering', '1') == '1':
+            res = subprocess.run(['iptables', '-t', 'mangle', '-C', 'POSTROUTING', '-j', 'TTL', '--ttl-set', '64'], stderr=subprocess.DEVNULL)
+            if res.returncode != 0:
+                subprocess.run(['iptables', '-t', 'mangle', '-A', 'POSTROUTING', '-j', 'TTL', '--ttl-set', '64'], stderr=subprocess.DEVNULL)
+
+        lan_iface = get_lan_interface()
+        setup_bandwidth_control(lan_iface)
         apply_walled_garden_and_macs()
-    except Exception:
-        pass
+    except Exception as e:
+        log.error('setup_firewall error: %s', e)
 
 def update_firewall(ip, action, timeout_sec=0, dl_kbps=3072, ul_kbps=1536):
     if platform.system() == 'Windows':
@@ -422,25 +464,35 @@ def update_firewall(ip, action, timeout_sec=0, dl_kbps=3072, ul_kbps=1536):
         ip = str(ipaddress.ip_address(ip))
     except ValueError:
         return
+    if ip in ('127.0.0.1', '10.0.0.1', '::1', 'localhost'):
+        return
+    has_ipset = shutil.which('ipset') is not None
     try:
         if action == 'add':
-            subprocess.run(['ipset', 'add', 'ecofi_auth', ip, 'timeout', str(int(timeout_sec)), '-exist'], check=True)
+            res = subprocess.run(['iptables', '-C', 'ECOFI_AUTH', '-s', ip, '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
+            if res.returncode != 0:
+                subprocess.run(['iptables', '-A', 'ECOFI_AUTH', '-s', ip, '-j', 'ACCEPT'], check=True)
+            res = subprocess.run(['iptables', '-t', 'nat', '-C', 'ECOFI_AUTH_NAT', '-s', ip, '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
+            if res.returncode != 0:
+                subprocess.run(['iptables', '-t', 'nat', '-A', 'ECOFI_AUTH_NAT', '-s', ip, '-j', 'ACCEPT'], check=True)
+            if has_ipset:
+                subprocess.run(['ipset', 'add', 'ecofi_auth', ip, 'timeout', str(int(timeout_sec)), '-exist'], stderr=subprocess.DEVNULL)
             apply_client_bandwidth(ip, dl_kbps, ul_kbps)
         elif action == 'del':
-            subprocess.run(['ipset', 'del', 'ecofi_auth', ip, '-exist'], check=True)
+            while True:
+                res = subprocess.run(['iptables', '-D', 'ECOFI_AUTH', '-s', ip, '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
+                if res.returncode != 0:
+                    break
+            while True:
+                res = subprocess.run(['iptables', '-t', 'nat', '-D', 'ECOFI_AUTH_NAT', '-s', ip, '-j', 'ACCEPT'], stderr=subprocess.DEVNULL)
+                if res.returncode != 0:
+                    break
+            if has_ipset:
+                subprocess.run(['ipset', 'del', 'ecofi_auth', ip, '-exist'], stderr=subprocess.DEVNULL)
             remove_client_bandwidth(ip)
-    except Exception:
-        pass
+    except Exception as e:
+        log.error('update_firewall error: %s', e)
 
-def sync_client_firewall(ip):
-    with active_clients_lock:
-        if ip not in active_clients:
-            return
-        sess = active_clients[ip]
-        if sess['remaining_seconds'] > 0 and (not sess.get('is_paused', False)):
-            update_firewall(ip, 'add', sess['remaining_seconds'], sess.get('dl_kbps', 3072), sess.get('ul_kbps', 1536))
-        else:
-            update_firewall(ip, 'del')
 import math
 
 def calculate_pause_validity_seconds(remaining_seconds):
@@ -503,7 +555,6 @@ def restore_sessions_from_db():
 atexit.register(save_sessions_to_db)
 
 def time_daemon():
-    setup_firewall()
     tick = 0
     while True:
         tick += 1
@@ -697,8 +748,8 @@ def api_client_pause():
     data = request.get_json() or {}
     action = data.get('action', 'pause')
     with active_clients_lock:
-        if client_ip in active_clients:
-            sess = active_clients[client_ip]
+        sess = ensure_client_session(client_ip)
+        if sess:
             if action == 'pause':
                 sess['is_paused'] = True
                 sess['user_paused'] = True
@@ -710,6 +761,7 @@ def api_client_pause():
                 sess['paused_at'] = 0
                 sess['expires_at'] = 0
             sync_client_firewall(client_ip)
+            save_sessions_to_db()
             return jsonify({'success': True, 'is_paused': sess['is_paused'], 'expires_at': sess.get('expires_at', 0)})
     return jsonify({'success': False})
 
@@ -1812,6 +1864,7 @@ def hardware_serial_daemon():
             ser = None
             time.sleep(3)
 if __name__ == '__main__':
+    setup_firewall()
     restore_sessions_from_db()
     threading.Thread(target=time_daemon, daemon=True).start()
     if serial:
