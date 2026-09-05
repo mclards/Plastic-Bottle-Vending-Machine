@@ -3,13 +3,13 @@
 # ECO-Fi OS Image Rebuilder & Customizer
 # Deep Cleaning, Hardening & ECO-Fi Integration for Orange Pi One
 # Base: resources/PisoFi_Opi1&PC_v5.3.0-05-10-26_EXT.img
-# Target: resources/EcoFi_Opi_v1.1.img
+# Target: resources/EcoFi_Opi_v1.2.img
 # ==============================================================================
 
 set -e
 
 BASE_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/PisoFi_Opi1&PC_v5.3.0-05-10-26_EXT.img"
-TARGET_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/EcoFi_Opi_v1.1.img"
+TARGET_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/EcoFi_Opi_v1.2.img"
 MOUNT_DIR="/tmp/ecofi_mount"
 SOURCE_HOST="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/host"
 
@@ -221,22 +221,11 @@ if [[ -n "$LAN_IFACE" ]]; then
     iptables -t nat -C POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 else
     # =========================================================================
-    # SINGLE-PORT BENCH TEST MODE:
-    # No USB adapter detected. Use onboard port (eth0) as LAN (10.0.0.1/19 + DHCP).
-    # Allows direct connection to PC or single Access Point with instant DHCP.
+    # SINGLE-PORT BENCH TEST MODE (DEPRECATED):
+    # We no longer automatically hijack eth0 here, because it causes a boot race 
+    # condition if the USB adapter is just slow to initialize. 
     # =========================================================================
-    killall -9 dhclient 2>/dev/null || true
-    ip addr flush dev eth0 2>/dev/null || true
-    ip addr add 10.0.0.1/19 dev eth0 2>/dev/null || true
-    ip link set eth0 up
-
-    # Bind dnsmasq to eth0 so connected PC receives DHCP IP automatically
-    sed -i "s/^interface=.*/interface=eth0/" /etc/dnsmasq.conf 2>/dev/null || true
-
-    WAN=$(ip route | grep default | awk '{print $5}' | head -n 1)
-    if [[ -n "$WAN" && "$WAN" != "eth0" ]]; then
-        iptables -t nat -C POSTROUTING -o "$WAN" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o "$WAN" -j MASQUERADE
-    fi
+    echo "No USB LAN adapter detected yet. Waiting for udev..."
 fi
 
 # Restart dnsmasq cleanly so DHCP is 100% active on the designated LAN interface
