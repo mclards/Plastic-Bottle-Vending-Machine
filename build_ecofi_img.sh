@@ -128,21 +128,31 @@ ROOT_HASH='$6$JpJzc5Fnsdll3j83$D9xx8MwvyG9KoulpMUVrD8JfSWwfOV5QkcxAdI0z4GeT5FpbC
 sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$MOUNT_DIR/etc/shadow"
 sed -i "s|^pi:[^:]*:|pi:${ROOT_HASH}:|" "$MOUNT_DIR/etc/shadow"
 
-# Configure /etc/network/interfaces with non-blocking manual interfaces (managed dynamically by setup_network.sh)
+# Configure /etc/network/interfaces: eth0 = WAN (ISP via DHCP), eth1 = LAN (AP static 10.0.0.1/19)
 cat << 'EOF' > "$MOUNT_DIR/etc/network/interfaces"
 auto lo
 iface lo inet loopback
 
 auto eth0
 allow-hotplug eth0
-iface eth0 inet manual
+iface eth0 inet dhcp
 
 auto eth1
 allow-hotplug eth1
-iface eth1 inet manual
+iface eth1 inet static
+    address 10.0.0.1
+    netmask 255.255.224.0
+    broadcast 10.0.31.255
 EOF
 
 rm -rf "$MOUNT_DIR/etc/network/interfaces.d/"* 2>/dev/null || true
+
+# Prevent dhcpcd from assigning link-local or default routes to LAN AP adapter
+if [ -f "$MOUNT_DIR/etc/dhcpcd.conf" ]; then
+    if ! grep -q "denyinterfaces eth1" "$MOUNT_DIR/etc/dhcpcd.conf"; then
+        echo -e "\ndenyinterfaces eth1 usb0 enx*" >> "$MOUNT_DIR/etc/dhcpcd.conf"
+    fi
+fi
 
 # Configure /etc/dnsmasq.conf with full DHCP pool and captive portal wildcard
 cat << 'EOF' > "$MOUNT_DIR/etc/dnsmasq.conf"
@@ -215,18 +225,27 @@ if [[ -n "$LAN_IFACE" ]]; then
     # USB Adapter ($LAN_IFACE) = LAN for Access Point (Static 10.0.0.1/19 + DHCP)
     # Onboard Port (eth0)      = WAN for ISP Router (Dynamic DHCP Client)
     # =========================================================================
-    ip addr flush dev "$LAN_IFACE" 2>/dev/null || true
-    ip addr add 10.0.0.1/19 dev "$LAN_IFACE" 2>/dev/null || true
+    # Remove link-local / spurious routes on LAN interface
+    ip addr show dev "$LAN_IFACE" | grep -o '169\.254\.[0-9.]*' | while read -r ip; do ip addr del "$ip/16" dev "$LAN_IFACE" 2>/dev/null || true; done
+    ip route del default dev "$LAN_IFACE" 2>/dev/null || true
+
+    # Assign static 10.0.0.1/19 if not present
+    if ! ip addr show dev "$LAN_IFACE" | grep -q '10\.0\.0\.1/19'; then
+        ip addr add 10.0.0.1/19 dev "$LAN_IFACE" 2>/dev/null || true
+    fi
     ip link set "$LAN_IFACE" up
 
     # Bind dnsmasq to USB-LAN adapter only
     sed -i "s/^interface=.*/interface=$LAN_IFACE/" /etc/dnsmasq.conf 2>/dev/null || true
 
-    # Prepare eth0 for WAN (ISP Router)
-    ip addr flush dev eth0 2>/dev/null || true
+    # Prepare eth0 for WAN (ISP Router via DHCP)
     ip link set eth0 up
-    killall -9 dhclient 2>/dev/null || true
-    dhclient -4 -nw -pf /run/dhclient.eth0.pid eth0 2>/dev/null || true
+    if ! pgrep -f "dhclient.*eth0" >/dev/null; then
+        dhclient -4 -nw -pf /run/dhclient.eth0.pid eth0 2>/dev/null || true
+    fi
+
+    # Explicitly enforce NAT Masquerade out eth0 to ISP
+    iptables -t nat -C POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 else
     # =========================================================================
     # SINGLE-PORT BENCH TEST MODE:
@@ -240,16 +259,15 @@ else
 
     # Bind dnsmasq to eth0 so connected PC receives DHCP IP automatically
     sed -i "s/^interface=.*/interface=eth0/" /etc/dnsmasq.conf 2>/dev/null || true
+
+    WAN=$(ip route | grep default | awk '{print $5}' | head -n 1)
+    if [[ -n "$WAN" && "$WAN" != "eth0" ]]; then
+        iptables -t nat -C POSTROUTING -o "$WAN" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o "$WAN" -j MASQUERADE
+    fi
 fi
 
 # Restart dnsmasq cleanly so DHCP is 100% active on the designated LAN interface
 systemctl restart dnsmasq 2>/dev/null || true
-
-# Dynamic WAN NAT Masquerade out to Internet (whichever route is default)
-WAN=$(ip route | grep default | awk '{print $5}' | head -n 1)
-if [[ -n "$WAN" ]]; then
-    iptables -t nat -C POSTROUTING -o "$WAN" -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o "$WAN" -j MASQUERADE
-fi
 EOF
 chmod +x "$MOUNT_DIR/opt/ecofi/setup_network.sh"
 

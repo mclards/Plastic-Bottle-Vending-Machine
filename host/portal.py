@@ -17,6 +17,7 @@ from datetime import datetime
 from collections import deque
 from flask import Flask, request, render_template_string, jsonify, session, redirect, url_for, Response, send_file
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.middleware.proxy_fix import ProxyFix
 import logging
 try:
     import openpyxl
@@ -33,12 +34,26 @@ import license_manager
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 app = Flask(__name__, static_folder='static')
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 DB_PATH = 'vendo_sessions.db'
 active_clients = {}
 active_clients_lock = threading.RLock()
 active_depositor_ip = None
 active_depositor_timeout = 0
 ser = None
+
+def get_client_ip():
+    xff = request.headers.get('X-Forwarded-For')
+    if xff:
+        ip = xff.split(',')[0].strip()
+        if ip:
+            return ip
+    x_real = request.headers.get('X-Real-IP')
+    if x_real:
+        ip = x_real.strip()
+        if ip:
+            return ip
+    return request.remote_addr or '127.0.0.1'
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:
@@ -456,6 +471,8 @@ def save_sessions_to_db():
             c.execute('CREATE TABLE IF NOT EXISTS active_sessions (\n                ip TEXT PRIMARY KEY, mac TEXT, remaining_seconds INTEGER, \n                is_paused INTEGER, dl_kbps INTEGER, ul_kbps INTEGER, \n                pending_bottles INTEGER, paused_at REAL, expires_at REAL, saved_at REAL)')
             c.execute('DELETE FROM active_sessions')
             for ip, s in active_clients.items():
+                if ip in ('127.0.0.1', '10.0.0.1', '::1', 'localhost'):
+                    continue
                 c.execute('INSERT INTO active_sessions \n                    (ip, mac, remaining_seconds, is_paused, dl_kbps, ul_kbps, pending_bottles, paused_at, expires_at, saved_at)\n                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', (ip, s['mac'], s['remaining_seconds'], 1 if s.get('is_paused', False) else 0, s.get('dl_kbps', 3072), s.get('ul_kbps', 1536), s.get('pending_bottles', 0), s.get('paused_at', 0), s.get('expires_at', 0), time.time()))
             conn.commit()
 
@@ -474,7 +491,7 @@ def restore_sessions_from_db():
                     ip, mac, remaining, is_paused, dl, ul, pending, paused_at, expires_at = row
                     if is_paused and expires_at and (expires_at > 0) and (now > expires_at):
                         continue
-                    if remaining > 0:
+                    if remaining > 0 and ip not in ('127.0.0.1', '10.0.0.1', '::1', 'localhost'):
                         client_dl = dl if dl and dl not in [5120, 2048] else default_dl
                         client_ul = ul if ul and ul not in [5120, 1024] else default_ul
                         active_clients[ip] = {'mac': mac, 'remaining_seconds': remaining, 'is_paused': bool(is_paused), 'dl_kbps': client_dl, 'ul_kbps': client_ul, 'pending_bottles': pending, 'paused_at': paused_at or 0, 'expires_at': expires_at or 0}
@@ -546,6 +563,8 @@ def time_daemon():
 
 def ensure_client_session(ip):
     with active_clients_lock:
+        if ip in ('127.0.0.1', '10.0.0.1', '::1', 'localhost'):
+            return {'mac': '00:00:00:00:00:00', 'pending_bottles': 0, 'remaining_seconds': 0, 'is_paused': False, 'paused_at': 0, 'expires_at': 0, 'dl_kbps': 0, 'ul_kbps': 0}
         if ip in active_clients:
             return active_clients[ip]
         arp_table = get_arp_table()
@@ -565,7 +584,7 @@ PORTAL_HTML = '\n<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="U
 
 @app.route('/')
 def index():
-    client_ip = request.remote_addr or '127.0.0.1'
+    client_ip = get_client_ip()
     session_data = ensure_client_session(client_ip)
     with sqlite3.connect(DB_PATH) as conn:
         c = conn.cursor()
@@ -581,11 +600,12 @@ def index():
 @app.route('/api/vendo/status')
 @app.route('/api/status')
 def api_vendo_status():
-    client_ip = request.remote_addr or '127.0.0.1'
+    client_ip = get_client_ip()
     session_data = ensure_client_session(client_ip)
     sim_status = esp32.get_state()
-    session_bottles = sim_status.get('session_bottles', 0)
-    session_added_minutes = calculate_minutes_for_bottles(session_bottles)
+    is_current_depositor = (active_depositor_ip is not None and active_depositor_ip == client_ip)
+    session_bottles = sim_status.get('session_bottles', 0) if is_current_depositor else 0
+    session_added_minutes = calculate_minutes_for_bottles(session_bottles) if is_current_depositor else 0
     is_bin_full = sim_status.get('is_bin_full', False) or sim_status.get('bin_full_alert', False) or get_config('hw_bin_full', '0') == '1'
     expires_at = session_data.get('expires_at', 0)
     expires_str = ''
@@ -594,13 +614,13 @@ def api_vendo_status():
     elif not session_data.get('is_paused') and session_data.get('remaining_seconds', 0) > 0:
         proj_exp = compute_session_expiration(session_data['remaining_seconds'])
         expires_str = datetime.fromtimestamp(proj_exp).strftime('%b %d, %I:%M %p')
-    return jsonify({'remaining_seconds': session_data.get('remaining_seconds', 0), 'client_time_remaining': session_data.get('remaining_seconds', 0), 'is_paused': session_data.get('is_paused', False), 'paused_at': session_data.get('paused_at', 0), 'expires_at': expires_at, 'expires_str': expires_str, 'validity_hours': calculate_pause_validity_seconds(session_data.get('remaining_seconds', 0)) // 3600, 'session_bottles': session_bottles, 'session_added_minutes': session_added_minutes, 'gate_open': sim_status.get('entrance_servo', 0) > 45, 'bin_full': is_bin_full})
+    return jsonify({'remaining_seconds': session_data.get('remaining_seconds', 0), 'client_time_remaining': session_data.get('remaining_seconds', 0), 'is_paused': session_data.get('is_paused', False), 'paused_at': session_data.get('paused_at', 0), 'expires_at': expires_at, 'expires_str': expires_str, 'validity_hours': calculate_pause_validity_seconds(session_data.get('remaining_seconds', 0)) // 3600, 'session_bottles': session_bottles, 'session_added_minutes': session_added_minutes, 'gate_open': sim_status.get('entrance_servo', 0) > 45 if is_current_depositor else False, 'bin_full': is_bin_full})
 
 @app.route('/api/vendo/open_gate', methods=['POST'])
 @app.route('/api/open_gate', methods=['POST'])
 def api_open_gate():
     global active_depositor_ip, active_depositor_timeout
-    client_ip = request.remote_addr or '127.0.0.1'
+    client_ip = get_client_ip()
     is_bin_full = get_config('hw_bin_full', '0') == '1' or esp32.get_state().get('is_bin_full', False)
     if is_bin_full:
         return jsonify({'success': False, 'error': 'Storage bin is full. Please contact administrator to empty the bin.'})
@@ -621,7 +641,7 @@ def api_open_gate():
 @app.route('/api/vendo/done', methods=['POST'])
 def api_vendo_done():
     global active_depositor_ip, active_depositor_timeout
-    client_ip = request.remote_addr or '127.0.0.1'
+    client_ip = get_client_ip()
     with active_clients_lock:
         if active_depositor_ip and active_depositor_ip != client_ip:
             return jsonify({'success': False, 'error': 'You are not the active depositor.'})
@@ -648,7 +668,7 @@ def api_vendo_done():
 @app.route('/generate_204')
 @app.route('/gen_204')
 def captive_generate_204():
-    client_ip = request.remote_addr or '127.0.0.1'
+    client_ip = get_client_ip()
     session_data = ensure_client_session(client_ip)
     if session_data.get('remaining_seconds', 0) > 0 and (not session_data.get('is_paused', False)):
         return ('', 204)
@@ -656,7 +676,7 @@ def captive_generate_204():
 
 @app.route('/hotspot-detect.html')
 def captive_hotspot_detect():
-    client_ip = request.remote_addr or '127.0.0.1'
+    client_ip = get_client_ip()
     session_data = ensure_client_session(client_ip)
     if session_data.get('remaining_seconds', 0) > 0 and (not session_data.get('is_paused', False)):
         return ('<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>', 200, {'Content-Type': 'text/html'})
@@ -665,7 +685,7 @@ def captive_hotspot_detect():
 @app.route('/connecttest.txt')
 @app.route('/ncsi.txt')
 def captive_msft():
-    client_ip = request.remote_addr or '127.0.0.1'
+    client_ip = get_client_ip()
     session_data = ensure_client_session(client_ip)
     if session_data.get('remaining_seconds', 0) > 0 and (not session_data.get('is_paused', False)):
         return ('Microsoft NCSI', 200, {'Content-Type': 'text/plain'})
@@ -673,7 +693,7 @@ def captive_msft():
 
 @app.route('/api/client/pause', methods=['POST'])
 def api_client_pause():
-    client_ip = request.remote_addr or '127.0.0.1'
+    client_ip = get_client_ip()
     data = request.get_json() or {}
     action = data.get('action', 'pause')
     with active_clients_lock:
@@ -695,7 +715,7 @@ def api_client_pause():
 
 @app.route('/api/voucher/redeem', methods=['POST'])
 def api_voucher_redeem():
-    client_ip = request.remote_addr or '127.0.0.1'
+    client_ip = get_client_ip()
     data = request.get_json() or {}
     code = data.get('code', '').strip().upper()
     with sqlite3.connect(DB_PATH) as conn:
@@ -721,7 +741,7 @@ def api_voucher_redeem():
 
 @app.route('/api/transfer/generate', methods=['POST'])
 def api_transfer_generate():
-    client_ip = request.remote_addr or '127.0.0.1'
+    client_ip = get_client_ip()
     data = request.get_json() or {}
     requested_mins = data.get('minutes')
     with active_clients_lock:
@@ -753,7 +773,7 @@ def api_transfer_generate():
 
 @app.route('/api/transfer/claim', methods=['POST'])
 def api_transfer_claim():
-    client_ip = request.remote_addr or '127.0.0.1'
+    client_ip = get_client_ip()
     data = request.get_json() or {}
     code = data.get('code', '').strip()
     with sqlite3.connect(DB_PATH) as conn:
@@ -826,7 +846,7 @@ def api_member_login():
 
 @app.route('/api/member/use_wallet', methods=['POST'])
 def api_member_use_wallet():
-    client_ip = request.remote_addr or '127.0.0.1'
+    client_ip = get_client_ip()
     data = request.get_json() or {}
     username = data.get('username', '').strip()
     pin = data.get('pin', '').strip()
@@ -859,7 +879,7 @@ def api_member_use_wallet():
 
 @app.route('/api/member/save_time', methods=['POST'])
 def api_member_save_time():
-    client_ip = request.remote_addr or '127.0.0.1'
+    client_ip = get_client_ip()
     data = request.get_json() or {}
     username = data.get('username', '').strip()
     pin = data.get('pin', '').strip()
@@ -1142,7 +1162,7 @@ admin_login_attempts = {}
 def admin_login():
     error = None
     if request.method == 'POST':
-        client_ip = request.remote_addr or '127.0.0.1'
+        client_ip = get_client_ip()
         now = time.time()
         if client_ip in admin_login_attempts:
             count, last_time = admin_login_attempts[client_ip]
