@@ -90,6 +90,76 @@ enum EventMsg {
     MSG_GATE_TIMEOUT
 };
 
+// One durable receipt is allowed in flight. Never open the next intake until ACK.
+// phase 1 = drop in progress/uncertain after reset, 2 = accepted, 3 = failed drop.
+struct CreditJournal {
+    uint32_t version = 2;
+    uint64_t sequence = 0;
+    uint32_t total = 0;
+    uint8_t phase = 0;
+    char session[37] = {};
+};
+CreditJournal creditJournal;
+Preferences creditStore;
+SemaphoreHandle_t creditMutex;
+std::atomic<bool> creditStorageOk{false};
+std::atomic<bool> depositCycleBusy{false};
+struct QueuedEvent { EventMsg kind; char session[37]; };
+
+bool saveCreditJournal() { // Caller holds creditMutex; NVS blob replacement is atomic.
+    bool ok = creditStore.putBytes("receipt", &creditJournal, sizeof(creditJournal)) == sizeof(creditJournal);
+    creditStorageOk = ok;
+    return ok;
+}
+String receiptId() {
+    char value[64];
+    snprintf(value, sizeof(value), "%012llx:%llu", (unsigned long long)ESP.getEfuseMac(),
+             (unsigned long long)creditJournal.sequence);
+    return String(value);
+}
+void scopedEvent(const char* event, const char* session) {
+    JsonDocument doc; doc["event"] = event; doc["protocol"] = 2; doc["session_id"] = session;
+    String output; serializeJson(doc, output); Serial.println(output);
+}
+void postEvent(EventMsg kind) {
+    QueuedEvent event = {}; event.kind = kind;
+    xSemaphoreTake(creditMutex, portMAX_DELAY);
+    strlcpy(event.session, creditJournal.session, sizeof(event.session));
+    xSemaphoreGive(creditMutex);
+    xQueueSend(eventQueue, &event, pdMS_TO_TICKS(100)); // Display queue cannot lose credit.
+}
+bool prepareDrop() {
+    xSemaphoreTake(creditMutex, portMAX_DELAY);
+    bool ok = creditStorageOk && creditJournal.phase == 0 && creditJournal.session[0];
+    if (ok) {
+        ++creditJournal.sequence; creditJournal.phase = 1;
+        ok = saveCreditJournal();
+    }
+    xSemaphoreGive(creditMutex);
+    return ok;
+}
+void completeDrop(bool accepted) {
+    xSemaphoreTake(creditMutex, portMAX_DELAY);
+    creditJournal.phase = accepted ? 2 : 3;
+    if (accepted) ++creditJournal.total;
+    saveCreditJournal(); // On failure, keep gates closed; retry before transmitting.
+    currentSessionBottles = creditJournal.total;
+    xSemaphoreGive(creditMutex);
+}
+void replayCredit() {
+    JsonDocument doc;
+    xSemaphoreTake(creditMutex, portMAX_DELAY);
+    if (!creditStorageOk || creditJournal.phase == 0 || (creditJournal.phase == 1 && depositCycleBusy)) {
+        xSemaphoreGive(creditMutex); return;
+    }
+    doc["event"] = creditJournal.phase == 2 ? "CREDIT_ADD" : "DEPOSIT_RECOVERY";
+    doc["event_id"] = receiptId(); doc["session_id"] = creditJournal.session;
+    doc["protocol"] = 2; doc["bottles"] = creditJournal.phase == 2 ? 1 : 0;
+    doc["sessionTotal"] = creditJournal.total; doc["phase"] = creditJournal.phase;
+    xSemaphoreGive(creditMutex);
+    String output; serializeJson(doc, output); Serial.println(output);
+}
+
 void IRAM_ATTR isrTopIr() { topIrTriggered = true; }
 void IRAM_ATTR isrBottomIr() { bottomIrTriggered = true; }
 
@@ -244,7 +314,7 @@ void sensorTaskCode(void* parameter) {
                 isBinFull = currentlyFull;
                 lastBinState = currentlyFull;
                 EventMsg msg = currentlyFull ? MSG_BIN_FULL : MSG_BIN_OK;
-                xQueueSend(eventQueue, &msg, 0);
+                postEvent(msg);
             }
             lastUltrasonicCheck = xTaskGetTickCount();
         }
@@ -255,8 +325,12 @@ void sensorTaskCode(void* parameter) {
         }
 
         // 2. Await Entrance Request
-        if (entranceGateRequested) {
-            entranceGateRequested = false;
+        if (entranceGateRequested.exchange(false)) {
+            xSemaphoreTake(creditMutex, portMAX_DELAY);
+            bool permitted = creditStorageOk && creditJournal.phase == 0 && creditJournal.session[0];
+            if (permitted) depositCycleBusy = true;
+            xSemaphoreGive(creditMutex);
+            if (!permitted) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
             setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_open_angle); // Open entrance
             topIrTriggered = false;
             
@@ -279,8 +353,9 @@ void sensorTaskCode(void* parameter) {
             if (!dropped) {
                 if (!wasForced) {
                     EventMsg timeoutMsg = MSG_GATE_TIMEOUT;
-                    xQueueSend(eventQueue, &timeoutMsg, portMAX_DELAY);
+                    postEvent(timeoutMsg);
                 }
+                depositCycleBusy = false;
                 continue;
             }
             
@@ -310,9 +385,14 @@ void sensorTaskCode(void* parameter) {
             // 4. Actuation
             if (isValid) {
                 EventMsg startMsg = MSG_VALIDATE_START;
-                xQueueSend(eventQueue, &startMsg, portMAX_DELAY);
+                postEvent(startMsg);
                 
                 bottomIrTriggered = false;
+                if (!prepareDrop()) {
+                    depositCycleBusy = false;
+                    postEvent(MSG_DROP_TIMEOUT);
+                    continue;
+                }
                 setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_open_angle);
 
                 unsigned long gateOpenTime = millis();
@@ -329,23 +409,25 @@ void sensorTaskCode(void* parameter) {
                 setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
 
                 if (passedDrop) {
-                    currentSessionBottles++;
+                    completeDrop(true);
                     EventMsg okMsg = MSG_BOTTLE_SAVED;
-                    xQueueSend(eventQueue, &okMsg, portMAX_DELAY);
+                    postEvent(okMsg);
                 } else {
+                    completeDrop(false);
                     EventMsg failMsg = MSG_DROP_TIMEOUT; // Blocked in chute
-                    xQueueSend(eventQueue, &failMsg, portMAX_DELAY);
+                    postEvent(failMsg);
                 }
             } else {
                 // Reject Sequence
                 EventMsg rejMsg = rejectReason;
-                xQueueSend(eventQueue, &rejMsg, portMAX_DELAY);
+                postEvent(rejMsg);
                 
                 setServoAngle(PCA_CHANNEL_REJECT, config.rej_open_angle);
                 vTaskDelay(pdMS_TO_TICKS(config.reject_drop_time_ms)); // Give time for gravity rejection
                 setServoAngle(PCA_CHANNEL_REJECT, config.rej_close_angle);
             }
             
+            depositCycleBusy = false;
             vTaskDelay(pdMS_TO_TICKS(1500));
         }
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -353,11 +435,12 @@ void sensorTaskCode(void* parameter) {
 }
 
 void commTaskCode(void* parameter) {
-    EventMsg msg;
+    QueuedEvent queued;
 
     while (true) {
-        if (xQueueReceive(eventQueue, &msg, pdMS_TO_TICKS(50)) == pdTRUE) {
+        if (xQueueReceive(eventQueue, &queued, pdMS_TO_TICKS(50)) == pdTRUE) {
             xSemaphoreTake(uiMutex, portMAX_DELAY);
+            EventMsg msg = queued.kind;
             switch(msg) {
                 case MSG_BIN_FULL:
                     lcd.setCursor(0, 1); lcd.print("STATUS: STORAGE FULL");
@@ -367,6 +450,7 @@ void commTaskCode(void* parameter) {
                     break;
                 
                 case MSG_BIN_OK:
+                    Serial.println("{\"event\":\"BIN_OK\"}");
                     lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
                     lcd.setCursor(0, 2); lcd.print("Rate: 1 Bottle = 15m");
                     digitalWrite(PIN_LED_RED, LOW);
@@ -382,7 +466,7 @@ void commTaskCode(void* parameter) {
                     if (msg == MSG_REJECT_TIN) lcd.print("Tin/Can Detected    ");
                     else if (msg == MSG_REJECT_NIR) lcd.print("Invalid Material NIR");
                     else lcd.print("No Plastic Detected ");
-                    Serial.println("{\"event\":\"REJECTED\"}");
+                    scopedEvent("REJECTED", queued.session);
                     buzz(600, 1);
                     digitalWrite(PIN_LED_RED, LOW);
                     lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
@@ -397,9 +481,7 @@ void commTaskCode(void* parameter) {
 
                 case MSG_BOTTLE_SAVED:
                     buzz(120, 2);
-                    Serial.print("{\"event\":\"CREDIT_ADD\",\"bottles\":1,\"sessionTotal\":");
-                    Serial.print(currentSessionBottles);
-                    Serial.println("}");
+                    // Receipt emission/retry is independent of the display queue.
                     lcd.setCursor(0, 1); lcd.print("STATUS: BOTTLE SAVED");
                     lcd.setCursor(0, 3); lcd.print("Session Bottles: ");
                     lcd.print(currentSessionBottles.load());
@@ -415,7 +497,7 @@ void commTaskCode(void* parameter) {
                     digitalWrite(PIN_LED_GREEN, LOW);
                     lcd.setCursor(0, 1); lcd.print("STATUS: ERROR       ");
                     lcd.setCursor(0, 2); lcd.print("Drop / Sensor Error ");
-                    Serial.println("{\"event\":\"REJECTED\"}");
+                    scopedEvent("REJECTED", queued.session);
                     buzz(600, 1);
                     digitalWrite(PIN_LED_RED, LOW);
                     lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
@@ -427,7 +509,7 @@ void commTaskCode(void* parameter) {
                     digitalWrite(PIN_LED_RED, LOW);
                     lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
                     lcd.setCursor(0, 2); lcd.print("Rate: 1 Bottle = 15m");
-                    Serial.println("{\"event\":\"TIMEOUT\"}");
+                    scopedEvent("TIMEOUT", queued.session);
                     break;
             }
             xSemaphoreGive(uiMutex);
@@ -475,6 +557,24 @@ void setup() {
     }
 
     loadPreferences();
+    setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
+    setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
+    setServoAngle(PCA_CHANNEL_REJECT, config.rej_close_angle);
+    creditMutex = xSemaphoreCreateMutex();
+    if (creditMutex && creditStore.begin("ecofi-credit", false)) {
+        size_t length = creditStore.getBytesLength("receipt");
+        if (length == 0) creditStorageOk = saveCreditJournal();
+        else if (length == sizeof(creditJournal)) {
+            creditStore.getBytes("receipt", &creditJournal, sizeof(creditJournal));
+            creditStorageOk = creditJournal.version == 2 && creditJournal.phase <= 3 && creditJournal.session[36] == 0;
+        }
+        currentSessionBottles = creditJournal.total;
+    }
+    if (!creditMutex || !creditStorageOk) {
+        Serial.println("{\"event\":\"STORAGE_ERROR\"}");
+        // Never replace an unreadable journal with an empty one.
+        while (true) delay(1000);
+    }
 
     bool forceConfig = preferences.getBool("force_cfg", false);
     if (forceConfig) {
@@ -516,7 +616,7 @@ void setup() {
     lcd.setCursor(0, 2); lcd.print("Rate: 1 Bottle = 15m");
     lcd.setCursor(0, 3); lcd.print("Session Bottles: 0  ");
 
-    eventQueue = xQueueCreate(10, sizeof(EventMsg));
+    eventQueue = xQueueCreate(10, sizeof(QueuedEvent));
     uiMutex = xSemaphoreCreateMutex();
 
     xTaskCreatePinnedToCore(sensorTaskCode, "SensorTask", 4096, NULL, 1, NULL, 0);
@@ -531,10 +631,39 @@ void loop() {
 
     if (Serial.available()) {
         String msg = Serial.readStringUntil('\n');
-        if (msg.indexOf("\"OPEN_GATE\"") >= 0) {
-            entranceGateRequested = true;
-        } else if (msg.indexOf("\"CLOSE_GATE\"") >= 0) {
-            forceGateClose = true;
+        JsonDocument command;
+        if (deserializeJson(command, msg)) return;
+        const char* cmd = command["cmd"] | "";
+        const char* sid = command["session_id"] | "";
+        if (strcmp(cmd, "OPEN_GATE") == 0) {
+            xSemaphoreTake(creditMutex, portMAX_DELAY);
+            bool same = strcmp(sid, creditJournal.session) == 0;
+            if (command["protocol"] == 2 && strlen(sid) > 0 && strlen(sid) <= 36 &&
+                creditStorageOk && creditJournal.phase == 0 && (!depositCycleBusy || same)) {
+                if (!same) {
+                    strlcpy(creditJournal.session, sid, sizeof(creditJournal.session));
+                    creditJournal.total = 0; currentSessionBottles = 0;
+                    saveCreditJournal();
+                }
+                if (creditStorageOk) entranceGateRequested = true;
+            }
+            xSemaphoreGive(creditMutex);
+        } else if (strcmp(cmd, "CREDIT_ACK") == 0) {
+            xSemaphoreTake(creditMutex, portMAX_DELAY);
+            const char* id = command["event_id"] | "";
+            if (command["protocol"] == 2 && creditJournal.phase != 0 &&
+                strcmp(sid, creditJournal.session) == 0 && receiptId() == id &&
+                !(creditJournal.phase == 1 && depositCycleBusy)) {
+                uint8_t phase = creditJournal.phase; creditJournal.phase = 0;
+                if (!saveCreditJournal()) creditJournal.phase = phase;
+            }
+            xSemaphoreGive(creditMutex);
+        } else if (strcmp(cmd, "CLOSE_GATE") == 0) {
+            xSemaphoreTake(creditMutex, portMAX_DELAY);
+            if (strcmp(sid, creditJournal.session) == 0) {
+                entranceGateRequested = false; forceGateClose = true;
+            }
+            xSemaphoreGive(creditMutex);
         } else if (msg.indexOf("\"TRIGGER_CONFIG\"") >= 0) {
             preferences.putBool("force_cfg", true);
             ESP.restart();
@@ -566,6 +695,14 @@ void loop() {
                 Serial.println("{\"event\":\"CONFIG_SAVED\"}");
             }
         }
+    }
+    static uint32_t lastReceiptSend = 0;
+    if (millis() - lastReceiptSend >= 1000) {
+        lastReceiptSend = millis();
+        xSemaphoreTake(creditMutex, portMAX_DELAY);
+        if (!creditStorageOk) saveCreditJournal();
+        xSemaphoreGive(creditMutex);
+        replayCredit();
     }
     vTaskDelay(pdMS_TO_TICKS(100));
 }

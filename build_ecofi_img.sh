@@ -11,7 +11,7 @@ set -e
 # Configuration
 BASE_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/PisoFi_Opi1&PC_v5.3.0-05-10-26_EXT.img"
 TARGET_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/EcoFi_Opi_v1.7.img"
-MOUNT_DIR="/tmp/ecofi_mount"
+MOUNT_DIR=$(mktemp -d /tmp/ecofi-build.XXXXXX)
 SOURCE_HOST="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/host"
 
 echo "======================================================================"
@@ -20,19 +20,24 @@ echo " Base Image:   $BASE_IMG"
 echo " Target Image: $TARGET_IMG"
 echo "======================================================================"
 
-# Step 1: Check target image
-if [ ! -f "$TARGET_IMG" ]; then
-    echo "[1/6] Copying base image to $TARGET_IMG (this takes ~30s)..."
-    cp "$BASE_IMG" "$TARGET_IMG"
+# Build a staging copy. A failed build cannot replace the previous image.
+WORK_IMG=$(mktemp "${TARGET_IMG}.building.XXXXXX")
+cleanup() {
+    if mountpoint -q "$MOUNT_DIR"; then umount "$MOUNT_DIR"; fi
+    rmdir "$MOUNT_DIR" 2>/dev/null || true
+    if [ -f "$WORK_IMG" ]; then rm -f -- "$WORK_IMG"; fi
+}
+trap cleanup EXIT
+if [ -f "$TARGET_IMG" ]; then
+    cp --reflink=auto "$TARGET_IMG" "$WORK_IMG"
 else
-    echo "[1/6] Target image $TARGET_IMG already exists. Updating contents..."
+    cp --reflink=auto "$BASE_IMG" "$WORK_IMG"
 fi
-
-# Step 2: Create mount point and mount ext4 partition (offset 4,194,304 = 8192 * 512)
-echo "[2/6] Mounting ext4 rootfs..."
-mkdir -p "$MOUNT_DIR"
-umount "$MOUNT_DIR" 2>/dev/null || true
-mount -o loop,offset=4194304 "$TARGET_IMG" "$MOUNT_DIR"
+mount -o loop,offset=4194304 "$WORK_IMG" "$MOUNT_DIR"
+if [ -e "$MOUNT_DIR/opt/ecofi/vendo_sessions.db" ]; then
+    echo "Refusing to rebuild an image containing a customer database. Export and migrate it separately." >&2
+    exit 1
+fi
 
 # Step 3: PURGE all legacy PisoFi services, scripts, and phone-home daemons
 echo "[3/6] Purging legacy PisoFi services and phone-home daemons..."
@@ -264,15 +269,9 @@ fi
 
 echo "[5/6.5] Injecting ECO-Fi software stack into /opt/ecofi..."
 mkdir -p "$MOUNT_DIR/opt/ecofi"
-rm -f "$MOUNT_DIR/opt/ecofi/vendo_sessions.db" 2>/dev/null || true
-cp "$SOURCE_HOST/portal.py" "$MOUNT_DIR/opt/ecofi/"
-cp "$SOURCE_HOST/license_manager.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
-cp "$SOURCE_HOST/esp32_simulator.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
-cp "$SOURCE_HOST/gateway_network.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
-cp "$SOURCE_HOST/time_schema.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
-cp "$SOURCE_HOST/time_policy.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
-cp "$SOURCE_HOST/transition_engine.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
-cp "$SOURCE_HOST/migrate_legacy_sessions.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
+for module in portal.py license_manager.py esp32_simulator.py gateway_network.py time_schema.py time_policy.py transition_engine.py time_portal.py migrate_legacy_sessions.py; do
+    cp "$SOURCE_HOST/$module" "$MOUNT_DIR/opt/ecofi/"
+done
 if [ -d "$SOURCE_HOST/templates" ]; then cp -r "$SOURCE_HOST/templates" "$MOUNT_DIR/opt/ecofi/"; fi
 if [ -d "$SOURCE_HOST/static" ]; then cp -r "$SOURCE_HOST/static" "$MOUNT_DIR/opt/ecofi/"; fi
 
@@ -319,25 +318,7 @@ cat << 'EOF' > "$MOUNT_DIR/etc/logrotate.d/ecofi"
 EOF
 
 # Main Portal Service (Starts immediately on boot, 100% offline ready)
-cat << 'EOF' > "$MOUNT_DIR/etc/systemd/system/ecofi_portal.service"
-[Unit]
-Description=ECO-Fi Captive Portal & Web Engine
-After=network.target nginx.service ecofi_firewall.service
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/ecofi
-ExecStart=/bin/bash -c "exec /usr/bin/python3 /opt/ecofi/portal.py >> /opt/ecofi/portal.log 2>&1"
-StandardOutput=journal
-StandardError=journal
-Restart=always
-RestartSec=3
-Environment=PORT=5000
-
-[Install]
-WantedBy=multi-user.target
-EOF
+cp "$SOURCE_HOST/ecofi.service" "$MOUNT_DIR/etc/systemd/system/ecofi_portal.service"
 
 # Enable services in multi-user.target
 mkdir -p "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants"
@@ -350,10 +331,21 @@ ln -sf /etc/systemd/system/ecofi_portal.service "$MOUNT_DIR/etc/systemd/system/m
 ln -sf /etc/systemd/system/ecofi_firewall.service "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/ecofi_firewall.service"
 
 
+# Test the actual target interpreter. No portal import/customer database is created.
+PYTHONHOME="$MOUNT_DIR/usr" PYTHONPATH="$MOUNT_DIR/usr/local/lib/python3.5/dist-packages:$MOUNT_DIR/opt/ecofi"     qemu-arm-static -L "$MOUNT_DIR" "$MOUNT_DIR/usr/bin/python3.5" -B -c '
+import glob, os
+for path in glob.glob(os.environ["PYTHONPATH"].split(":")[-1]+"/*.py"):
+    with open(path, "rb") as source: compile(source.read(), path, "exec")
+import flask, time_portal, transition_engine, migrate_legacy_sessions
+print("ARM Python runtime imports passed")
+'
+(cd "$MOUNT_DIR/opt/ecofi" && sha256sum *.py static/time_controls.js > release-sha256.txt)
+
 # Finalize and unmount
 echo "Syncing filesystem buffers..."
 sync
 umount "$MOUNT_DIR"
+mv -f -- "$WORK_IMG" "$TARGET_IMG"
 
 echo "======================================================================"
 echo " SUCCESS: Cleaned, Hardened ECO-Fi OS Image Ready at:"

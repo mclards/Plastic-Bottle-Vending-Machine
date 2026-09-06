@@ -7,11 +7,11 @@ Type=simple
 User=root
 WorkingDirectory=/opt/ecofi
 ExecStart=/usr/bin/python3 /opt/ecofi/portal.py
-StandardOutput=append:/opt/ecofi/portal.log
-StandardError=append:/opt/ecofi/portal.log
+StandardOutput=journal
+StandardError=journal
 Restart=always
 RestartSec=3
-KillSignal=SIGINT
+KillSignal=SIGTERM
 TimeoutStopSec=15
 Environment=PORT=5000
 

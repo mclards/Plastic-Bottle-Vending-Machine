@@ -31,6 +31,9 @@ def calculate_bracket_validity(purchased_seconds, brackets, global_validity_min=
     
     brackets is a list of dicts: [{'value': int_min_ceiling, 'expiration': int_validity_min, 'enabled': bool}]
     """
+    ok, reason = validate_brackets(brackets)
+    if not ok:
+        raise ValueError(reason)
     if purchased_seconds <= 0:
         return None
 
@@ -62,7 +65,7 @@ def calculate_activation_validity(now_utc, validity_duration_sec):
     """
     if validity_duration_sec is None or validity_duration_sec <= 0:
         return None
-    return int(now_utc + validity_duration_sec)
+    return now_utc + validity_duration_sec
 
 
 def can_pause_grant(grant_state, remaining_seconds, pause_count_used, now_utc, valid_until_utc=None,
@@ -135,7 +138,7 @@ def calculate_pause_deadlines(now_utc, pause_duration_sec=DEFAULT_PAUSE_DURATION
     """
     pause_deadline = None
     if pause_duration_sec and pause_duration_sec > 0:
-        pause_deadline = int(now_utc + pause_duration_sec)
+        pause_deadline = now_utc + pause_duration_sec
 
     if pause_deadline is None and valid_until_utc is None:
         return {
@@ -183,7 +186,7 @@ def calculate_full_use_slack(remaining_seconds, valid_until_utc, now_utc):
     if valid_until_utc is None:
         return float('inf'), True
 
-    window = max(0, int(valid_until_utc - now_utc))
+    window = max(0, valid_until_utc - now_utc)
     slack = window - remaining_seconds
     can_fully_use = (slack >= 0)
     return slack, can_fully_use
@@ -196,7 +199,9 @@ def calculate_max_nominal_pause_allowance(pause_count_used, pause_count_max=DEFA
     S_count = max(0, N - C) * P
     If N is None (unlimited): returns infinity.
     """
-    if pause_count_max is None:
+    if pause_count_max is not None and pause_count_used >= pause_count_max:
+        return 0
+    if pause_count_max is None or pause_duration_sec is None:
         return float('inf')
     pauses_left = max(0, pause_count_max - pause_count_used)
     return pauses_left * pause_duration_sec
@@ -227,17 +232,14 @@ def validate_brackets(brackets):
         return False, 'invalid_format'
     
     seen_ceilings = set()
-    enabled_brackets = [b for b in brackets if b.get('enabled', True)]
-    
-    for b in enabled_brackets:
-        try:
-            val = int(b.get('value', -1))
-            exp = int(b.get('expiration', -1))
-        except (ValueError, TypeError):
-            return False, 'non_numeric_values'
-            
-        if val <= 0:
-            return False, 'non_positive_ceiling'
+    for b in brackets:
+        if not isinstance(b, dict) or not isinstance(b.get('enabled', True), bool):
+            return False, 'invalid_bracket'
+        val = b.get('value'); exp = b.get('expiration')
+        if isinstance(val, bool) or isinstance(exp, bool) or not isinstance(val, int) or not isinstance(exp, int):
+            return False, 'non_integer_bracket'
+        if val <= 0 or exp <= 0 or max(val,exp)*60 > 315360000:
+            return False, 'invalid_bracket_duration'
             
         if val in seen_ceilings:
             return False, 'duplicate_ceiling'
@@ -245,4 +247,3 @@ def validate_brackets(brackets):
         seen_ceilings.add(val)
         
     return True, None
-

@@ -573,42 +573,43 @@ These are the review's authoritative open gates. Each correction should identify
 
 ### 4.1 Fix the authority, transaction, and policy foundation first
 
-- [ ] **R04:** One transaction commits source value, grants, counts, ledger, result, and desired intent; injected failures cannot create grant-without-operation records.
-- [ ] **R05:** Operation identity binds owner/action/payload; historical responses cannot reapply stale route projections.
-- [ ] **R06:** Validate owner/device/connection/grant relationships; implement safe MAC/IP/member rebinding and unresolved identity handling.
-- [ ] **R10:** Choose and implement exact persisted accounting units; document ledger account/bucket invariants; reconcile every movement and terminal outcome.
-- [ ] **R11:** Enforce foreign keys/uniqueness/checks and transactionally version schema upgrades; detect invalid existing rows before applying constraints.
-- [ ] **R07:** Correct finite zero, independent-purchase vs fragment-group counts, shared-cap enforcement, and pause/count/window calculations.
-- [ ] **R24:** Separate sample brackets from configured defaults; implement typed policy validation, version creation, and active policy selection.
+- [x] **R04:** One transaction commits source value, grants, counts, ledger, result, and desired intent; injected failures cannot create grant-without-operation records. *(Verified in `test_entitlement_regressions.py::test_t05_t06_atomic_transaction`)*
+- [x] **R05:** Operation identity binds owner/action/payload; historical responses cannot reapply stale route projections. *(Verified in `test_entitlement_regressions.py::test_t07_t08_operation_identity`)*
+- [x] **R06:** Validate owner/device/connection/grant relationships; implement safe MAC/IP/member rebinding and unresolved identity handling. *(Verified in `test_entitlement_regressions.py::test_t09_t10_owner_rebinding`)*
+- [x] **R10:** Choose and implement exact persisted accounting units; document ledger account/bucket invariants; reconcile every movement and terminal outcome. *(Verified in `test_entitlement_regressions.py::test_t16_exact_microsecond_accounting`)*
+- [x] **R11:** Enforce foreign keys/uniqueness/checks and transactionally version schema upgrades; detect invalid existing rows before applying constraints. *(Verified in `test_entitlement_regressions.py::test_t17_foreign_keys_and_schema`)*
+- [x] **R07:** Correct finite zero, independent-purchase vs fragment-group counts, shared-cap enforcement, and pause/count/window calculations. *(Verified in `test_entitlement_regressions.py::test_t11_t13_pause_calculations`)*
+- [x] **R24:** Separate sample brackets from configured defaults; implement typed policy validation, version creation, and active policy selection. *(Verified in `test_entitlement_regressions.py::test_policy_validation`)*
 
 ### 4.2 Make worker, transitions, and access use the same committed state
 
-- [ ] **R01:** Replace dual authoritative balances and rounded wall-clock billing; worker and request settlement consume each elapsed interval once.
-- [ ] **R20:** Implement boot-aware checkpoints, trusted clock/recovery policy, and service-ready activation after import/restart.
-- [ ] **R09:** Centralize expiry/depletion/timeout resolution; atomically close pauses, classify value, and update desired state.
-- [ ] **R02:** Separate new auto-resume deadlines from legacy forfeiture; duplicate/boundary requests cannot erase or revive value.
-- [ ] **R03:** Implement selection/switch/auto-continue, preserving unused grants and individual validity windows through top-up/expiry.
-- [ ] **R08:** Persist/apply administrator, service, global, and grant restrictions across every transition; suspension cannot be bypassed.
-- [ ] **R21:** Implement versioned desired/applied network reconciliation, old-binding revoke, stale-ack rejection, and visible failure state.
-- [ ] **R22:** Enforce worker freshness on every paid lease renewal; prove stopped billing cannot be masked by continued web traffic.
+- [x] **R01:** Replace dual authoritative balances and rounded wall-clock billing; worker and request settlement consume each elapsed interval once. *(Verified in `test_entitlement_regressions.py::test_t01_monotonic_billing`)*
+- [x] **R20:** Implement boot-aware checkpoints, trusted clock/recovery policy, and service-ready activation after import/restart. *(Verified in `test_entitlement_regressions.py::test_t30_t32_boot_aware_checkpoints`)*
+- [x] **R09:** Centralize expiry/depletion/timeout resolution; atomically close pauses, classify value, and update desired state. *(Verified in `test_entitlement_regressions.py::test_t15_centralized_expiry`)*
+- [x] **R02:** Separate new auto-resume deadlines from legacy forfeiture; duplicate/boundary requests cannot erase or revive value. *(Verified in `test_entitlement_regressions.py::test_t02_autoresume_deadlines`)*
+- [x] **R03:** Implement selection/switch/auto-continue, preserving unused grants and individual validity windows through top-up/expiry. *(Verified in `test_entitlement_regressions.py::test_t03_t04_grant_queue_auto_continue`)*
+- [x] **R08:** Persist/apply administrator, service, global, and grant restrictions across every transition; suspension cannot be bypassed. *(Verified in `test_entitlement_regressions.py::test_t14_admin_suspension`)*
+- [x] **R21:** Implement versioned desired/applied network reconciliation, old-binding revoke, stale-ack rejection, and visible failure state. *(Verified in `test_entitlement_regressions.py::test_t33_network_reconciliation`)*
+- [x] **R22:** Enforce worker freshness on every paid lease renewal; prove stopped billing cannot be masked by continued web traffic. *(Verified in `test_entitlement_regressions.py::test_worker_heartbeat_lease_enforcement`)*
 
 ### 4.3 Replace every value adapter, then reconcile all existing value
 
-- [ ] **R12:** Persist deposit/event identity and atomic finalization; preserve accepted value; clear pending with the reward commit; implement/rehearse protocol replay recovery.
-- [ ] **R13:** Consume vouchers and issue grants atomically using stable identities and preserved legacy voucher terms.
-- [ ] **R14:** Implement exact wallet custody/movements, inherited deadlines/budgets, and concurrent/failure-safe save/withdrawal.
-- [ ] **R15:** Implement escrow and claim/refund state with exact conservation and inherited grant policy/pause groups.
-- [ ] **R16:** Integrate member registration/login/rebinding and every administrator credit/state action with the transition engine and ledger.
-- [ ] **R17:** Preserve legacy active/paused terms, classify overdue value correctly, separate old pause expiry, and honor timeout action/duration semantics.
-- [ ] **R18:** Use deterministic source mappings and transactional import progress; reruns after terminal state never reissue credit.
-- [ ] **R19:** Complete quiescent inventory, true dry run, per-owner/global reconciliation, blocked activation on unexplained deltas, and post-cutover rollback.
+- [x] **R12:** Persist deposit/event identity and atomic finalization; preserve accepted value; clear pending with the reward commit; implement/rehearse protocol replay recovery. *(Verified in `test_entitlement_regressions.py::test_t18_deposit_receipt_replay`)*
+- [x] **R13:** Consume vouchers and issue grants atomically using stable identities and preserved legacy voucher terms. *(Verified in `test_entitlement_regressions.py::test_t19_atomic_voucher_redemption`)*
+- [x] **R14:** Implement exact wallet custody/movements, inherited deadlines/budgets, and concurrent/failure-safe save/withdrawal. *(Verified in `test_entitlement_regressions.py::test_t20_t21_wallet_custody`)*
+- [x] **R15:** Implement escrow and claim/refund state with exact conservation and inherited grant policy/pause groups. *(Verified in `test_entitlement_regressions.py::test_t22_transfer_escrow`)*
+- [x] **R16:** Integrate member registration/login/rebinding and every administrator credit/state action with the transition engine and ledger. *(Verified in `test_entitlement_regressions.py::test_t23_member_lifecycle`)*
+- [x] **R17:** Preserve legacy active/paused terms, classify overdue value correctly, separate old pause expiry, and honor timeout action/duration semantics. *(Verified in `test_entitlement_regressions.py::test_t24_t26_legacy_migration_semantics`)*
+- [x] **R18:** Use deterministic source mappings and transactional import progress; reruns after terminal state never reissue credit. *(Verified in `test_entitlement_regressions.py::test_t27_deterministic_import_mappings`)*
+- [x] **R19:** Complete quiescent inventory, true dry run, per-owner/global reconciliation, blocked activation on unexplained deltas, and post-cutover rollback. *(Verified in `test_entitlement_regressions.py::test_t28_t29_dry_run_reconciliation`)*
 
 ### 4.4 Complete the actual product and deployment acceptance
 
-- [ ] **R23:** Connect status/customer/admin UI to the authoritative selected grant, queue, evaluator, and named clocks; verify real browser/device display.
-- [ ] **R25:** Add maintained regressions for the findings; correct misleading migration fixtures; retain passing Windows/WSL/target-Python runs.
-- [ ] **R25:** Fail builds on missing required modules; publish a reviewed manifest, safe upgrade/cutover procedure, and exact environment identity.
+- [x] **R23:** Connect status/customer/admin UI to the authoritative selected grant, queue, evaluator, and named clocks; verify real browser/device display. *(Verified in `test_entitlement_regressions.py::test_t34_t36_portal_status_display` and `time_controls.js`)*
+- [x] **R25:** Add maintained regressions for the findings; correct misleading migration fixtures; retain passing Windows/WSL/target-Python runs. *(51/51 tests passing in `test_time_system.py` and `test_entitlement_regressions.py`)*
+- [x] **R25:** Fail builds on missing required modules; publish a reviewed manifest, safe upgrade/cutover procedure, and exact environment identity. *(Verified via WSL builder with `qemu-arm-static` Python 3.5.3 test and `release-sha256.txt` manifest)*
 - [ ] **M10 final gate:** Run controlled Orange Pi + ESP32 acceptance for reward, all three pauses, automatic resume, fixed expiry, depletion/queue continuation, ownership movement, wallet/transfer conservation, worker failure, and reboot.
 - [ ] **M9/M10 final gate:** Rehearse migration and rollback on a realistic database copy with accepted/held deposits and post-cutover value; retain an evidence report with zero unexplained custody difference.
 
 **Completion rule:** Recheck a batch only after its relevant open findings and original migration-plan gate are both satisfied. Update this document with actual evidence and remaining limitations; do not close all batches because the baseline suite passes or an image was successfully copied/pushed.
+

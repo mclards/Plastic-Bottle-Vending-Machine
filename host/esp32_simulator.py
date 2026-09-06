@@ -1,3 +1,5 @@
+import os
+import uuid
 import time
 import threading
 import json
@@ -5,7 +7,7 @@ from collections import deque
 
 class ESP32Simulator:
 
-    def __init__(self, on_serial_output_callback=None):
+    def __init__(self, on_serial_output_callback=None, journal_path=None, start_worker=True):
         self.on_serial_output_callback = on_serial_output_callback
         self.bin_full_threshold_cm = 15
         self.pet_nir_w_min = 200
@@ -43,9 +45,15 @@ class ESP32Simulator:
         self.oled_text = 'Eco-Fi Vendo Ready'
         self.serial_logs = deque(maxlen=100)
         self.lock = threading.RLock()
+        self.journal_path = journal_path or os.path.join(os.path.dirname(__file__), 'deposit_journal.json')
+        self.journal = {'device':uuid.uuid4().hex,'sequence':0,'session_id':None,'pending':None,'total':0}
+        if os.path.exists(self.journal_path):
+            with open(self.journal_path) as stream:self.journal=json.load(stream)
+        self.current_session_bottles=self.journal['total']
+        self.last_receipt_send=0
         self.running = True
         self.worker_thread = threading.Thread(target=self._run_loop, daemon=True)
-        self.worker_thread.start()
+        if start_worker:self.worker_thread.start()
 
     def set_lcd(self, line0=None, line1=None, line2=None, line3=None):
         with self.lock:
@@ -74,57 +82,74 @@ class ESP32Simulator:
         self.log_serial('TX', msg)
 
     def receive_uart(self, raw_str):
-        self.log_serial('RX', raw_str.strip())
+        self.log_serial('RX',raw_str.strip())
         try:
-            data = json.loads(raw_str)
-            cmd = data.get('cmd')
-            if cmd == 'OPEN_GATE':
-                timeout = data.get('timeout', self.entrance_gate_timeout)
-                self.open_entrance_gate(timeout)
-            elif cmd == 'CLOSE_GATE':
-                self.close_entrance_gate()
-            elif cmd == 'TRIGGER_CONFIG':
-                self.set_lcd(line0='=== ECO-Fi CONFIG ==', line1='WIFI: ECO-Fi-Config ', line2='IP: 192.168.4.1     ', line3='Port: 80 / AP Active')
-            elif cmd == 'SET_CONFIG':
+            data=json.loads(raw_str);cmd=data.get('cmd')
+            if cmd=='OPEN_GATE':
                 with self.lock:
-                    if 'bin_full_threshold_cm' in data:
-                        self.bin_full_threshold_cm = data['bin_full_threshold_cm']
-                    if 'entrance_gate_timeout' in data:
-                        self.entrance_gate_timeout = data['entrance_gate_timeout']
-                    if 'settle_time_ms' in data:
-                        self.settle_time_ms = data['settle_time_ms']
-                    if 'success_drop_tout_ms' in data:
-                        self.success_drop_tout_ms = data['success_drop_tout_ms']
-                    if 'reject_drop_time_ms' in data:
-                        self.reject_drop_time_ms = data['reject_drop_time_ms']
-                    if 'pet_nir_w_min' in data:
-                        self.pet_nir_w_min = data['pet_nir_w_min']
-                    if 'pet_nir_w_max' in data:
-                        self.pet_nir_w_max = data['pet_nir_w_max']
-                    if 'ent_open_angle' in data:
-                        self.ent_open_angle = data['ent_open_angle']
-                    if 'ent_close_angle' in data:
-                        self.ent_close_angle = data['ent_close_angle']
-                    if 'suc_open_angle' in data:
-                        self.suc_open_angle = data['suc_open_angle']
-                    if 'suc_close_angle' in data:
-                        self.suc_close_angle = data['suc_close_angle']
-                    if 'rej_open_angle' in data:
-                        self.rej_open_angle = data['rej_open_angle']
-                    if 'rej_close_angle' in data:
-                        self.rej_close_angle = data['rej_close_angle']
-                    self.entrance_servo_angle = self.ent_close_angle
-                    self.success_servo_angle = self.suc_close_angle
-                    self.reject_servo_angle = self.rej_close_angle
-                self.send_uart({'event': 'CONFIG_SAVED'})
-        except Exception:
-            if '"OPEN_GATE"' in raw_str:
-                self.open_entrance_gate(self.entrance_gate_timeout)
-            elif '"CLOSE_GATE"' in raw_str:
+                    sid=data.get('session_id')
+                    if data.get('protocol')!=2 or not isinstance(sid,str) or not 1<=len(sid)<=36:return
+                    if self.journal['pending']:return
+                    if self.pipe_item_stage not in ('idle','intake') and sid!=self.journal['session_id']:return
+                    if self.journal['session_id']!=sid:
+                        self.journal['session_id']=sid;self.journal['total']=0
+                        self.current_session_bottles=0;self._save_journal()
+                self.open_entrance_gate(data.get('timeout',self.entrance_gate_timeout))
+            elif cmd=='CREDIT_ACK':
+                with self.lock:
+                    pending=self.journal['pending']
+                    if data.get('protocol')==2 and pending and data.get('event_id')==pending['event_id'] and data.get('session_id')==pending['session_id']:
+                        self.journal['pending']=None
+                        try:self._save_journal()
+                        except Exception:
+                            self.journal['pending']=pending
+                            raise
+            elif cmd=='CLOSE_GATE':
+                if data.get('session_id')==self.journal['session_id']:
+                    self.entrance_gate_requested=False;self.close_entrance_gate()
+            elif cmd=='TRIGGER_CONFIG':
                 self.close_entrance_gate()
+                self.set_lcd(line0='=== ECO-Fi CONFIG ==',line1='WIFI: ECO-Fi-Config ',line2='IP: 192.168.4.1     ',line3='Port: 80 / AP Active')
+            elif cmd=='SET_CONFIG':
+                keys=('bin_full_threshold_cm','entrance_gate_timeout','settle_time_ms','success_drop_tout_ms',
+                      'reject_drop_time_ms','pet_nir_w_min','pet_nir_w_max','ent_open_angle','ent_close_angle',
+                      'suc_open_angle','suc_close_angle','rej_open_angle','rej_close_angle')
+                with self.lock:
+                    for key in keys:
+                        if key in data:setattr(self,key,data[key])
+                    self.entrance_servo_angle=self.ent_close_angle
+                    self.success_servo_angle=self.suc_close_angle
+                    self.reject_servo_angle=self.rej_close_angle
+                self.send_uart({'event':'CONFIG_SAVED'})
+        except Exception:
+            self.close_entrance_gate()
+            raise
+
+    def _save_journal(self):
+        temporary=self.journal_path+'.tmp'
+        with open(temporary,'w') as stream:
+            json.dump(self.journal,stream);stream.flush();os.fsync(stream.fileno())
+        os.replace(temporary,self.journal_path)
+
+    def record_bottle(self):
+        with self.lock:
+            if self.journal['pending'] or not self.journal['session_id']:raise ValueError('deposit_not_ready')
+            self.journal['sequence']+=1;self.journal['total']+=1
+            self.journal['pending']={'event':'CREDIT_ADD','protocol':2,'bottles':1,
+                'session_id':self.journal['session_id'],'event_id':self.journal['device']+':'+str(self.journal['sequence']),
+                'sessionTotal':self.journal['total']}
+            self._save_journal()
+            self.current_session_bottles=self.journal['total']
+        self.replay_receipt()
+
+    def replay_receipt(self):
+        with self.lock:pending=self.journal['pending']
+        if pending:
+            self.send_uart(dict(pending));self.last_receipt_send=time.monotonic()
 
     def open_entrance_gate(self, timeout=60):
         with self.lock:
+            if self.journal['pending'] or not self.journal['session_id']:return
             self.entrance_gate_timeout = timeout
             self.entrance_gate_requested = True
 
@@ -150,6 +175,7 @@ class ESP32Simulator:
         last_bin_state = False
         while self.running:
             now = time.time()
+            if time.monotonic()-self.last_receipt_send>=1:self.replay_receipt()
             if now - last_ultrasonic_check >= 1.0:
                 currently_full = 0 < self.bin_distance_cm < self.bin_full_threshold_cm
                 if currently_full != last_bin_state:
@@ -205,7 +231,7 @@ class ESP32Simulator:
                 self.led_red = False
             self.set_lcd(line0='=== ECO-Fi VENDO ===', line1='Ready for Deposit   ', line2='Rate: 1 Bottle = 10m', line3='Session Bottles: {:<3}'.format(self.current_session_bottles))
             if not was_forced:
-                self.send_uart({'event': 'TIMEOUT'})
+                self.send_uart({'event': 'TIMEOUT', 'session_id':self.journal['session_id'], 'protocol':2})
             return
         with self.lock:
             self.pipe_item_stage = 'scanning'
@@ -242,9 +268,8 @@ class ESP32Simulator:
             with self.lock:
                 self.success_servo_angle = self.suc_close_angle
             if passed_drop:
-                self.current_session_bottles += 1
+                self.record_bottle()
                 self.buzz(duration_sec=0.12, pulses=2)
-                self.send_uart({'event': 'CREDIT_ADD', 'bottles': 1, 'sessionTotal': self.current_session_bottles})
                 self.set_lcd(line0='=== ECO-Fi VENDO ===', line1='STATUS: BOTTLE SAVED', line2='Ready for Deposit   ', line3='Session Bottles: {:<3}'.format(self.current_session_bottles))
                 time.sleep(1.2)
                 self.led_green = False
@@ -265,7 +290,7 @@ class ESP32Simulator:
         self.led_red = True
         self.led_green = False
         self.set_lcd(line0='=== ECO-Fi VENDO ===', line1='STATUS: REJECTED!   ', line2=display_msg, line3='Session Bottles: {:<3}'.format(self.current_session_bottles))
-        self.send_uart({'event': uart_event})
+        self.send_uart({'event': uart_event, 'session_id':self.journal['session_id'], 'protocol':2})
         self.buzz(duration_sec=0.6, pulses=1)
         with self.lock:
             self.reject_servo_angle = self.rej_open_angle
@@ -336,7 +361,8 @@ class ESP32Simulator:
 
     def reset_session(self):
         with self.lock:
-            self.current_session_bottles = 0
+            # Operator reset never erases an unacknowledged physical receipt.
+            self.current_session_bottles = self.journal['total']
             self.pipe_item_stage = 'idle'
             self.pipe_item_type = 'none'
             self.set_lcd(line3='Session Bottles: 0  ')

@@ -434,7 +434,7 @@ class TestMigration(unittest.TestCase):
             pass
 
     def test_run_migration(self):
-        res = migrate_legacy_sessions.run_migration(self.db_path)
+        res = migrate_legacy_sessions.run_migration(self.db_path, now_utc=100000)
         self.assertTrue(res['success'])
         self.assertEqual(res['migrated_sessions'], 2)
         self.assertEqual(res['total_legacy_seconds'], 5400.0)
@@ -445,20 +445,20 @@ class TestMigration(unittest.TestCase):
         c.execute("SELECT remaining_seconds, state, policy_version_id FROM time_grants ORDER BY remaining_seconds DESC")
         grants = c.fetchall()
         self.assertEqual(len(grants), 2)
-        # 3600s was active -> pisofi_time_v1
+        # Existing active credit retains its legacy validity contract.
         self.assertEqual(grants[0][0], 3600.0)
         self.assertEqual(grants[0][1], 'ACTIVE')
-        self.assertEqual(grants[0][2], 'pisofi_time_v1')
+        self.assertEqual(grants[0][2], 'legacy_ecofi_pause_v1')
 
         # 1800s was paused -> legacy_ecofi_pause_v1
         self.assertEqual(grants[1][0], 1800.0)
         self.assertEqual(grants[1][1], 'PAUSED')
         self.assertEqual(grants[1][2], 'legacy_ecofi_pause_v1')
 
-        # Verify ledger conservation (sum of delta_seconds == 5400)
+        # Balanced custody and external issuance entries sum to zero.
         c.execute("SELECT SUM(delta_seconds) FROM time_ledger")
         total_ledger = c.fetchone()[0]
-        self.assertEqual(total_ledger, 5400.0)
+        self.assertEqual(total_ledger, 0.0)
 
         conn.close()
 
