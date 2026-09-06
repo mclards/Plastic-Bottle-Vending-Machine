@@ -135,7 +135,7 @@
 **Review:** Module presence, equivalent source, remote HEAD, and the original test suite under the image interpreter are verified. This is packaging evidence, not a controlled release or hardware acceptance. Required module copy failures are suppressed; no cutover/recovery/worker-watchdog rollout exists. See [R25](#r25).
 
 - [x] Updated `build_ecofi_img.sh` to inject `time_schema.py`, `time_policy.py`, `transition_engine.py`, and `migrate_legacy_sessions.py` into `/opt/ecofi/`.
-- [x] Executed image builder in WSL, successfully updating **`resources/EcoFi_Opi_v1.7.img`**.
+- [x] Executed image builder in WSL, successfully updating **`resources/EcoFi_Opi_v2.0.img`**.
 - [x] All commits pushed to remote repository (`origin master`).
 
 ---
@@ -154,7 +154,7 @@
 | Flask test-client probes against temporary copies of the host files and temporary SQLite databases | Failures reproduced below | Uses actual route handlers and a stopped simulator thread; license and ARP are stubbed, no physical device commands are sent. |
 | Single worker passes with controlled clocks and a stop-on-sleep hook | RAM/grant divergence and state failures reproduced | Runs `time_daemon()` itself, without starting the production service. |
 | Fault injection | Missing operation record plus duplicate issuance; voucher success without a grant | SQLite trigger aborts operation-result insertion, or grant engine raises an injected storage error. |
-| `EcoFi_Opi_v1.7.img` read-only filesystem inspection | Six modules present, equivalent Python ASTs | Root partition mounted `ro,noload,offset=4194304`; not rebuilt, modified, or booted. |
+| `EcoFi_Opi_v2.0.img` read-only filesystem inspection | Six modules present, equivalent Python ASTs | Root partition mounted `ro,noload,offset=4194304`; not rebuilt, modified, or booted. |
 | Image OS/interpreter | Debian 9 Stretch; `python3 -> python3.5`; package `python3-minimal 3.5.3-1` | Corrects the previous Buster description. |
 | Remote branch | `origin/master = 5150f9a0104acb2c32eb0ce991873b3345c50650` | Checked using `git ls-remote`; no push performed during review. |
 
