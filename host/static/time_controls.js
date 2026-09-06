@@ -318,17 +318,17 @@
 
             var tableWrapper = element('div', undefined, bracketsContainer);
             tableWrapper.className = 'table-responsive';
-            tableWrapper.style.cssText = 'max-height: 185px; overflow-y: auto; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid rgba(255,255,255,0.06); border-radius: 5px;';
+            tableWrapper.style.cssText = 'overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid rgba(255,255,255,0.08); border-radius: 6px;';
 
             var table = element('table', undefined, tableWrapper);
             table.className = 'table table-sm text-light mb-0';
-            table.style.cssText = 'background: rgba(15,23,42,0.4); font-size: 11.5px;';
-            table.innerHTML = '<thead style="background:#0f172a; color:#94a3b8; font-size:10.5px;">' +
+            table.style.cssText = 'background: rgba(15,23,42,0.4); font-size: 12px;';
+            table.innerHTML = '<thead style="background:#0f172a; color:#cbd5e1; font-size:11.5px; font-weight:700;">' +
                 '<tr>' +
-                '<th style="width:45px;" class="text-center py-1">Active</th>' +
-                '<th class="py-1">Earned Time (Up To)</th>' +
-                '<th class="py-1">Validity (Expires After)</th>' +
-                '<th style="width:36px;" class="text-center py-1"></th>' +
+                '<th style="width:50px;" class="text-center py-2">Active</th>' +
+                '<th class="py-2">Earned Time (Up To)</th>' +
+                '<th class="py-2">Validity (Expires After)</th>' +
+                '<th style="width:45px;" class="text-center py-2">Action</th>' +
                 '</tr></thead>';
             var body = element('tbody', undefined, table);
 
@@ -337,14 +337,15 @@
                 row.style.cssText = 'border-top: 1px solid rgba(255,255,255,0.04);';
 
                 var tdEnabled = element('td', undefined, row);
-                tdEnabled.className = 'text-center align-middle py-1';
+                tdEnabled.className = 'text-center align-middle py-2';
                 var enCheck = element('input', undefined, tdEnabled);
                 enCheck.type = 'checkbox';
                 enCheck.checked = value.enabled !== false;
                 enCheck.title = 'Enable or disable this bracket';
+                enCheck.style.cssText = 'transform: scale(1.15); cursor: pointer;';
 
                 var tdVal = element('td', undefined, row);
-                tdVal.className = 'align-middle py-1';
+                tdVal.className = 'align-middle py-2';
                 var valBox = element('div', undefined, tdVal);
                 valBox.className = 'd-flex align-items-center';
                 var inputVal = element('input', undefined, valBox);
@@ -353,17 +354,17 @@
                 inputVal.step = '1';
                 inputVal.required = true;
                 inputVal.value = value.value || 60;
-                inputVal.className = 'form-control form-control-sm mr-1';
-                inputVal.style.cssText = 'height:25px; width:70px; background:#0f172a; border:1px solid #334155; color:#f8fafc; font-size:11.5px; padding:2px 5px; border-radius:3px;';
+                inputVal.className = 'form-control form-control-sm mr-2';
+                inputVal.style.cssText = 'height:28px; width:75px; background:#0f172a; border:1px solid #475569; color:#ffffff; font-size:12.5px; font-weight:600; padding:2px 8px; border-radius:4px;';
                 var badgeVal = element('span', undefined, valBox);
-                badgeVal.className = 'badge badge-dark text-info border border-secondary px-1 py-0';
-                badgeVal.style.cssText = 'font-size:10px; font-weight:600; white-space:nowrap;';
+                badgeVal.className = 'badge font-weight-bold';
+                badgeVal.style.cssText = 'font-size:11.5px; color:#38bdf8; background:rgba(56,189,248,0.18); border:1px solid rgba(56,189,248,0.45); padding:3px 8px; border-radius:4px; white-space:nowrap; min-width:34px; text-align:center;';
                 function updateValBadge() { badgeVal.innerText = formatDurationBadge(Number(inputVal.value)); }
                 inputVal.oninput = updateValBadge;
                 updateValBadge();
 
                 var tdExp = element('td', undefined, row);
-                tdExp.className = 'align-middle py-1';
+                tdExp.className = 'align-middle py-2';
                 var expBox = element('div', undefined, tdExp);
                 expBox.className = 'd-flex align-items-center';
                 var inputExp = element('input', undefined, expBox);
@@ -372,21 +373,21 @@
                 inputExp.step = '1';
                 inputExp.required = true;
                 inputExp.value = value.expiration || 1440;
-                inputExp.className = 'form-control form-control-sm mr-1';
-                inputExp.style.cssText = 'height:25px; width:80px; background:#0f172a; border:1px solid #334155; color:#f8fafc; font-size:11.5px; padding:2px 5px; border-radius:3px;';
+                inputExp.className = 'form-control form-control-sm mr-2';
+                inputExp.style.cssText = 'height:28px; width:85px; background:#0f172a; border:1px solid #475569; color:#ffffff; font-size:12.5px; font-weight:600; padding:2px 8px; border-radius:4px;';
                 var badgeExp = element('span', undefined, expBox);
-                badgeExp.className = 'badge badge-dark text-success border border-secondary px-1 py-0';
-                badgeExp.style.cssText = 'font-size:10px; font-weight:600; white-space:nowrap;';
+                badgeExp.className = 'badge font-weight-bold';
+                badgeExp.style.cssText = 'font-size:11.5px; color:#34d399; background:rgba(52,211,153,0.18); border:1px solid rgba(52,211,153,0.45); padding:3px 8px; border-radius:4px; white-space:nowrap; min-width:34px; text-align:center;';
                 function updateExpBadge() { badgeExp.innerText = formatDurationBadge(Number(inputExp.value)); }
                 inputExp.oninput = updateExpBadge;
                 updateExpBadge();
 
                 var tdAction = element('td', undefined, row);
-                tdAction.className = 'text-center align-middle py-1';
+                tdAction.className = 'text-center align-middle py-2';
                 var removeBtn = element('button', undefined, tdAction);
                 removeBtn.type = 'button';
-                removeBtn.className = 'btn btn-xs btn-outline-danger py-0 px-1';
-                removeBtn.style.cssText = 'line-height:1; font-size:10px;';
+                removeBtn.className = 'btn btn-xs btn-outline-danger';
+                removeBtn.style.cssText = 'height:24px; width:26px; padding:0; line-height:22px; font-size:11px; border-radius:4px;';
                 removeBtn.innerHTML = '<i class="fas fa-times"></i>';
                 removeBtn.onclick = function () { row.remove(); };
             }
@@ -394,7 +395,7 @@
             bracketsList.forEach(addBracketRow);
             addBtn.onclick = function () { addBracketRow({ value: 120, expiration: 2880, enabled: true }); };
 
-            // Combined Clean Footer: Save Button + Status Pills
+            // Combined Clean Footer: Save Button
             var footer = element('div', undefined, card);
             footer.className = 'card-footer py-2 px-3 d-flex flex-wrap justify-content-between align-items-center';
             footer.style.cssText = 'background:#0f172a; border-top:1px solid rgba(255,255,255,0.06); gap:8px;';
@@ -411,10 +412,6 @@
             var message = element('span', '', leftAction);
             message.className = 'small font-weight-bold';
             message.setAttribute('aria-live', 'polite');
-
-            var diagStrip = element('div', undefined, footer);
-            diagStrip.className = 'd-flex flex-wrap align-items-center small text-muted';
-            diagStrip.style.cssText = 'gap: 8px; font-size: 10.5px;';
 
             form.onsubmit = function (event) {
                 event.preventDefault();
@@ -457,20 +454,6 @@
                     })
                     .then(function () { saveBtn.disabled = false; });
             };
-
-            nativeFetch('/admin/api/time/diagnostics').then(function (r) { return r.json(); }).then(function (d) {
-                var accBadge = d.ready ? '<span class="badge badge-success px-1">Ready</span>' : '<span class="badge badge-warning px-1">Migrate</span>';
-                var workerBadge = d.worker_healthy ? '<span class="badge badge-success px-1">Healthy</span>' : '<span class="badge badge-danger px-1">Recovering</span>';
-                var mismatchBadge = (d.balance_mismatches && d.balance_mismatches.length > 0) ?
-                    '<span class="badge badge-danger px-1">' + d.balance_mismatches.length + '</span>' :
-                    '<span class="badge badge-success px-1">0</span>';
-                var heldBadge = '<span class="badge badge-secondary px-1">' + (d.held_deposit_events || 0) + '</span>';
-
-                diagStrip.innerHTML = '<span>Accounting: ' + accBadge + '</span>' +
-                    '<span>Worker: ' + workerBadge + '</span>' +
-                    '<span>Held: ' + heldBadge + '</span>' +
-                    '<span>Mismatches: ' + mismatchBadge + '</span>';
-            }).catch(function () {});
         }).catch(function () {});
     }
     document.addEventListener('DOMContentLoaded', policyEditor);
