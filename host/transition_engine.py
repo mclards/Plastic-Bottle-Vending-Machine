@@ -59,15 +59,24 @@ def get_or_create_connection(conn, ip, mac, owner_id, now_utc, mono_now):
     """
     Look up or insert a connections record.
     """
+    if not mac or mac in ('00:00:00:00:00:00', 'mac:'):
+        raise ValueError("invalid_mac")
+
+    # Sync devices table
+    get_or_create_device(conn, mac, owner_id, ip, now_utc)
+
     c = conn.cursor()
-    c.execute("SELECT id, selected_grant_id, desired_state, applied_state, binding_version, last_settled_at_mono, last_settled_at_utc FROM connections WHERE mac = ?", (mac,))
+    c.execute("SELECT id, selected_grant_id, desired_state, applied_state, binding_version, last_settled_at_mono, last_settled_at_utc, ip, owner_id FROM connections WHERE mac = ?", (mac,))
     row = c.fetchone()
     if row:
-        conn_id, grant_id, des_state, app_state, version, last_mono, last_utc = row
+        conn_id, grant_id, des_state, app_state, version, last_mono, last_utc, old_ip, old_owner = row
         # Update IP and timestamps
+        if old_ip != ip or old_owner != owner_id:
+            version += 1
+            des_state = 'DISCONNECTED'
         c.execute(
-            "UPDATE connections SET ip = ?, owner_id = ?, updated_at = ? WHERE id = ?",
-            (ip, owner_id, now_utc, conn_id)
+            "UPDATE connections SET ip = ?, owner_id = ?, desired_state = ?, binding_version = ?, updated_at = ? WHERE id = ?",
+            (ip, owner_id, des_state, version, now_utc, conn_id)
         )
         return {
             'id': conn_id,
@@ -106,6 +115,48 @@ def get_or_create_connection(conn, ip, mac, owner_id, now_utc, mono_now):
     }
 
 
+def _activate_next_grant_or_disconnect(conn, owner_id, connection_id, mono_now, now_utc):
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT id, validity_duration_sec 
+        FROM time_grants 
+        WHERE owner_id = ? AND state = 'UNUSED' 
+        ORDER BY created_at ASC LIMIT 1
+        """,
+        (owner_id,)
+    )
+    nxt = c.fetchone()
+    if nxt:
+        new_gid, val_dur = nxt
+        val_until = time_policy.calculate_activation_validity(now_utc, val_dur)
+        c.execute(
+            """
+            UPDATE time_grants 
+            SET state = 'ACTIVE', activated_at_utc = ?, valid_until_utc = ?, updated_at = ? 
+            WHERE id = ?
+            """,
+            (now_utc, val_until, now_utc, new_gid)
+        )
+        if connection_id:
+            c.execute(
+                """
+                UPDATE connections 
+                SET selected_grant_id = ?, desired_state = 'ACTIVE', 
+                    last_settled_at_mono = ?, last_settled_at_utc = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (new_gid, mono_now, now_utc, now_utc, connection_id)
+            )
+        return new_gid
+    else:
+        if connection_id:
+            c.execute(
+                "UPDATE connections SET desired_state = 'DISCONNECTED', updated_at = ? WHERE id = ?",
+                (now_utc, connection_id)
+            )
+        return None
+
 def settle_connection_balance(conn, connection_data, now_utc, mono_now):
     """
     Settle elapsed active seconds on the currently selected grant.
@@ -133,10 +184,10 @@ def settle_connection_balance(conn, connection_data, now_utc, mono_now):
         return {'id': gid, 'remaining_seconds': rem_sec, 'state': state, 'valid_until_utc': valid_until}, 0.0
 
     last_mono = connection_data.get('last_settled_at_mono')
-    if last_mono is None:
-        last_mono = mono_now
-
-    elapsed = max(0.0, mono_now - last_mono)
+    if last_mono is None or mono_now < last_mono:
+        elapsed = 0.0
+    else:
+        elapsed = mono_now - last_mono
     debited = min(rem_sec, elapsed)
     new_rem = max(0.0, rem_sec - debited)
 
@@ -154,6 +205,9 @@ def settle_connection_balance(conn, connection_data, now_utc, mono_now):
         "UPDATE connections SET last_settled_at_mono = ?, last_settled_at_utc = ?, updated_at = ? WHERE id = ?",
         (mono_now, now_utc, now_utc, connection_data['id'])
     )
+    if new_state in ('DEPLETED', 'EXPIRED'):
+        c.execute("UPDATE grant_pauses SET status = 'EXPIRED', closed_at_utc = ? WHERE grant_id = ? AND status = 'OPEN'", (now_utc, gid))
+        _activate_next_grant_or_disconnect(conn, owner_id, connection_data['id'], mono_now, now_utc)
 
     if debited > 0.001:
         # Record consumption event in time_ledger
@@ -171,23 +225,39 @@ def settle_connection_balance(conn, connection_data, now_utc, mono_now):
     return {'id': gid, 'remaining_seconds': new_rem, 'state': new_state, 'valid_until_utc': valid_until}, debited
 
 
-def get_or_create_pause_budget(conn, owner_id, pause_count_max, now_utc):
+def create_pause_budget(conn, owner_id, pause_count_max, now_utc):
     """
-    Get existing open pause budget or create one.
+    Create a new open pause budget for an independent grant.
     """
-    c = conn.cursor()
-    c.execute("SELECT id, pause_count_max, used_count FROM pause_budgets WHERE owner_id = ?", (owner_id,))
-    row = c.fetchone()
-    if row:
-        return {'id': row[0], 'pause_count_max': row[1], 'used_count': row[2]}
-
     bid = generate_uuid()
+    c = conn.cursor()
     c.execute(
         "INSERT INTO pause_budgets (id, owner_id, pause_count_max, used_count, created_at) VALUES (?, ?, ?, 0, ?)",
         (bid, owner_id, pause_count_max, now_utc)
     )
     return {'id': bid, 'pause_count_max': pause_count_max, 'used_count': 0}
 
+
+def bulk_settle_active_connections(conn, now_utc, mono_now):
+    c = conn.cursor()
+    c.execute("""
+        SELECT id, ip, mac, owner_id, selected_grant_id, desired_state, applied_state,
+               binding_version, last_settled_at_mono, last_settled_at_utc
+        FROM connections WHERE desired_state = 'ACTIVE'
+    """)
+    rows = c.fetchall()
+    results = []
+    for row in rows:
+        cdata = {
+            'id': row[0], 'ip': row[1], 'mac': row[2], 'owner_id': row[3],
+            'selected_grant_id': row[4], 'desired_state': row[5], 'applied_state': row[6],
+            'binding_version': row[7], 'last_settled_at_mono': row[8], 'last_settled_at_utc': row[9]
+        }
+        settle_connection_balance(conn, cdata, now_utc, mono_now)
+        c.execute("SELECT desired_state FROM connections WHERE id = ?", (row[0],))
+        results.append((row[1], c.fetchone()[0]))
+    conn.commit()
+    return results
 
 def apply_operation(conn, owner_id, connection_data, action, payload, op_id, now_utc, mono_now):
     """
@@ -200,11 +270,15 @@ def apply_operation(conn, owner_id, connection_data, action, payload, op_id, now
     payload_hash = hashlib.sha256(payload_str.encode('utf-8')).hexdigest()
 
     if op_id:
-        c.execute("SELECT payload_hash, response_json FROM value_operations WHERE operation_id = ?", (op_id,))
+        c.execute("SELECT owner_id, action, payload_hash, response_json FROM value_operations WHERE operation_id = ?", (op_id,))
         row = c.fetchone()
         if row:
-            # Already processed! Return cached result
-            return json.loads(row[1])
+            row_owner_id, row_action, row_payload_hash, response_json = row
+            if row_owner_id != owner_id or row_action != action or row_payload_hash != payload_hash:
+                return {'success': False, 'error': 'operation_id_conflict'}
+            result = json.loads(response_json)
+            result['replayed'] = True
+            return result
 
     # 2. Settle current connection usage
     settled_grant, debited = settle_connection_balance(conn, connection_data, now_utc, mono_now)
@@ -222,7 +296,7 @@ def apply_operation(conn, owner_id, connection_data, action, payload, op_id, now
             """
             SELECT g.id, g.remaining_seconds, g.state, g.valid_until_utc, g.pause_budget_id,
                    p.pause_count_max, p.pause_duration_sec, p.min_balance_sec, p.max_balance_sec,
-                   b.used_count
+                   b.used_count, g.owner_id
             FROM time_grants g
             JOIN time_policy_versions p ON g.policy_version_id = p.id
             JOIN pause_budgets b ON g.pause_budget_id = b.id
@@ -235,7 +309,11 @@ def apply_operation(conn, owner_id, connection_data, action, payload, op_id, now
             result['error'] = 'grant_not_found'
             return _save_op(conn, op_id, owner_id, action, payload_hash, result, now_utc)
 
-        gid, rem_sec, gstate, valid_until, bid, count_max, dur_sec, min_bal, max_bal, used_count = grow
+        gid, rem_sec, gstate, valid_until, bid, count_max, dur_sec, min_bal, max_bal, used_count, grant_owner_id = grow
+
+        if grant_owner_id != owner_id:
+            result['error'] = 'forbidden_grant_owner'
+            return _save_op(conn, op_id, owner_id, action, payload_hash, result, now_utc)
 
         # If already paused, return idempotent success with current state
         if gstate == 'PAUSED':
@@ -249,6 +327,7 @@ def apply_operation(conn, owner_id, connection_data, action, payload, op_id, now
             return _save_op(conn, op_id, owner_id, action, payload_hash, result, now_utc)
 
         # Check eligibility via pure policy engine
+        admin_suspended = payload.get('admin_suspended', False)
         ok, reason = time_policy.can_pause_grant(
             grant_state=gstate,
             remaining_seconds=rem_sec,
@@ -257,7 +336,8 @@ def apply_operation(conn, owner_id, connection_data, action, payload, op_id, now
             valid_until_utc=valid_until,
             pause_count_max=count_max,
             min_balance_sec=min_bal,
-            max_balance_sec=max_bal
+            max_balance_sec=max_bal,
+            admin_suspended=admin_suspended
         )
 
         if not ok:
@@ -307,13 +387,17 @@ def apply_operation(conn, owner_id, connection_data, action, payload, op_id, now
             result['error'] = 'no_active_grant'
             return _save_op(conn, op_id, owner_id, action, payload_hash, result, now_utc)
 
-        c.execute("SELECT id, remaining_seconds, state, valid_until_utc FROM time_grants WHERE id = ?", (grant_id,))
+        c.execute("SELECT id, remaining_seconds, state, valid_until_utc, owner_id FROM time_grants WHERE id = ?", (grant_id,))
         grow = c.fetchone()
         if not grow:
             result['error'] = 'grant_not_found'
             return _save_op(conn, op_id, owner_id, action, payload_hash, result, now_utc)
 
-        gid, rem_sec, gstate, valid_until = grow
+        gid, rem_sec, gstate, valid_until, grant_owner_id = grow
+
+        if grant_owner_id != owner_id:
+            result['error'] = 'forbidden_grant_owner'
+            return _save_op(conn, op_id, owner_id, action, payload_hash, result, now_utc)
 
         if gstate == 'ACTIVE':
             result['success'] = True
@@ -323,6 +407,11 @@ def apply_operation(conn, owner_id, connection_data, action, payload, op_id, now
 
         if gstate != 'PAUSED':
             result['error'] = 'grant_not_paused'
+            return _save_op(conn, op_id, owner_id, action, payload_hash, result, now_utc)
+            
+        admin_suspended = payload.get('admin_suspended', False)
+        if admin_suspended:
+            result['error'] = 'admin_suspended'
             return _save_op(conn, op_id, owner_id, action, payload_hash, result, now_utc)
 
         # Check calendar expiry before resuming
@@ -380,7 +469,7 @@ def apply_operation(conn, owner_id, connection_data, action, payload, op_id, now
         brackets = json.loads(brackets_json)
 
         val_duration = time_policy.calculate_bracket_validity(issued_seconds, brackets, global_validity_min=global_val_min)
-        budget = get_or_create_pause_budget(conn, owner_id, count_max, now_utc)
+        budget = create_pause_budget(conn, owner_id, count_max, now_utc)
 
         grant_id = generate_uuid()
 
@@ -452,7 +541,6 @@ def apply_operation(conn, owner_id, connection_data, action, payload, op_id, now
         result['remaining_seconds'] = issued_seconds
         result['valid_until_utc'] = valid_until
 
-    conn.commit()
     return _save_op(conn, op_id, owner_id, action, payload_hash, result, now_utc)
 
 
@@ -484,8 +572,7 @@ def check_due_events(conn, now_utc, mono_now):
     for gid, oid, rem, cid in exp_rows:
         c.execute("UPDATE time_grants SET state = 'EXPIRED', updated_at = ? WHERE id = ?", (now_utc, gid))
         c.execute("UPDATE grant_pauses SET status = 'EXPIRED', closed_at_utc = ? WHERE grant_id = ? AND status = 'OPEN'", (now_utc, gid))
-        if cid:
-            c.execute("UPDATE connections SET desired_state = 'DISCONNECTED', updated_at = ? WHERE id = ?", (now_utc, cid))
+        _activate_next_grant_or_disconnect(conn, oid, cid, mono_now, now_utc)
         event_id = generate_uuid()
         c.execute(
             """
@@ -520,8 +607,7 @@ def check_due_events(conn, now_utc, mono_now):
             # Forfeit / Expire
             c.execute("UPDATE grant_pauses SET status = 'EXPIRED', closed_at_utc = ? WHERE id = ?", (now_utc, pid))
             c.execute("UPDATE time_grants SET state = 'EXPIRED', updated_at = ? WHERE id = ?", (now_utc, gid))
-            if cid:
-                c.execute("UPDATE connections SET desired_state = 'DISCONNECTED', updated_at = ? WHERE id = ?", (now_utc, cid))
+            _activate_next_grant_or_disconnect(conn, oid, cid, mono_now, now_utc)
             event_id = generate_uuid()
             reason = 'validity_expired' if is_calendar_expiry else 'pause_timeout_expired'
             c.execute(
@@ -568,11 +654,11 @@ def _save_op(conn, op_id, owner_id, action, payload_hash, result, now_utc):
         c = conn.cursor()
         c.execute(
             """
-            INSERT OR REPLACE INTO value_operations (
+            INSERT INTO value_operations (
                 operation_id, owner_id, action, payload_hash, response_json, created_at
             ) VALUES (?, ?, ?, ?, ?, ?)
             """,
             (op_id, owner_id, action, payload_hash, json.dumps(result), now_utc)
         )
-        conn.commit()
+    conn.commit()
     return result

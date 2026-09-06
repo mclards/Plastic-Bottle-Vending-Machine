@@ -107,7 +107,7 @@ def can_pause_grant(grant_state, remaining_seconds, pause_count_used, now_utc, v
         return False, 'calendar_expired'
 
     # Count gate: finite N requires C < N
-    if pause_count_max is not None and pause_count_max > 0:
+    if pause_count_max is not None:
         if pause_count_used >= pause_count_max:
             return False, 'pause_limit_reached'
 
@@ -213,3 +213,36 @@ def seconds_until_pausable_by_max(remaining_seconds, max_balance_sec):
     if remaining_seconds <= max_balance_sec:
         return 0
     return remaining_seconds - max_balance_sec
+
+
+def validate_brackets(brackets):
+    """
+    Validates a set of bracket policies.
+    Returns (True, None) if valid, or (False, error_reason).
+    Checks:
+    - positive duration ceilings and expirations
+    - ascending/unique ceilings
+    """
+    if not isinstance(brackets, list):
+        return False, 'invalid_format'
+    
+    seen_ceilings = set()
+    enabled_brackets = [b for b in brackets if b.get('enabled', True)]
+    
+    for b in enabled_brackets:
+        try:
+            val = int(b.get('value', -1))
+            exp = int(b.get('expiration', -1))
+        except (ValueError, TypeError):
+            return False, 'non_numeric_values'
+            
+        if val <= 0:
+            return False, 'non_positive_ceiling'
+            
+        if val in seen_ceilings:
+            return False, 'duplicate_ceiling'
+            
+        seen_ceilings.add(val)
+        
+    return True, None
+

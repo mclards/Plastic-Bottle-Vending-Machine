@@ -58,7 +58,7 @@ TIME_SCHEMA_STATEMENTS = [
         id TEXT PRIMARY KEY,
         owner_id TEXT NOT NULL REFERENCES credit_owners(id),
         pause_count_max INTEGER,
-        used_count INTEGER NOT NULL DEFAULT 0,
+        used_count INTEGER NOT NULL DEFAULT 0 CHECK(used_count >= 0),
         created_at INTEGER NOT NULL
     );
     """,
@@ -72,7 +72,7 @@ TIME_SCHEMA_STATEMENTS = [
         origin TEXT NOT NULL,
         source_ref TEXT,
         issued_seconds INTEGER NOT NULL,
-        remaining_seconds REAL NOT NULL,
+        remaining_seconds REAL NOT NULL CHECK(remaining_seconds >= 0),
         state TEXT NOT NULL,
         validity_mode TEXT NOT NULL,
         validity_duration_sec INTEGER,
@@ -97,13 +97,14 @@ TIME_SCHEMA_STATEMENTS = [
         effective_deadline_utc INTEGER,
         pause_reason TEXT NOT NULL,
         timeout_action TEXT NOT NULL,
-        status TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('OPEN', 'CLOSED', 'EXPIRED')),
         closed_at_utc INTEGER,
         created_at INTEGER NOT NULL
     );
     """,
     "CREATE INDEX IF NOT EXISTS idx_grant_pauses_grant ON grant_pauses (grant_id, status);",
     "CREATE INDEX IF NOT EXISTS idx_grant_pauses_deadline ON grant_pauses (effective_deadline_utc);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_grant_pauses_open ON grant_pauses (grant_id) WHERE status = 'OPEN';",
 
     # 7. Physical Network Connections (Device to Selected Grant)
     """
@@ -177,11 +178,8 @@ def seed_default_policies(conn):
     now = int(time.time())
 
     # 1. pisofi_time_v1 (Standard PisoFi behavior: 3 pauses, 60 min duration, auto-resume)
-    default_brackets = [
-        {'value': 60, 'expiration': 1440, 'enabled': True},    # 1 hr  -> 24 hrs
-        {'value': 180, 'expiration': 4320, 'enabled': True},   # 3 hrs -> 3 days
-        {'value': 1440, 'expiration': 10080, 'enabled': True}  # 1 day -> 7 days
-    ]
+    # R24: Use empty bracket set with global fallback instead of sample demonstration fixtures.
+    default_brackets = []
 
     c.execute("""
         INSERT OR IGNORE INTO time_policy_versions (
@@ -215,3 +213,4 @@ def init_time_schema(conn):
         c.execute(stmt)
     seed_default_policies(conn)
     conn.commit()
+

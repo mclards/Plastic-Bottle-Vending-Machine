@@ -175,3 +175,4 @@ if __name__ == '__main__':
     is_dry = '--dry-run' in sys.argv
     res = run_migration(target_db, dry_run=is_dry)
     print("Migration result: " + json.dumps(res, indent=2))
+

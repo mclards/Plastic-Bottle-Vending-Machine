@@ -1,0 +1,4 @@
+@app.route('/admin/api/members/list')
+@app.route('/admin/api/members/add', methods=['POST'])
+@app.route('/admin/api/members/topup', methods=['POST'])
+@app.route('/admin/api/members/delete', methods=['POST'])
