@@ -559,14 +559,16 @@ def restore_sessions_from_db():
     with active_clients_lock:
         with db_connection() as conn:
             ensure_session_schema(conn)
-            rows = conn.execute('SELECT ip, mac, remaining_seconds, is_paused, dl_kbps, ul_kbps, pending_bottles, paused_at, expires_at, state_json FROM active_sessions').fetchall()
-        for ip, mac, remaining, paused, dl, ul, pending, paused_at, expires_at, state in rows:
+            rows = conn.execute('SELECT ip, mac, remaining_seconds, is_paused, dl_kbps, ul_kbps, pending_bottles, paused_at, expires_at, state_json, member_username FROM active_sessions').fetchall()
+        for ip, mac, remaining, paused, dl, ul, pending, paused_at, expires_at, state, member_username in rows:
             if ip in ('127.0.0.1', '10.0.0.1', '::1') or (remaining <= 0 and not pending): continue
             sess = json.loads(state) if state else {}
             sess.update(mac=mac, remaining_seconds=remaining, is_paused=bool(paused),
                         dl_kbps=dl or int(get_config('default_dl_kbps', '3072')),
                         ul_kbps=ul or int(get_config('default_ul_kbps', '1536')),
                         pending_bottles=pending or 0, paused_at=paused_at or 0, expires_at=expires_at or 0)
+            if member_username:
+                sess['member_username'] = member_username
             if paused and not state: sess['user_paused'] = True
             # Accepted but unfinalized bottles survive a restart as earned time.
             if pending:
@@ -1094,12 +1096,6 @@ def api_member_login():
         wallet_mins = row[1]
         client_ip = get_client_ip()
         
-        # Check active_ip column in members
-        try:
-            c.execute("ALTER TABLE members ADD COLUMN active_ip TEXT DEFAULT ''")
-        except sqlite3.OperationalError:
-            pass
-        
         c.execute("SELECT active_ip FROM members WHERE username = ?", (username,))
         row_ip = c.fetchone()
         saved_active_ip = row_ip[0] if row_ip and row_ip[0] else None
@@ -1111,6 +1107,7 @@ def api_member_login():
         with active_clients_lock:
             cur_sess = ensure_client_session(client_ip)
             cur_sess['member_username'] = username
+            client_mac = cur_sess.get('mac', '')
             
             # Find candidate old sessions to migrate:
             candidates = []
@@ -1122,13 +1119,6 @@ def api_member_login():
                     if ip_k not in candidates:
                         candidates.append(ip_k)
             
-            # If no tagged candidate found, check if there is an orphaned session for known user or single paused session
-            if not candidates:
-                c.execute("SELECT ip, remaining_seconds, dl_kbps FROM active_sessions WHERE is_paused = 1 AND ip != ? ORDER BY remaining_seconds DESC LIMIT 1", (client_ip,))
-                paused_candidate = c.fetchone()
-                if paused_candidate and paused_candidate[1] > 0 and (username in ('mclards', 'mclards2') or c.execute("SELECT COUNT(*) FROM members").fetchone()[0] <= 2):
-                    candidates.append(paused_candidate[0])
-
             for old_ip in candidates:
                 old_sess = active_clients.get(old_ip)
                 if not old_sess:
@@ -1157,7 +1147,7 @@ def api_member_login():
                     c.execute("DELETE FROM active_sessions WHERE ip = ?", (old_ip,))
                     transferred_ip = old_ip
             
-            c.execute("UPDATE members SET active_ip = ? WHERE username = ?", (client_ip, username))
+            c.execute("UPDATE members SET active_ip = ?, active_mac = ? WHERE username = ?", (client_ip, client_mac, username))
             conn.commit()
             
             if transferred_sec > 0:
@@ -1213,10 +1203,11 @@ def api_member_use_wallet():
         sess['paused_at'] = 0
         sess['expires_at'] = 0
         sess['member_username'] = username
+        client_mac = sess.get('mac', '')
         sync_client_firewall(client_ip)
         save_sessions_to_db()
     with db_connection() as conn:
-        conn.execute("UPDATE members SET active_ip = ? WHERE username = ?", (client_ip, username))
+        conn.execute("UPDATE members SET active_ip = ?, active_mac = ? WHERE username = ?", (client_ip, client_mac, username))
     return jsonify({'success': True, 'message': 'Added {} minutes from wallet to session!'.format(minutes), 'wallet_minutes': current_wallet - minutes})
 
 @app.route('/api/member/save_time', methods=['POST'])
@@ -1241,9 +1232,10 @@ def api_member_save_time():
             sess['is_paused'] = False
             sess['paused_at'] = 0
             sess['expires_at'] = 0
+            sess['member_username'] = ''
             sync_client_firewall(client_ip)
             save_sessions_to_db()
-        c.execute('UPDATE members SET wallet_minutes = wallet_minutes + ?, active_ip = \'\' WHERE username = ?', (mins_to_save, username))
+        c.execute("UPDATE members SET wallet_minutes = wallet_minutes + ?, active_ip = '', active_mac = '' WHERE username = ?", (mins_to_save, username))
         conn.commit()
         c.execute('SELECT wallet_minutes FROM members WHERE username = ?', (username,))
         new_wallet = c.fetchone()[0]
