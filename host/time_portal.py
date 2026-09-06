@@ -558,7 +558,8 @@ class TimePortal(object):
         data=self.data();now,mono=self.now()
         with self.p.db_connection() as conn:
             self.require_ready(conn);username,owner=self.register_member(conn,data)
-            amount=storage.to_us(float(data.get('wallet_minutes',0))*60)
+            mins=float(data.get('wallet_minutes') or data.get('minutes') or 0)
+            amount=storage.to_us(mins*60)
             if amount<0:raise ValueError('invalid_seconds')
             if amount:
                 engine._create_grant(conn,owner,amount,'admin_wallet',now,state='WALLET',policy_id='legacy_ecofi_pause_v1',op='member-create:'+username)
@@ -566,31 +567,44 @@ class TimePortal(object):
         return jsonify(success=True)
 
     def admin_member_topup(self):
-        data=self.data();now,mono=self.now();username=str(data.get('username',''))
-        amount=storage.to_us(float(data.get('minutes',0))*60)
-        if amount<=0:raise ValueError('invalid_seconds')
+        data=self.data();now,mono=self.now();username=str(data.get('username','')).strip()
+        minutes=float(data.get('minutes',0))
         op=self.op_id(data,'admin-wallet')
         with self.p.db_connection() as conn:
             self.require_ready(conn)
             if not conn.execute('SELECT 1 FROM members WHERE username=?',(username,)).fetchone():raise ValueError('member_not_found')
             owner=engine.get_or_create_owner(conn,'member',username,now)
-            digest=hashlib.sha256(json.dumps({'username':username,'amount_us':amount},sort_keys=True).encode()).hexdigest()
-            prior=engine.one(conn,'SELECT * FROM value_operations WHERE operation_id=?',(op,))
-            if prior:
-                if prior['owner_id']!=owner or prior['payload_hash']!=digest:raise ValueError('operation_id_conflict')
-            else:
-                engine._create_grant(conn,owner,amount,'admin_wallet',now,state='WALLET',policy_id='legacy_ecofi_pause_v1',op=op)
-                conn.execute('INSERT INTO value_operations VALUES (?,?,?,?,?,?)',(op,owner,'ADMIN_WALLET',digest,'{"success":true}',now))
+            if minutes < 0:
+                deduct_us=storage.to_us(abs(minutes)*60)
+                grants=engine.all_rows(conn,"SELECT id, remaining_us FROM time_grants WHERE owner_id=? AND remaining_us>0 AND state NOT IN ('EXPIRED','DEPLETED','MOVED') ORDER BY created_at ASC",(owner,))
+                left=deduct_us
+                for g in grants:
+                    if left<=0:break
+                    take=min(left,g['remaining_us'])
+                    rem=g['remaining_us']-take
+                    st='DEPLETED' if rem==0 else 'WALLET'
+                    conn.execute("UPDATE time_grants SET remaining_us=?, state=?, updated_at=? WHERE id=?",(rem,st,now,g['id']))
+                    left-=take
+            elif minutes > 0:
+                amount=storage.to_us(minutes*60)
+                digest=hashlib.sha256(json.dumps({'username':username,'amount_us':amount},sort_keys=True).encode()).hexdigest()
+                prior=engine.one(conn,'SELECT * FROM value_operations WHERE operation_id=?',(op,))
+                if prior:
+                    if prior['owner_id']!=owner or prior['payload_hash']!=digest:raise ValueError('operation_id_conflict')
+                else:
+                    engine._create_grant(conn,owner,amount,'admin_wallet',now,state='WALLET',policy_id='legacy_ecofi_pause_v1',op=op)
+                    conn.execute('INSERT INTO value_operations VALUES (?,?,?,?,?,?)',(op,owner,'ADMIN_WALLET',digest,'{"success":true}',now))
             engine._wallet_projection(conn,owner,now)
         return jsonify(success=True)
 
     def admin_member_delete(self):
-        username=str(self.data().get('username',''));now,mono=self.now()
+        username=str(self.data().get('username','')).strip();now,mono=self.now()
+        if not username:raise ValueError('invalid_username')
         with self.p.db_connection() as conn:
             owner=engine.get_or_create_owner(conn,'member',username,now)
-            if conn.execute("SELECT 1 FROM time_grants WHERE owner_id=? AND remaining_us>0 AND state NOT IN ('EXPIRED','DEPLETED','MOVED')",(owner,)).fetchone():
-                raise ValueError('member_has_credit_transfer_or_settle_before_deletion')
+            conn.execute("UPDATE time_grants SET state='DEPLETED', remaining_us=0, updated_at=? WHERE owner_id=?",(now,owner))
             conn.execute('DELETE FROM members WHERE username=?',(username,))
+            conn.execute("DELETE FROM active_sessions WHERE ip=?",('saved:'+username,))
         return jsonify(success=True)
 
     def policy(self):
