@@ -269,6 +269,10 @@ cp "$SOURCE_HOST/portal.py" "$MOUNT_DIR/opt/ecofi/"
 cp "$SOURCE_HOST/license_manager.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
 cp "$SOURCE_HOST/esp32_simulator.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
 cp "$SOURCE_HOST/gateway_network.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
+cp "$SOURCE_HOST/time_schema.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
+cp "$SOURCE_HOST/time_policy.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
+cp "$SOURCE_HOST/transition_engine.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
+cp "$SOURCE_HOST/migrate_legacy_sessions.py" "$MOUNT_DIR/opt/ecofi/" 2>/dev/null || true
 if [ -d "$SOURCE_HOST/templates" ]; then cp -r "$SOURCE_HOST/templates" "$MOUNT_DIR/opt/ecofi/"; fi
 if [ -d "$SOURCE_HOST/static" ]; then cp -r "$SOURCE_HOST/static" "$MOUNT_DIR/opt/ecofi/"; fi
 
