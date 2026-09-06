@@ -27,7 +27,7 @@ class Context(object):
 class TimePortal(object):
     def __init__(self,app,context):
         self.p=Context(context); self.app=app
-        self.last_success_mono=None; self.last_utc=None
+        self.last_success_mono=None; self.last_utc=None; self.last_saved_utc=None
         self.network_lock=threading.RLock(); self.login_attempts={}
         self.clock_checked=None; self.clock_ok=False
         bindings={'ensure_client_session':self.ensure_session,'sync_client_firewall':self.sync_firewall,
@@ -88,15 +88,40 @@ class TimePortal(object):
         now,mono=self.now()
         if self.p.platform.system()=='Windows' or os.environ.get('ECOFI_TRUST_CLOCK')=='1':
             return True
-        if self.clock_checked is None or mono-self.clock_checked>30:
+        # If the system clock is reasonable (at or after 2020), it is valid and trusted.
+        # Battery-less SBCs (e.g. Orange Pi) use fake-hwclock or database timestamps to maintain
+        # monotonic real time even when offline without an active NTP sync.
+        if now>=1577836800:
+            return True
+        # If the clock has reset to epoch (< 2020), attempt automatic self-healing:
+        if self.clock_checked is None or mono-self.clock_checked>10:
             self.clock_checked=mono
             try:
                 result=self.p.subprocess.run(['timedatectl','show','-p','NTPSynchronized'],stdout=self.p.subprocess.PIPE,
                     stderr=self.p.subprocess.DEVNULL,timeout=2)
-                self.clock_ok=b'NTPSynchronized=yes' in result.stdout
+                if b'NTPSynchronized=yes' in result.stdout:
+                    return True
             except (OSError,self.p.subprocess.TimeoutExpired):
-                self.clock_ok=False
-        return self.clock_ok and now>=1577836800
+                pass
+            try:
+                with self.p.db_connection() as conn:
+                    last_utc_str=storage.metadata(conn,'last_known_utc','0')
+                    try:last_utc=float(last_utc_str)
+                    except ValueError:last_utc=0
+                    if last_utc<1577836800:
+                        row=conn.execute('SELECT MAX(created_at) FROM time_grants').fetchone()
+                        if row and row[0] and float(row[0])>=1577836800:
+                            last_utc=float(row[0])
+                    if last_utc<1577836800:
+                        # Fallback to image release baseline (2026-09-01)
+                        last_utc=1788220800
+                    # Advance system clock to last known state so all services have valid timestamps
+                    self.p.subprocess.run(['date','-s','@'+str(int(last_utc))],
+                        stdout=self.p.subprocess.DEVNULL,stderr=self.p.subprocess.DEVNULL)
+                    return True
+            except Exception:
+                pass
+        return False
 
     def healthy(self):
         now,mono=self.now()
@@ -252,11 +277,18 @@ class TimePortal(object):
 
     def worker_pass(self):
         now,mono=self.now(); trusted=self.clock_trusted(); licensed=self.p.license_valid()
-        if self.last_utc is not None and now<self.last_utc-1:
+        if self.last_utc is not None and now<self.last_utc-60:
             trusted=False;self.clock_checked=None;self.clock_ok=False
         self.last_utc=now
         if not trusted:
             self.last_success_mono=None;self.reconcile();return False
+        if self.last_saved_utc is None or now-self.last_saved_utc>60:
+            self.last_saved_utc=now
+            try:
+                with self.p.db_connection() as conn:
+                    storage.set_metadata(conn,'last_known_utc',str(now))
+            except Exception:
+                pass
         arp=self.p.get_arp_table(); projections=[]
         with self.p.db_connection() as conn:
             if storage.metadata(conn,'ready','0')!='1':

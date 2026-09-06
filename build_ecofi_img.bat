@@ -1,6 +1,6 @@
 @echo off
 echo ======================================================================
-echo    ECO-FI OS IMAGE BUILDER & CUSTOMIZER
+echo    ECO-FI OS IMAGE BUILDER ^& CUSTOMIZER
 echo    Target: resources\EcoFi_Opi_v2.0.img
 echo ======================================================================
 echo.
