@@ -193,7 +193,7 @@
     }
     function policyEditor() {
         if (!/^\/admin\/?$/.test(location.pathname)) return;
-        var container = document.getElementById('sec-rates') || document.querySelector('.content-wrapper');
+        var container = document.getElementById('time-policy-container') || document.getElementById('sec-time-policy') || document.getElementById('sec-rates') || document.querySelector('.content-wrapper');
         if (!container) return;
         if (document.getElementById('time-policy-card')) return;
 
@@ -456,5 +456,6 @@
             };
         }).catch(function () {});
     }
+    window.policyEditor = policyEditor;
     document.addEventListener('DOMContentLoaded', policyEditor);
 }());
