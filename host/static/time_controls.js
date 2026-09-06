@@ -219,69 +219,62 @@
                 if (mins < 60) return mins + 'm';
                 if (mins < 1440) {
                     var h = Math.round(mins / 60 * 10) / 10;
-                    return h + 'h';
+                    return (h % 1 === 0 ? Math.round(h) : h) + 'h';
                 }
                 var d = Math.round(mins / 1440);
                 if (d < 30) return d + 'd';
-                var mo = Math.round(d / 30);
-                return mo + 'mo (' + d + 'd)';
+                var mo = Math.round(d / 30 * 10) / 10;
+                return (mo % 1 === 0 ? Math.round(mo) : mo) + 'mo';
             }
 
             var card = element('div', undefined, container);
             card.id = 'time-policy-card';
-            card.className = 'card card-outline card-primary mb-3 mt-3 shadow-sm';
-            card.style.cssText = 'background:#0f172a; border-color:#1e293b;';
+            card.className = 'card mb-3 mt-3';
+            card.style.cssText = 'background:#1e293b; border:1px solid rgba(255,255,255,0.08); border-radius:8px; overflow:hidden;';
 
-            // Compact Header
+            // Clean Minimal Header (No unnecessary lines or badges)
             var cardHeader = element('div', undefined, card);
-            cardHeader.className = 'card-header py-2 px-3 d-flex justify-content-between align-items-center';
-            cardHeader.style.cssText = 'background: rgba(15,23,42,0.9); border-bottom: 1px solid rgba(255,255,255,0.08);';
-            cardHeader.innerHTML = '<div class="d-flex align-items-center">' +
-                '<h3 class="card-title font-weight-bold text-light mb-0" style="font-size:13.5px;">' +
-                '<i class="fas fa-clock text-primary mr-2"></i>Time Validity & Pause Settings</h3>' +
-                '<span class="badge badge-primary ml-2 px-2 py-0" style="font-size:10px; font-weight:600;">Authoritative Policy</span>' +
-                '</div>' +
-                '<small class="text-muted d-none d-md-inline" style="font-size:11px;">' +
-                '<i class="fas fa-shield-alt text-info mr-1"></i>Pre-set default tiers active • New credit inherits terms</small>';
+            cardHeader.className = 'card-header py-2 px-3';
+            cardHeader.style.cssText = 'background:#0f172a; border-bottom:1px solid rgba(255,255,255,0.06);';
+            cardHeader.innerHTML = '<h3 class="card-title font-weight-bold text-light mb-0" style="font-size:13px;">' +
+                '<i class="fas fa-clock text-primary mr-2"></i>Time Validity & Pause Settings</h3>';
 
             var cardBody = element('div', undefined, card);
-            cardBody.className = 'card-body p-3';
+            cardBody.className = 'card-body p-2 p-sm-3';
 
             var form = element('form', undefined, cardBody);
             var controls = {};
 
-            // Row 1: Inline Controls Bar (Switch + Action)
+            // Row 1: Inline Controls Bar (Switch + Action) - Mobile Adaptive
             var topBar = element('div', undefined, form);
-            topBar.className = 'd-flex flex-wrap justify-content-between align-items-center mb-2 pb-2';
-            topBar.style.cssText = 'border-bottom: 1px solid rgba(255,255,255,0.06); gap: 10px;';
+            topBar.className = 'd-flex flex-wrap justify-content-between align-items-center mb-2';
+            topBar.style.cssText = 'gap: 8px;';
 
             var pauseSwitchBox = element('div', undefined, topBar);
             pauseSwitchBox.className = 'custom-control custom-switch';
             pauseSwitchBox.innerHTML = '<input type="checkbox" class="custom-control-input" id="policy-allow-pause">' +
-                '<label class="custom-control-label font-weight-bold text-light small" for="policy-allow-pause" style="cursor:pointer;">' +
-                'Allow Client Pauses <span class="text-muted font-weight-normal ml-1">(Show PAUSE button in portal)</span></label>';
+                '<label class="custom-control-label font-weight-bold text-light small" for="policy-allow-pause" style="cursor:pointer; font-size:11.5px;">' +
+                'Allow Client Pauses</label>';
             var allowInput = pauseSwitchBox.querySelector('#policy-allow-pause');
             allowInput.checked = !!policy.pause_allowed;
 
             var actionBox = element('div', undefined, topBar);
             actionBox.className = 'd-flex align-items-center';
-            actionBox.innerHTML = '<span class="text-muted small font-weight-bold mr-2" style="font-size:11.5px; white-space:nowrap;">When Pause Times Out:</span>' +
-                '<select class="custom-select custom-select-sm" id="policy-timeout-action" style="height:28px; width:185px; background:#1f2937; border:1px solid #374151; color:#f9fafb; font-size:11.5px; padding:2px 8px;">' +
+            actionBox.style.cssText = 'gap: 6px;';
+            actionBox.innerHTML = '<span class="text-muted small font-weight-bold" style="font-size:11px; white-space:nowrap;">Timeout Action:</span>' +
+                '<select class="custom-select custom-select-sm" id="policy-timeout-action" style="height:28px; width:auto; min-width:145px; background:#0f172a; border:1px solid #334155; color:#f8fafc; font-size:11.5px; padding:2px 8px;">' +
                 '<option value="resume">Resume (Auto-Unpause)</option><option value="expire">Expire Remaining Credit</option></select>';
             var actionSelect = actionBox.querySelector('#policy-timeout-action');
             actionSelect.value = policy.pause_timeout_action || 'resume';
 
-            // Row 2: 5 Compact Input Fields in a tight grid
-            var fieldsRow = element('div', undefined, form);
-            fieldsRow.className = 'row no-gutters mb-2';
-            fieldsRow.style.cssText = 'gap: 8px; display: flex;';
+            // Row 2: 5 Responsive Input Fields (CSS Grid: 2 cols on mobile, 5 on desktop)
+            var fieldsGrid = element('div', undefined, form);
+            fieldsGrid.className = 'mb-2';
+            fieldsGrid.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px;';
 
-            function addCompactField(key, label, value, nullable, placeholder, tooltip, flexBasis) {
-                var col = element('div', undefined, fieldsRow);
-                col.style.cssText = 'flex: 1 1 ' + (flexBasis || '120px') + '; min-width: 110px;';
-
-                var formGroup = element('div', undefined, col);
-                formGroup.className = 'form-group mb-1';
+            function addCompactField(key, label, value, nullable, placeholder, tooltip) {
+                var formGroup = element('div', undefined, fieldsGrid);
+                formGroup.className = 'form-group mb-0';
 
                 var lbl = element('label', undefined, formGroup);
                 lbl.className = 'font-weight-bold small mb-1 d-block text-truncate';
@@ -296,55 +289,52 @@
                 input.title = tooltip;
                 input.placeholder = placeholder || '';
                 input.className = 'form-control form-control-sm';
-                input.style.cssText = 'height: 29px; background:#1f2937; border:1px solid #374151; color:#f9fafb; font-size: 12px; padding: 2px 8px; border-radius: 4px;';
+                input.style.cssText = 'height: 28px; width: 100%; background:#0f172a; border:1px solid #334155; color:#f8fafc; font-size: 12px; padding: 2px 8px; border-radius: 4px; box-sizing: border-box;';
                 input.value = value == null ? '' : value;
                 if (!nullable) input.required = true;
                 controls[key] = input;
             }
 
-            addCompactField('pause_count_max', 'Max Pauses', policy.pause_count_max, true, 'Unlimited', 'Maximum pauses per credit session (0 = none, Blank = unlimited)', '100px');
-            addCompactField('pause_duration_sec', 'Pause Duration (s)', policy.pause_duration_sec, false, '3600 (1 hour)', 'Max duration of one pause in seconds before timeout triggers', '130px');
-            addCompactField('global_validity_min', 'Default Validity (m)', policy.global_validity_min, true, '1440 (24 hrs)', 'Global fallback validity in minutes if no brackets match', '130px');
-            addCompactField('min_balance_sec', 'Min Pause Bal (s)', policy.min_balance_sec, false, '0 (No Min)', 'Minimum remaining seconds required to pause', '115px');
-            addCompactField('max_balance_sec', 'Max Pause Bal (s)', policy.max_balance_sec, true, 'Disabled', 'Maximum remaining balance allowed to pause (optional limit)', '115px');
+            addCompactField('pause_count_max', 'Max Pauses', policy.pause_count_max, true, 'Unlimited', 'Maximum pauses per credit session (0 = none, Blank = unlimited)');
+            addCompactField('pause_duration_sec', 'Pause Timeout (s)', policy.pause_duration_sec, false, '3600 (1 hour)', 'Max duration of one pause in seconds before timeout triggers');
+            addCompactField('global_validity_min', 'Default Validity (m)', policy.global_validity_min, true, '1440 (24 hrs)', 'Global fallback validity in minutes if no brackets match');
+            addCompactField('min_balance_sec', 'Min Pause Bal (s)', policy.min_balance_sec, false, '0 (No Min)', 'Minimum remaining seconds required to pause');
+            addCompactField('max_balance_sec', 'Max Pause Bal (s)', policy.max_balance_sec, true, 'Disabled', 'Maximum remaining balance allowed to pause (optional limit)');
 
             // Section: Validity Brackets Table
             var bracketsContainer = element('div', undefined, form);
-            bracketsContainer.className = 'mt-2 pt-2';
-            bracketsContainer.style.cssText = 'border-top: 1px solid rgba(255,255,255,0.06);';
+            bracketsContainer.className = 'mt-2 pt-1';
 
             var bracketsHeader = element('div', undefined, bracketsContainer);
             bracketsHeader.className = 'd-flex justify-content-between align-items-center mb-1';
-            bracketsHeader.innerHTML = '<div class="d-flex align-items-center">' +
-                '<h6 class="font-weight-bold text-light mb-0" style="font-size:12px;">' +
-                '<i class="fas fa-layer-group text-info mr-1"></i>Tiered Validity Brackets</h6>' +
-                '<span class="text-muted ml-2 small d-none d-sm-inline" style="font-size:10.5px;">(Automatic fair expiration scaling based on bottles deposited)</span>' +
-                '</div>';
+            bracketsHeader.innerHTML = '<h6 class="font-weight-bold text-light mb-0" style="font-size:11.5px;">' +
+                '<i class="fas fa-layer-group text-info mr-1"></i>Tiered Validity Brackets</h6>';
 
             var addBtn = element('button', undefined, bracketsHeader);
             addBtn.type = 'button';
             addBtn.className = 'btn btn-xs btn-outline-info font-weight-bold px-2 py-0';
-            addBtn.style.cssText = 'height: 24px; font-size: 11px;';
+            addBtn.style.cssText = 'height: 23px; font-size: 11px;';
             addBtn.innerHTML = '<i class="fas fa-plus mr-1"></i>Add Bracket';
 
             var tableWrapper = element('div', undefined, bracketsContainer);
             tableWrapper.className = 'table-responsive';
-            tableWrapper.style.cssText = 'max-height: 185px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 5px;';
+            tableWrapper.style.cssText = 'max-height: 185px; overflow-y: auto; overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid rgba(255,255,255,0.06); border-radius: 5px;';
 
             var table = element('table', undefined, tableWrapper);
-            table.className = 'table table-sm table-bordered text-light mb-0';
-            table.style.cssText = 'background: rgba(15,23,42,0.5); font-size: 11.5px;';
-            table.innerHTML = '<thead style="background:#111827; color:#94a3b8; font-size:11px;">' +
+            table.className = 'table table-sm text-light mb-0';
+            table.style.cssText = 'background: rgba(15,23,42,0.4); font-size: 11.5px;';
+            table.innerHTML = '<thead style="background:#0f172a; color:#94a3b8; font-size:10.5px;">' +
                 '<tr>' +
-                '<th style="width:55px;" class="text-center py-1">Active</th>' +
-                '<th class="py-1">Purchased Time Ceiling (Up To)</th>' +
-                '<th class="py-1">Validity Window (Expiration)</th>' +
-                '<th style="width:50px;" class="text-center py-1">Del</th>' +
+                '<th style="width:45px;" class="text-center py-1">Active</th>' +
+                '<th class="py-1">Earned Time (Up To)</th>' +
+                '<th class="py-1">Validity (Expires After)</th>' +
+                '<th style="width:36px;" class="text-center py-1"></th>' +
                 '</tr></thead>';
             var body = element('tbody', undefined, table);
 
             function addBracketRow(value) {
                 var row = element('tr', undefined, body);
+                row.style.cssText = 'border-top: 1px solid rgba(255,255,255,0.04);';
 
                 var tdEnabled = element('td', undefined, row);
                 tdEnabled.className = 'text-center align-middle py-1';
@@ -363,12 +353,12 @@
                 inputVal.step = '1';
                 inputVal.required = true;
                 inputVal.value = value.value || 60;
-                inputVal.className = 'form-control form-control-sm mr-2';
-                inputVal.style.cssText = 'height:26px; width:95px; background:#1f2937; border:1px solid #374151; color:#f9fafb; font-size:11.5px; padding:2px 6px;';
+                inputVal.className = 'form-control form-control-sm mr-1';
+                inputVal.style.cssText = 'height:25px; width:70px; background:#0f172a; border:1px solid #334155; color:#f8fafc; font-size:11.5px; padding:2px 5px; border-radius:3px;';
                 var badgeVal = element('span', undefined, valBox);
-                badgeVal.className = 'badge badge-dark text-info border border-secondary px-2 py-1';
-                badgeVal.style.fontSize = '10.5px';
-                function updateValBadge() { badgeVal.innerText = formatDurationBadge(Number(inputVal.value)) + ' purchased'; }
+                badgeVal.className = 'badge badge-dark text-info border border-secondary px-1 py-0';
+                badgeVal.style.cssText = 'font-size:10px; font-weight:600; white-space:nowrap;';
+                function updateValBadge() { badgeVal.innerText = formatDurationBadge(Number(inputVal.value)); }
                 inputVal.oninput = updateValBadge;
                 updateValBadge();
 
@@ -382,12 +372,12 @@
                 inputExp.step = '1';
                 inputExp.required = true;
                 inputExp.value = value.expiration || 1440;
-                inputExp.className = 'form-control form-control-sm mr-2';
-                inputExp.style.cssText = 'height:26px; width:110px; background:#1f2937; border:1px solid #374151; color:#f9fafb; font-size:11.5px; padding:2px 6px;';
+                inputExp.className = 'form-control form-control-sm mr-1';
+                inputExp.style.cssText = 'height:25px; width:80px; background:#0f172a; border:1px solid #334155; color:#f8fafc; font-size:11.5px; padding:2px 5px; border-radius:3px;';
                 var badgeExp = element('span', undefined, expBox);
-                badgeExp.className = 'badge badge-dark text-success border border-secondary px-2 py-1';
-                badgeExp.style.fontSize = '10.5px';
-                function updateExpBadge() { badgeExp.innerText = formatDurationBadge(Number(inputExp.value)) + ' validity'; }
+                badgeExp.className = 'badge badge-dark text-success border border-secondary px-1 py-0';
+                badgeExp.style.cssText = 'font-size:10px; font-weight:600; white-space:nowrap;';
+                function updateExpBadge() { badgeExp.innerText = formatDurationBadge(Number(inputExp.value)); }
                 inputExp.oninput = updateExpBadge;
                 updateExpBadge();
 
@@ -396,16 +386,18 @@
                 var removeBtn = element('button', undefined, tdAction);
                 removeBtn.type = 'button';
                 removeBtn.className = 'btn btn-xs btn-outline-danger py-0 px-1';
-                removeBtn.innerHTML = '<i class="fas fa-trash-alt" style="font-size:10px;"></i>';
+                removeBtn.style.cssText = 'line-height:1; font-size:10px;';
+                removeBtn.innerHTML = '<i class="fas fa-times"></i>';
                 removeBtn.onclick = function () { row.remove(); };
             }
 
             bracketsList.forEach(addBracketRow);
             addBtn.onclick = function () { addBracketRow({ value: 120, expiration: 2880, enabled: true }); };
 
-            // Combined Footer: Save Button + Diagnostics Status Pills
+            // Combined Clean Footer: Save Button + Status Pills
             var footer = element('div', undefined, card);
-            footer.className = 'card-footer bg-dark py-2 px-3 d-flex flex-wrap justify-content-between align-items-center border-top border-secondary';
+            footer.className = 'card-footer py-2 px-3 d-flex flex-wrap justify-content-between align-items-center';
+            footer.style.cssText = 'background:#0f172a; border-top:1px solid rgba(255,255,255,0.06); gap:8px;';
 
             var leftAction = element('div', undefined, footer);
             leftAction.className = 'd-flex align-items-center';
@@ -413,22 +405,22 @@
             var saveBtn = element('button', undefined, leftAction);
             saveBtn.type = 'submit';
             saveBtn.className = 'btn btn-sm btn-primary font-weight-bold px-3 py-1 mr-2';
-            saveBtn.style.fontSize = '12px';
-            saveBtn.innerHTML = '<i class="fas fa-save mr-1"></i> Save Policy Settings';
+            saveBtn.style.cssText = 'font-size:12px; height:29px; white-space:nowrap;';
+            saveBtn.innerHTML = '<i class="fas fa-save mr-1"></i> Save Policy';
 
             var message = element('span', '', leftAction);
             message.className = 'small font-weight-bold';
             message.setAttribute('aria-live', 'polite');
 
             var diagStrip = element('div', undefined, footer);
-            diagStrip.className = 'd-flex flex-wrap align-items-center small text-muted mt-1 mt-sm-0';
-            diagStrip.style.cssText = 'gap: 10px; font-size: 11px;';
+            diagStrip.className = 'd-flex flex-wrap align-items-center small text-muted';
+            diagStrip.style.cssText = 'gap: 8px; font-size: 10.5px;';
 
             form.onsubmit = function (event) {
                 event.preventDefault();
                 saveBtn.disabled = true;
                 message.className = 'small font-weight-bold text-info';
-                message.textContent = 'Saving settings...';
+                message.textContent = 'Saving...';
 
                 var data = {
                     pause_allowed: allowInput.checked,
@@ -452,16 +444,16 @@
                     .then(function (result) {
                         if (result.success) {
                             message.className = 'small font-weight-bold text-success';
-                            message.innerHTML = '<i class="fas fa-check-circle mr-1"></i> Policy saved successfully.';
-                            setTimeout(function () { if (message.textContent.indexOf('saved') !== -1) message.textContent = ''; }, 4000);
+                            message.innerHTML = '<i class="fas fa-check-circle mr-1"></i> Saved.';
+                            setTimeout(function () { if (message.textContent.indexOf('Saved') !== -1) message.textContent = ''; }, 3000);
                         } else {
                             message.className = 'small font-weight-bold text-danger';
-                            message.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> ' + (result.error || 'Failed to save policy');
+                            message.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> ' + (result.error || 'Error');
                         }
                     })
                     .catch(function () {
                         message.className = 'small font-weight-bold text-danger';
-                        message.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> Connection error.';
+                        message.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> Network error.';
                     })
                     .then(function () { saveBtn.disabled = false; });
             };
@@ -474,10 +466,10 @@
                     '<span class="badge badge-success px-1">0</span>';
                 var heldBadge = '<span class="badge badge-secondary px-1">' + (d.held_deposit_events || 0) + '</span>';
 
-                diagStrip.innerHTML = '<span><i class="fas fa-database text-info mr-1"></i>Accounting: ' + accBadge + '</span>' +
-                    '<span><i class="fas fa-heartbeat text-success mr-1"></i>Worker: ' + workerBadge + '</span>' +
-                    '<span><i class="fas fa-archive text-warning mr-1"></i>Held: ' + heldBadge + '</span>' +
-                    '<span><i class="fas fa-balance-scale text-primary mr-1"></i>Mismatches: ' + mismatchBadge + '</span>';
+                diagStrip.innerHTML = '<span>Accounting: ' + accBadge + '</span>' +
+                    '<span>Worker: ' + workerBadge + '</span>' +
+                    '<span>Held: ' + heldBadge + '</span>' +
+                    '<span>Mismatches: ' + mismatchBadge + '</span>';
             }).catch(function () {});
         }).catch(function () {});
     }
