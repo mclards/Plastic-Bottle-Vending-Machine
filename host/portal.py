@@ -38,6 +38,9 @@ except ImportError:
     serial = None
 from esp32_simulator import ESP32Simulator
 import license_manager
+import time_schema
+import time_policy
+import transition_engine
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 app = Flask(__name__, static_folder='static')
@@ -104,6 +107,7 @@ def init_db():
     with db_connection() as conn:
         c = conn.cursor()
         ensure_session_schema(conn)
+        time_schema.init_time_schema(conn)
         c.execute('CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)')
         c.execute('CREATE TABLE IF NOT EXISTS stats (date TEXT PRIMARY KEY, total_bottles INTEGER)')
         c.execute('CREATE TABLE IF NOT EXISTS admins (username TEXT PRIMARY KEY, password_hash TEXT)')
@@ -586,11 +590,46 @@ def time_daemon():
     while True:
         tick += 1
         now = time.time()
+        mono_now = time.monotonic() if hasattr(time, 'monotonic') else now
         if last_tick_time is None or now < last_tick_time or (now - last_tick_time) > 10:
             elapsed = 1
         else:
             elapsed = max(1, int(round(now - last_tick_time)))
         last_tick_time = now
+
+        # 1. Billing Worker Heartbeat
+        if tick % 5 == 0 and platform.system() != 'Windows':
+            try:
+                with open('/tmp/ecofi_worker_heartbeat', 'w') as hb_f:
+                    hb_f.write(str(int(now)))
+            except Exception:
+                pass
+
+        # 2. Check Due Events in Transition Engine (Auto-Resumes & Calendar Expiries)
+        try:
+            with db_connection() as conn:
+                due_res = transition_engine.check_due_events(conn, int(now), mono_now)
+                if due_res.get('resumed', 0) > 0 or due_res.get('expired', 0) > 0:
+                    c = conn.cursor()
+                    c.execute("SELECT ip, desired_state FROM connections")
+                    for r in c.fetchall():
+                        conn_ip, des_state = r[0], r[1]
+                        with active_clients_lock:
+                            if conn_ip in active_clients:
+                                if des_state == 'ACTIVE' and active_clients[conn_ip].get('is_paused'):
+                                    active_clients[conn_ip]['is_paused'] = False
+                                    active_clients[conn_ip]['user_paused'] = False
+                                    active_clients[conn_ip]['auto_paused'] = False
+                                    active_clients[conn_ip]['paused_at'] = 0
+                                    active_clients[conn_ip]['expires_at'] = 0
+                                    sync_client_firewall(conn_ip)
+                                elif des_state == 'DISCONNECTED':
+                                    active_clients[conn_ip]['remaining_seconds'] = 0
+                                    active_clients[conn_ip]['is_paused'] = False
+                                    sync_client_firewall(conn_ip)
+        except Exception as e:
+            log.error("Error in check_due_events pass: %s", e)
+
         if tick % 30 == 0:
             save_sessions_to_db()
         if tick % 60 == 0:
@@ -855,12 +894,58 @@ def api_vendo_status():
     is_bin_full = sim_status.get('is_bin_full', False) or sim_status.get('bin_full_alert', False) or get_config('hw_bin_full', '0') == '1'
     expires_at = session_data.get('expires_at', 0)
     expires_str = ''
+    auto_resume_str = ''
+    pause_count_used = 0
+    pause_count_max = 3
+    can_pause_now = True
+
+    try:
+        mac = session_data.get('mac', '')
+        if mac:
+            with db_connection() as conn:
+                c = conn.cursor()
+                c.execute("""
+                    SELECT b.used_count, b.pause_count_max
+                    FROM devices d
+                    JOIN pause_budgets b ON d.owner_id = b.owner_id
+                    WHERE d.mac = ?
+                """, (mac.lower(),))
+                brow = c.fetchone()
+                if brow:
+                    pause_count_used = brow[0]
+                    pause_count_max = brow[1] if brow[1] is not None else 3
+    except Exception:
+        pass
+
+    pauses_left = max(0, pause_count_max - pause_count_used) if pause_count_max is not None else None
+    if pause_count_max is not None and pause_count_used >= pause_count_max:
+        can_pause_now = False
+
     if session_data.get('is_paused') and expires_at > time.time():
+        auto_resume_str = datetime.fromtimestamp(expires_at).strftime('%I:%M %p')
         expires_str = datetime.fromtimestamp(expires_at).strftime('%b %d, %I:%M %p')
     elif not session_data.get('is_paused') and session_data.get('remaining_seconds', 0) > 0:
         proj_exp = compute_session_expiration(session_data['remaining_seconds'])
         expires_str = datetime.fromtimestamp(proj_exp).strftime('%b %d, %I:%M %p')
-    return jsonify({'remaining_seconds': session_data.get('remaining_seconds', 0), 'client_time_remaining': session_data.get('remaining_seconds', 0), 'is_paused': session_data.get('is_paused', False), 'paused_at': session_data.get('paused_at', 0), 'expires_at': expires_at, 'expires_str': expires_str, 'validity_hours': calculate_pause_validity_seconds(session_data.get('remaining_seconds', 0)) // 3600, 'session_bottles': session_bottles, 'session_added_minutes': session_added_minutes, 'gate_open': sim_status.get('entrance_servo', 0) > 45 if is_current_depositor else False, 'bin_full': is_bin_full})
+
+    return jsonify({
+        'remaining_seconds': session_data.get('remaining_seconds', 0),
+        'client_time_remaining': session_data.get('remaining_seconds', 0),
+        'is_paused': session_data.get('is_paused', False),
+        'paused_at': session_data.get('paused_at', 0),
+        'expires_at': expires_at,
+        'expires_str': expires_str,
+        'auto_resume_str': auto_resume_str,
+        'pause_count_used': pause_count_used,
+        'pause_count_max': pause_count_max,
+        'pauses_left': pauses_left,
+        'can_pause': can_pause_now,
+        'validity_hours': calculate_pause_validity_seconds(session_data.get('remaining_seconds', 0)) // 3600,
+        'session_bottles': session_bottles,
+        'session_added_minutes': session_added_minutes,
+        'gate_open': sim_status.get('entrance_servo', 0) > 45 if is_current_depositor else False,
+        'bin_full': is_bin_full
+    })
 
 @app.route('/api/vendo/open_gate', methods=['POST'])
 @app.route('/api/open_gate', methods=['POST'])
@@ -900,12 +985,30 @@ def api_vendo_done():
         if session_bottles > 0:
             added_minutes = calculate_minutes_for_bottles(session_bottles)
             sess = ensure_client_session(client_ip)
-            sess['remaining_seconds'] += added_minutes * 60
+            added_sec = added_minutes * 60
+            sess['remaining_seconds'] += added_sec
             sess['is_paused'] = False
             sess['user_paused'] = False
             sess['auto_paused'] = False
             sess['paused_at'] = 0
             sess['expires_at'] = 0
+
+            # Record in transition engine
+            try:
+                with db_connection() as conn:
+                    now_utc = int(time.time())
+                    mono_now = time.monotonic() if hasattr(time, 'monotonic') else now_utc
+                    mac = sess.get('mac', '00:00:00:00:00:00')
+                    owner_id = transition_engine.get_or_create_owner(conn, 'device', 'mac:' + mac.lower(), now_utc)
+                    conn_data = transition_engine.get_or_create_connection(conn, client_ip, mac, owner_id, now_utc, mono_now)
+                    transition_engine.apply_operation(
+                        conn, owner_id, conn_data, 'TOP_UP_GRANT',
+                        {'seconds': added_sec, 'origin': 'bottle'},
+                        'bottle-deposit-' + str(uuid.uuid4()), now_utc, mono_now
+                    )
+            except Exception as e:
+                log.error("Error recording bottle deposit in transition engine: %s", e)
+
             sync_client_firewall(client_ip)
             save_sessions_to_db()
         active_depositor_ip = None
@@ -921,29 +1024,50 @@ def api_client_pause():
     client_ip = get_client_ip()
     data = request.get_json() or {}
     action = data.get('action', 'pause')
+    op_id = data.get('operation_id') or ('pause-req-' + str(uuid.uuid4()))
+    now_utc = int(time.time())
+    mono_now = time.monotonic() if hasattr(time, 'monotonic') else now_utc
+
     with active_clients_lock:
         sess = ensure_client_session(client_ip)
-        if sess:
+        if not sess:
+            return jsonify({'success': False, 'error': 'Session not found.'})
+        mac = sess.get('mac', '00:00:00:00:00:00')
+
+        if action != 'pause' and sess.get('admin_paused'):
+            return jsonify({'success': False, 'error': 'Session paused by administrator.'})
+
+        # Apply transition in engine
+        res = {'success': True}
+        try:
+            with db_connection() as conn:
+                owner_id = transition_engine.get_or_create_owner(conn, 'device', 'mac:' + mac.lower(), now_utc)
+                conn_data = transition_engine.get_or_create_connection(conn, client_ip, mac, owner_id, now_utc, mono_now)
+
+                # Ensure a grant is selected in connections if active_clients has credit
+                if not conn_data.get('selected_grant_id') and sess.get('remaining_seconds', 0) > 0:
+                    top_res = transition_engine.apply_operation(
+                        conn, owner_id, conn_data, 'TOP_UP_GRANT',
+                        {'seconds': sess['remaining_seconds'], 'origin': 'session'},
+                        'init-grant-' + str(uuid.uuid4()), now_utc, mono_now
+                    )
+                    conn_data['selected_grant_id'] = top_res.get('grant_id')
+
+                engine_action = 'PAUSE' if action == 'pause' else 'RESUME'
+                res = transition_engine.apply_operation(
+                    conn, owner_id, conn_data, engine_action, {}, op_id, now_utc, mono_now
+                )
+        except Exception as e:
+            log.error("Transition engine pause error: %s", e)
+            res = {'success': False, 'error': str(e)}
+
+        if res.get('success'):
             if action == 'pause':
                 sess['is_paused'] = True
                 sess['user_paused'] = True
-                sess['paused_at'] = time.time()
-                sess['expires_at'] = compute_session_expiration(sess['remaining_seconds'], sess['paused_at'])
+                sess['paused_at'] = now_utc
+                sess['expires_at'] = res.get('effective_deadline_utc') or 0
             else:
-                if sess.get('admin_paused'):
-                    return jsonify({'success': False, 'error': 'Session paused by administrator.'})
-                if sess.get('expires_at', 0) > 0 and time.time() >= sess['expires_at']:
-                    sess['remaining_seconds'] = 0
-                    sess['expires_at'] = 0
-                    sess['is_paused'] = True
-                    sess['user_paused'] = False
-                    sync_client_firewall(client_ip)
-                    save_sessions_to_db()
-                    return jsonify({'success': False, 'error': 'Paused credit expired.'})
-                if sess.get('remaining_seconds', 0) <= 0:
-                    sess['remaining_seconds'] = 0
-                    sync_client_firewall(client_ip)
-                    return jsonify({'success': False, 'error': 'No remaining credit to resume.'})
                 sess['is_paused'] = False
                 sess['user_paused'] = False
                 sess['auto_paused'] = False
@@ -951,8 +1075,24 @@ def api_client_pause():
                 sess['expires_at'] = 0
             sync_client_firewall(client_ip)
             save_sessions_to_db()
-            return jsonify({'success': True, 'is_paused': sess['is_paused'], 'expires_at': sess.get('expires_at', 0)})
-    return jsonify({'success': False})
+            return jsonify({
+                'success': True,
+                'is_paused': sess['is_paused'],
+                'expires_at': sess.get('expires_at', 0),
+                'pause_count_used': res.get('pause_count_used', 1),
+                'next_event_type': res.get('next_event_type', 'resume')
+            })
+        else:
+            err_msg = res.get('error', 'Operation failed.')
+            if err_msg == 'pause_limit_reached':
+                err_msg = 'Maximum pause limit reached (3 of 3 pauses used).'
+            elif err_msg == 'calendar_expired':
+                sess['remaining_seconds'] = 0
+                sess['is_paused'] = False
+                sync_client_firewall(client_ip)
+                save_sessions_to_db()
+                err_msg = 'Your package calendar validity has expired.'
+            return jsonify({'success': False, 'error': err_msg})
 
 @app.route('/api/voucher/redeem', methods=['POST'])
 def api_voucher_redeem():
@@ -976,11 +1116,29 @@ def api_voucher_redeem():
         conn.commit()
     with active_clients_lock:
         sess = ensure_client_session(client_ip)
-        sess['remaining_seconds'] += minutes * 60
+        sec = minutes * 60
+        sess['remaining_seconds'] += sec
         sess['is_paused'] = False
         sess['user_paused'] = False
         sess['paused_at'] = 0
         sess['expires_at'] = 0
+
+        # Record in transition engine
+        try:
+            with db_connection() as conn:
+                now_utc = int(time.time())
+                mono_now = time.monotonic() if hasattr(time, 'monotonic') else now_utc
+                mac = sess.get('mac', '00:00:00:00:00:00')
+                owner_id = transition_engine.get_or_create_owner(conn, 'device', 'mac:' + mac.lower(), now_utc)
+                conn_data = transition_engine.get_or_create_connection(conn, client_ip, mac, owner_id, now_utc, mono_now)
+                transition_engine.apply_operation(
+                    conn, owner_id, conn_data, 'TOP_UP_GRANT',
+                    {'seconds': sec, 'origin': 'voucher', 'source_ref': code},
+                    'voucher-' + code + '-' + str(uuid.uuid4()), now_utc, mono_now
+                )
+        except Exception as e:
+            log.error("Error recording voucher in transition engine: %s", e)
+
         sync_client_firewall(client_ip)
         save_sessions_to_db()
     return jsonify({'success': True, 'message': 'Successfully added {} minutes!'.format(minutes)})
@@ -1228,7 +1386,8 @@ def api_member_save_time():
             if rem_sec < 60:
                 return jsonify({'success': False, 'error': 'No active session time to save (minimum 1 minute required).'})
             mins_to_save = rem_sec // 60
-            sess['remaining_seconds'] = 0
+            remainder_sec = rem_sec % 60
+            sess['remaining_seconds'] = remainder_sec
             sess['is_paused'] = False
             sess['paused_at'] = 0
             sess['expires_at'] = 0
@@ -1236,10 +1395,27 @@ def api_member_save_time():
             sync_client_firewall(client_ip)
             save_sessions_to_db()
         c.execute("UPDATE members SET wallet_minutes = wallet_minutes + ?, active_ip = '', active_mac = '' WHERE username = ?", (mins_to_save, username))
+        # Log to time_ledger
+        try:
+            now_utc = int(time.time())
+            owner_id = transition_engine.get_or_create_owner(conn, 'member', 'member:' + username, now_utc)
+            event_id = transition_engine.generate_uuid()
+            c.execute(
+                """
+                INSERT INTO time_ledger (
+                    event_id, operation_id, grant_id, owner_id, reason,
+                    delta_seconds, balance_before, balance_after, created_at
+                ) VALUES (?, NULL, NULL, ?, 'wallet_credit', ?, ?, ?, ?)
+                """,
+                (event_id, owner_id, float(mins_to_save * 60), float(rem_sec), float(remainder_sec), now_utc)
+            )
+        except Exception as e:
+            log.error("Error logging wallet credit to time_ledger: %s", e)
+
         conn.commit()
         c.execute('SELECT wallet_minutes FROM members WHERE username = ?', (username,))
         new_wallet = c.fetchone()[0]
-    return jsonify({'success': True, 'message': 'Saved {} minutes to your member wallet!'.format(mins_to_save), 'wallet_minutes': new_wallet})
+    return jsonify({'success': True, 'message': 'Saved {} minutes to your member wallet!'.format(mins_to_save), 'wallet_minutes': new_wallet, 'remainder_seconds': remainder_sec})
 
 @app.route('/admin/api/license', methods=['GET'])
 def admin_api_license():
