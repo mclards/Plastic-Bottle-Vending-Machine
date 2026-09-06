@@ -21,6 +21,19 @@ DEFAULT_GLOBAL_VALIDITY_MIN = 1440  # 24 hours
 DEFAULT_MIN_PAUSE_BALANCE_SEC = 0
 DEFAULT_MAX_PAUSE_BALANCE_SEC = 5400  # 90 minutes (when enabled)
 
+DEFAULT_VALIDITY_BRACKETS = [
+    {'value': 30, 'expiration': 1440, 'enabled': True},       # Up to 30 mins: 24 Hours (1 Day)
+    {'value': 60, 'expiration': 2880, 'enabled': True},       # Up to 1 hour: 48 Hours (2 Days)
+    {'value': 180, 'expiration': 4320, 'enabled': True},      # Up to 3 hours: 72 Hours (3 Days)
+    {'value': 360, 'expiration': 10080, 'enabled': True},     # Up to 6 hours: 7 Days (1 Week)
+    {'value': 720, 'expiration': 21600, 'enabled': True},     # Up to 12 hours: 15 Days (~2 Weeks)
+    {'value': 1440, 'expiration': 43200, 'enabled': True},    # Up to 24 hours: 30 Days (1 Month)
+    {'value': 4320, 'expiration': 86400, 'enabled': True},    # Up to 3 days: 60 Days (2 Months)
+    {'value': 10080, 'expiration': 129600, 'enabled': True},  # Up to 7 days: 90 Days (3 Months)
+    {'value': 43200, 'expiration': 259200, 'enabled': True},  # Up to 30 days: 180 Days (6 Months)
+]
+
+
 
 def calculate_bracket_validity(purchased_seconds, brackets, global_validity_min=DEFAULT_GLOBAL_VALIDITY_MIN):
     """

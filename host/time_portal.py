@@ -11,6 +11,7 @@ import uuid
 from datetime import datetime
 from flask import request, jsonify, session
 from werkzeug.security import generate_password_hash, check_password_hash
+import time_policy
 import transition_engine as engine
 import time_schema as storage
 
@@ -142,7 +143,8 @@ class TimePortal(object):
     def op_id(self,data,prefix):
         value=data.get('operation_id') or request.headers.get('Idempotency-Key')
         if not isinstance(value,str) or not value or len(value)>180:
-            raise ValueError('operation_id_required')
+            value=str(uuid.uuid4())
+            if isinstance(data,dict):data['operation_id']=value
         return prefix+':'+value
 
     def resolve(self,conn,ip,mac,now,mono):
@@ -600,6 +602,8 @@ class TimePortal(object):
             else:pid=storage.metadata(conn,'active_policy')
             value=engine.one(conn,'SELECT * FROM time_policy_versions WHERE id=?',(pid,))
             value['brackets']=json.loads(value.pop('brackets_json'))
+            if not value['brackets']:
+                value['brackets']=list(time_policy.DEFAULT_VALIDITY_BRACKETS)
         return jsonify(success=True,policy=value)
 
     def diagnostics(self):
@@ -621,7 +625,11 @@ class TimePortal(object):
             if self.config(conn,'hw_bin_full','0')=='1' or self.p.esp32.get_state().get('is_bin_full',False):
                 raise ValueError('storage_bin_full')
             cd=self.resolve(conn,ip,mac,now,mono)
+            timeout=int(self.config(conn,'drop_timeout','60'))
             opened=engine.one(conn,"SELECT * FROM deposit_sessions WHERE status='OPEN' ORDER BY created_at LIMIT 1")
+            if opened and (now - opened.get('updated_at', opened['created_at']) > timeout + 5):
+                conn.execute("UPDATE deposit_sessions SET status='HOLD',error='Deposit timeout expired' WHERE id=?",(opened['id'],))
+                opened=None
             if opened and opened['owner_id']!=cd['owner_id']:raise ValueError('another_depositor_active')
             if opened:
                 sid=opened['id']
@@ -632,7 +640,6 @@ class TimePortal(object):
                          'policy_version_id':storage.metadata(conn,'active_policy')}
                 conn.execute('''INSERT INTO deposit_sessions(id,owner_id,connection_id,status,pricing_json,created_at,updated_at)
                     VALUES (?,?,?,'OPEN',?,?,?)''',(sid,cd['owner_id'],cd['id'],json.dumps(pricing),now,now))
-            timeout=int(self.config(conn,'drop_timeout','60'))
         session['deposit_session_id']=sid
         self.p.active_depositor_ip=ip;self.p.active_depositor_timeout=now+timeout+5
         self.p.transmit_to_esp32({'cmd':'OPEN_GATE','timeout':timeout,'session_id':sid,'protocol':2})

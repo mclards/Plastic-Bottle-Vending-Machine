@@ -9,10 +9,31 @@
         return node;
     }
     function duration(seconds) {
-        seconds = Math.max(0, Number(seconds) || 0);
-        return Math.floor(seconds / 60) + 'm ' + (Math.round((seconds % 60) * 1000000) / 1000000) + 's';
+        seconds = Math.max(0, Math.floor(Number(seconds) || 0));
+        var d = Math.floor(seconds / 86400);
+        var h = Math.floor((seconds % 86400) / 3600);
+        var m = Math.floor((seconds % 3600) / 60);
+        var s = seconds % 60;
+        if (d > 0) return d + 'd ' + h + 'h';
+        if (h > 0) return h + 'h ' + (m > 0 ? m + 'm' : '');
+        if (m > 0) return m + 'm ' + (s > 0 ? s + 's' : '');
+        return s + 's';
     }
-    function date(value) { return value == null ? 'No fixed expiry' : new Date(value * 1000).toLocaleString(); }
+    function date(value) {
+        if (value == null) return 'No fixed expiry';
+        var d = new Date(value * 1000);
+        var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        var m = months[d.getMonth()];
+        var day = d.getDate();
+        var year = d.getFullYear();
+        var hours = d.getHours();
+        var mins = d.getMinutes();
+        var ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        if (hours === 0) hours = 12;
+        var minsStr = mins < 10 ? '0' + mins : mins;
+        return m + ' ' + day + ', ' + year + ' · ' + hours + ':' + minsStr + ' ' + ampm;
+    }
     function nonce() {
         var bytes = new Uint32Array(4);
         if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
@@ -73,102 +94,391 @@
         var panel = document.getElementById('entitlement-details');
         if (!panel) {
             panel = element('div'); panel.id = 'entitlement-details';
-            panel.style.cssText = 'font-size:12px;text-align:left;padding:10px 0;line-height:1.6';
             anchor.parentNode.insertBefore(panel, anchor.nextSibling);
         }
         panel.textContent = '';
-        if (data.grant_id) {
-            element('div', 'Pauses left: ' + (data.pauses_left == null ? 'Unlimited' : data.pauses_left) +
-                ' · Used: ' + data.pause_count_used, panel);
-            element('div', 'Valid until: ' + date(data.valid_until_utc), panel);
-            if (data.pause_deadline_utc != null) element('div',
-                (data.next_event_type === 'resume' ? 'Automatic resume: ' : 'Pause ends: ') + date(data.pause_deadline_utc), panel);
-            if (!data.can_pause && !data.is_paused) {
-                var reason = data.seconds_until_pausable > 0 ? 'Pause becomes available after ' + duration(data.seconds_until_pausable) + ' of use.' :
-                    (data.pauses_left === 0 ? 'This credit has no pauses left.' : 'Pause is unavailable for this credit.');
-                element('div', reason, panel);
-            }
+        var hasActiveCredit = !!(data.grant_id && ((data.remaining_seconds > 0) || data.is_paused));
+        if (!hasActiveCredit) {
+            panel.style.display = 'none';
+            return;
         }
-        if (data.access_error) element('div', data.access_error, panel);
-        if (data.worker_healthy === false) element('div', 'Service is recovering. Your remaining credit is preserved.', panel);
+        panel.style.display = 'block';
+        panel.style.cssText = 'background:rgba(15,23,42,0.65);border:1px solid rgba(255,255,255,0.08);border-radius:9px;padding:10px 12px;margin:8px 0 12px 0;text-align:left;font-size:11.5px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.03);';
+
+        var header = element('div', undefined, panel);
+        header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;';
+
+        var title = element('div', undefined, header);
+        title.style.cssText = 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;color:#94a3b8;display:flex;align-items:center;gap:5px;';
+        title.innerHTML = '<i class="fas fa-ticket-alt" style="color:#10b981;font-size:11px;"></i> Session Validity';
+
+        var pauseBadge = element('div', undefined, header);
+        if (data.pauses_left == null) {
+            pauseBadge.style.cssText = 'background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.35);border-radius:12px;padding:2px 8px;font-size:9.5px;font-weight:600;display:inline-flex;align-items:center;gap:4px;';
+            pauseBadge.innerHTML = '<i class="fas fa-infinity"></i> Unlimited Pauses';
+        } else if (data.pauses_left > 0) {
+            pauseBadge.style.cssText = 'background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.35);border-radius:12px;padding:2px 8px;font-size:9.5px;font-weight:600;display:inline-flex;align-items:center;gap:4px;';
+            pauseBadge.innerHTML = '<i class="fas fa-pause-circle"></i> ' + data.pauses_left + ' Pauses Left <span style="color:#94a3b8;font-weight:normal;">(' + data.pause_count_used + ' used)</span>';
+        } else {
+            pauseBadge.style.cssText = 'background:rgba(239,68,68,0.15);color:#f87171;border:1px solid rgba(239,68,68,0.35);border-radius:12px;padding:2px 8px;font-size:9.5px;font-weight:600;display:inline-flex;align-items:center;gap:4px;';
+            pauseBadge.innerHTML = '<i class="fas fa-ban"></i> 0 Pauses Left';
+        }
+
+        var validityRow = element('div', undefined, panel);
+        validityRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding-top:7px;border-top:1px solid rgba(255,255,255,0.06);font-size:11px;color:#cbd5e1;';
+        validityRow.innerHTML = '<span style="color:#94a3b8;display:flex;align-items:center;gap:5px;"><i class="far fa-calendar-check" style="color:#38bdf8;"></i> Valid Until:</span><strong style="color:#f1f5f9;font-family:\"SF Mono\",\"Roboto Mono\",monospace;letter-spacing:0.3px;">' + date(data.valid_until_utc) + '</strong>';
+
+        if (data.pause_deadline_utc != null) {
+            var deadlineRow = element('div', undefined, panel);
+            deadlineRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-top:6px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);border-radius:6px;padding:4px 8px;font-size:10.5px;color:#fbbf24;';
+            var deadlineLabel = (data.next_event_type === 'resume' ? 'Auto-resumes: ' : 'Pause ends: ');
+            deadlineRow.innerHTML = '<span><i class="fas fa-hourglass-half" style="margin-right:4px;"></i>' + deadlineLabel + '</span><strong style="font-family:\"SF Mono\",\"Roboto Mono\",monospace;">' + date(data.pause_deadline_utc) + '</strong>';
+        }
+
+        if (!data.can_pause && !data.is_paused) {
+            var reason = data.seconds_until_pausable > 0 ? 'Pause available in ' + duration(data.seconds_until_pausable) + ' of active use.' :
+                (data.pauses_left === 0 ? 'All pause allowances for this credit have been used.' : 'Pause is unavailable for this credit.');
+            var reasonRow = element('div', undefined, panel);
+            reasonRow.style.cssText = 'margin-top:6px;font-size:10.5px;color:#94a3b8;display:flex;align-items:flex-start;gap:5px;line-height:1.35;';
+            reasonRow.innerHTML = '<i class="fas fa-info-circle" style="color:#64748b;margin-top:2px;"></i><span>' + reason + '</span>';
+        }
+
+        if (data.access_error) {
+            var errBox = element('div', undefined, panel);
+            errBox.style.cssText = 'margin-top:6px;font-size:10.5px;color:#fca5a5;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);border-radius:6px;padding:5px 8px;display:flex;align-items:center;gap:5px;';
+            var errIcon = element('i', undefined, errBox); errIcon.className = 'fas fa-exclamation-triangle';
+            var errSpan = element('span', data.access_error, errBox);
+        }
+        if (data.worker_healthy === false) {
+            var warnBox = element('div', undefined, panel);
+            warnBox.style.cssText = 'margin-top:6px;font-size:10.5px;color:#fde68a;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:5px 8px;display:flex;align-items:center;gap:5px;';
+            var warnIcon = element('i', undefined, warnBox); warnIcon.className = 'fas fa-sync-alt fa-spin';
+            var warnSpan = element('span', 'Service is recovering. Your remaining credit is preserved.', warnBox);
+        }
+
         var pause = document.getElementById('btn-pause'), resume = document.getElementById('btn-resume');
         if (pause) pause.disabled = !data.can_pause;
         if (resume) resume.disabled = !!data.admin_paused;
         var badge = document.getElementById('status-badge');
         if (badge && data.applied_state !== 'ACTIVE' && !data.is_paused) badge.textContent = data.remaining_seconds > 0 ? 'WAITING FOR ACCESS' : 'DISCONNECTED';
-        (data.grants || []).forEach(function (grant) {
-            if (grant.id === data.grant_id || grant.remaining_seconds <= 0) return;
-            var row = element('div', duration(grant.remaining_seconds) + ' · ' + grant.state.toLowerCase() + ' · ' + date(grant.valid_until_utc) + ' ', panel);
-            if (grant.state !== 'HELD') {
-                var button = element('button', 'Use this credit', row); button.type = 'button';
-                button.onclick = function () {
-                    button.disabled = true;
-                    window.fetch('/api/client/switch', {method:'POST',body:JSON.stringify({grant_id:grant.id})})
-                        .then(function (r) { return r.json(); }).then(function (result) {
-                            if (!result.success) element('div', result.error || 'Unable to switch credit.', panel);
-                            if (window.syncPortal) window.syncPortal();
-                        }).catch(function () { element('div', 'Connection interrupted. Retry this action.', panel); })
-                        .then(function () { button.disabled = false; });
-                };
-            }
-        });
+
+        var otherGrants = (data.grants || []).filter(function(g) { return g.id !== data.grant_id && g.remaining_seconds > 0; });
+        if (otherGrants.length > 0) {
+            var grantsSection = element('div', undefined, panel);
+            grantsSection.style.cssText = 'margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,0.06);';
+            var grantTitle = element('div', 'Other Available Credits:', grantsSection);
+            grantTitle.style.cssText = 'font-size:10px;text-transform:uppercase;color:#94a3b8;font-weight:600;margin-bottom:5px;';
+
+            otherGrants.forEach(function(grant) {
+                var row = element('div', undefined, grantsSection);
+                row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:5px 8px;margin-bottom:4px;font-size:11px;color:#cbd5e1;';
+                element('span', duration(grant.remaining_seconds) + ' (' + grant.state.toLowerCase() + ')', row);
+                if (grant.state !== 'HELD') {
+                    var button = element('button', 'Use Credit', row);
+                    button.type = 'button';
+                    button.className = 'btn-tactile btn-tactile-green';
+                    button.style.cssText = 'height:24px;font-size:10.5px;padding:0 8px;';
+                    button.onclick = function () {
+                        button.disabled = true;
+                        window.fetch('/api/client/switch', {method:'POST',body:JSON.stringify({grant_id:grant.id})})
+                            .then(function (r) { return r.json(); }).then(function (result) {
+                                if (!result.success) element('div', result.error || 'Unable to switch credit.', panel);
+                                if (window.syncPortal) window.syncPortal();
+                            }).catch(function () { element('div', 'Connection interrupted. Retry this action.', panel); })
+                            .then(function () { button.disabled = false; });
+                    };
+                }
+            });
+        }
     }
     function policyEditor() {
         if (!/^\/admin\/?$/.test(location.pathname)) return;
-        var container = document.querySelector('.content-wrapper');
+        var container = document.getElementById('sec-rates') || document.querySelector('.content-wrapper');
         if (!container) return;
+        if (document.getElementById('time-policy-card')) return;
+
         nativeFetch('/admin/api/time/policy').then(function (r) { return r.json(); }).then(function (response) {
             if (!response.success) return;
-            var policy = response.policy, section = element('details', undefined, container);
-            section.className = 'card p-3';
-            element('summary', 'Time validity and pause settings', section);
-            element('p', 'Changes apply to newly issued credit. Existing credit keeps its purchased terms. Wallet and transfer fragments share the original pause allowance.', section);
-            var form = element('form', undefined, section), controls = {};
-            function number(key, label, value, nullable) {
-                var row = element('label', label + ' ', form); row.style.cssText = 'display:block;margin:10px 0';
-                var input = element('input', undefined, row); input.type = 'number'; input.min = '0'; input.step = '1'; input.value = value == null ? '' : value;
-                if (nullable) input.placeholder = 'Disabled / unlimited'; else input.required = true;
+            var policy = response.policy;
+
+            var defaultBrackets = [
+                { value: 30, expiration: 1440, enabled: true },      // Up to 30m: 1 Day
+                { value: 60, expiration: 2880, enabled: true },      // Up to 1h: 2 Days
+                { value: 180, expiration: 4320, enabled: true },     // Up to 3h: 3 Days
+                { value: 360, expiration: 10080, enabled: true },    // Up to 6h: 7 Days
+                { value: 720, expiration: 21600, enabled: true },    // Up to 12h: 15 Days
+                { value: 1440, expiration: 43200, enabled: true },   // Up to 24h: 30 Days (1mo)
+                { value: 4320, expiration: 86400, enabled: true },   // Up to 3d: 60 Days (2mo)
+                { value: 10080, expiration: 129600, enabled: true }, // Up to 7d: 90 Days (3mo)
+                { value: 43200, expiration: 259200, enabled: true }  // Up to 30d: 180 Days (6mo)
+            ];
+            var bracketsList = (policy.brackets && policy.brackets.length > 0) ? policy.brackets : defaultBrackets;
+
+            function formatDurationBadge(mins) {
+                if (!mins || mins <= 0) return '';
+                if (mins < 60) return mins + 'm';
+                if (mins < 1440) {
+                    var h = Math.round(mins / 60 * 10) / 10;
+                    return h + 'h';
+                }
+                var d = Math.round(mins / 1440);
+                if (d < 30) return d + 'd';
+                var mo = Math.round(d / 30);
+                return mo + 'mo (' + d + 'd)';
+            }
+
+            var card = element('div', undefined, container);
+            card.id = 'time-policy-card';
+            card.className = 'card card-outline card-primary mb-3 mt-3 shadow-sm';
+            card.style.cssText = 'background:#0f172a; border-color:#1e293b;';
+
+            // Compact Header
+            var cardHeader = element('div', undefined, card);
+            cardHeader.className = 'card-header py-2 px-3 d-flex justify-content-between align-items-center';
+            cardHeader.style.cssText = 'background: rgba(15,23,42,0.9); border-bottom: 1px solid rgba(255,255,255,0.08);';
+            cardHeader.innerHTML = '<div class="d-flex align-items-center">' +
+                '<h3 class="card-title font-weight-bold text-light mb-0" style="font-size:13.5px;">' +
+                '<i class="fas fa-clock text-primary mr-2"></i>Time Validity & Pause Settings</h3>' +
+                '<span class="badge badge-primary ml-2 px-2 py-0" style="font-size:10px; font-weight:600;">Authoritative Policy</span>' +
+                '</div>' +
+                '<small class="text-muted d-none d-md-inline" style="font-size:11px;">' +
+                '<i class="fas fa-shield-alt text-info mr-1"></i>Pre-set default tiers active • New credit inherits terms</small>';
+
+            var cardBody = element('div', undefined, card);
+            cardBody.className = 'card-body p-3';
+
+            var form = element('form', undefined, cardBody);
+            var controls = {};
+
+            // Row 1: Inline Controls Bar (Switch + Action)
+            var topBar = element('div', undefined, form);
+            topBar.className = 'd-flex flex-wrap justify-content-between align-items-center mb-2 pb-2';
+            topBar.style.cssText = 'border-bottom: 1px solid rgba(255,255,255,0.06); gap: 10px;';
+
+            var pauseSwitchBox = element('div', undefined, topBar);
+            pauseSwitchBox.className = 'custom-control custom-switch';
+            pauseSwitchBox.innerHTML = '<input type="checkbox" class="custom-control-input" id="policy-allow-pause">' +
+                '<label class="custom-control-label font-weight-bold text-light small" for="policy-allow-pause" style="cursor:pointer;">' +
+                'Allow Client Pauses <span class="text-muted font-weight-normal ml-1">(Show PAUSE button in portal)</span></label>';
+            var allowInput = pauseSwitchBox.querySelector('#policy-allow-pause');
+            allowInput.checked = !!policy.pause_allowed;
+
+            var actionBox = element('div', undefined, topBar);
+            actionBox.className = 'd-flex align-items-center';
+            actionBox.innerHTML = '<span class="text-muted small font-weight-bold mr-2" style="font-size:11.5px; white-space:nowrap;">When Pause Times Out:</span>' +
+                '<select class="custom-select custom-select-sm" id="policy-timeout-action" style="height:28px; width:185px; background:#1f2937; border:1px solid #374151; color:#f9fafb; font-size:11.5px; padding:2px 8px;">' +
+                '<option value="resume">Resume (Auto-Unpause)</option><option value="expire">Expire Remaining Credit</option></select>';
+            var actionSelect = actionBox.querySelector('#policy-timeout-action');
+            actionSelect.value = policy.pause_timeout_action || 'resume';
+
+            // Row 2: 5 Compact Input Fields in a tight grid
+            var fieldsRow = element('div', undefined, form);
+            fieldsRow.className = 'row no-gutters mb-2';
+            fieldsRow.style.cssText = 'gap: 8px; display: flex;';
+
+            function addCompactField(key, label, value, nullable, placeholder, tooltip, flexBasis) {
+                var col = element('div', undefined, fieldsRow);
+                col.style.cssText = 'flex: 1 1 ' + (flexBasis || '120px') + '; min-width: 110px;';
+
+                var formGroup = element('div', undefined, col);
+                formGroup.className = 'form-group mb-1';
+
+                var lbl = element('label', undefined, formGroup);
+                lbl.className = 'font-weight-bold small mb-1 d-block text-truncate';
+                lbl.style.cssText = 'font-size: 11px; color: #94a3b8; letter-spacing: 0.2px;';
+                lbl.title = tooltip;
+                lbl.innerHTML = label;
+
+                var input = element('input', undefined, formGroup);
+                input.type = 'number';
+                input.min = '0';
+                input.step = '1';
+                input.title = tooltip;
+                input.placeholder = placeholder || '';
+                input.className = 'form-control form-control-sm';
+                input.style.cssText = 'height: 29px; background:#1f2937; border:1px solid #374151; color:#f9fafb; font-size: 12px; padding: 2px 8px; border-radius: 4px;';
+                input.value = value == null ? '' : value;
+                if (!nullable) input.required = true;
                 controls[key] = input;
             }
-            var allowLabel = element('label', 'Allow user pauses ', form), allow = element('input', undefined, allowLabel);
-            allow.type = 'checkbox'; allow.checked = !!policy.pause_allowed;
-            number('pause_count_max', 'Maximum pauses (blank = unlimited, 0 = none)', policy.pause_count_max, true);
-            number('pause_duration_sec', 'Pause duration in seconds (0 = no timeout)', policy.pause_duration_sec, false);
-            number('min_balance_sec', 'Minimum remaining seconds to pause (0 = disabled)', policy.min_balance_sec, false);
-            number('max_balance_sec', 'Maximum remaining seconds to pause (blank = disabled)', policy.max_balance_sec, true);
-            number('global_validity_min', 'Default validity in minutes (blank = no fixed expiry)', policy.global_validity_min, true);
-            var actionLabel = element('label', 'When a pause times out: ', form), action = element('select', undefined, actionLabel);
-            [['resume','Resume credit'],['expire','Expire remaining credit']].forEach(function (pair) { var option=element('option',pair[1],action); option.value=pair[0]; });
-            action.value = policy.pause_timeout_action;
-            element('p', 'Optional validity brackets: the first enabled ceiling covering the purchase is used. Otherwise default validity is at least the purchased duration.', form);
-            var table = element('table', undefined, form); table.className = 'table table-sm';
-            var header = element('tr', undefined, element('thead', undefined, table));
-            ['Enabled','Purchased minutes, up to','Validity minutes',''].forEach(function (label) { element('th',label,header); });
+
+            addCompactField('pause_count_max', 'Max Pauses', policy.pause_count_max, true, 'Unlimited', 'Maximum pauses per credit session (0 = none, Blank = unlimited)', '100px');
+            addCompactField('pause_duration_sec', 'Pause Duration (s)', policy.pause_duration_sec, false, '3600 (1 hour)', 'Max duration of one pause in seconds before timeout triggers', '130px');
+            addCompactField('global_validity_min', 'Default Validity (m)', policy.global_validity_min, true, '1440 (24 hrs)', 'Global fallback validity in minutes if no brackets match', '130px');
+            addCompactField('min_balance_sec', 'Min Pause Bal (s)', policy.min_balance_sec, false, '0 (No Min)', 'Minimum remaining seconds required to pause', '115px');
+            addCompactField('max_balance_sec', 'Max Pause Bal (s)', policy.max_balance_sec, true, 'Disabled', 'Maximum remaining balance allowed to pause (optional limit)', '115px');
+
+            // Section: Validity Brackets Table
+            var bracketsContainer = element('div', undefined, form);
+            bracketsContainer.className = 'mt-2 pt-2';
+            bracketsContainer.style.cssText = 'border-top: 1px solid rgba(255,255,255,0.06);';
+
+            var bracketsHeader = element('div', undefined, bracketsContainer);
+            bracketsHeader.className = 'd-flex justify-content-between align-items-center mb-1';
+            bracketsHeader.innerHTML = '<div class="d-flex align-items-center">' +
+                '<h6 class="font-weight-bold text-light mb-0" style="font-size:12px;">' +
+                '<i class="fas fa-layer-group text-info mr-1"></i>Tiered Validity Brackets</h6>' +
+                '<span class="text-muted ml-2 small d-none d-sm-inline" style="font-size:10.5px;">(Automatic fair expiration scaling based on bottles deposited)</span>' +
+                '</div>';
+
+            var addBtn = element('button', undefined, bracketsHeader);
+            addBtn.type = 'button';
+            addBtn.className = 'btn btn-xs btn-outline-info font-weight-bold px-2 py-0';
+            addBtn.style.cssText = 'height: 24px; font-size: 11px;';
+            addBtn.innerHTML = '<i class="fas fa-plus mr-1"></i>Add Bracket';
+
+            var tableWrapper = element('div', undefined, bracketsContainer);
+            tableWrapper.className = 'table-responsive';
+            tableWrapper.style.cssText = 'max-height: 185px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 5px;';
+
+            var table = element('table', undefined, tableWrapper);
+            table.className = 'table table-sm table-bordered text-light mb-0';
+            table.style.cssText = 'background: rgba(15,23,42,0.5); font-size: 11.5px;';
+            table.innerHTML = '<thead style="background:#111827; color:#94a3b8; font-size:11px;">' +
+                '<tr>' +
+                '<th style="width:55px;" class="text-center py-1">Active</th>' +
+                '<th class="py-1">Purchased Time Ceiling (Up To)</th>' +
+                '<th class="py-1">Validity Window (Expiration)</th>' +
+                '<th style="width:50px;" class="text-center py-1">Del</th>' +
+                '</tr></thead>';
             var body = element('tbody', undefined, table);
-            function bracket(value) {
-                var row = element('tr', undefined, body), enabled = element('input',undefined,element('td',undefined,row));
-                enabled.type='checkbox'; enabled.checked=value.enabled !== false;
-                ['value','expiration'].forEach(function (key) {
-                    var input=element('input',undefined,element('td',undefined,row)); input.type='number';input.min='1';input.step='1';input.required=true;input.value=value[key] || 60;input.style.width='100%';
-                });
-                var remove=element('button','Remove',element('td',undefined,row)); remove.type='button';remove.onclick=function(){row.remove();};
+
+            function addBracketRow(value) {
+                var row = element('tr', undefined, body);
+
+                var tdEnabled = element('td', undefined, row);
+                tdEnabled.className = 'text-center align-middle py-1';
+                var enCheck = element('input', undefined, tdEnabled);
+                enCheck.type = 'checkbox';
+                enCheck.checked = value.enabled !== false;
+                enCheck.title = 'Enable or disable this bracket';
+
+                var tdVal = element('td', undefined, row);
+                tdVal.className = 'align-middle py-1';
+                var valBox = element('div', undefined, tdVal);
+                valBox.className = 'd-flex align-items-center';
+                var inputVal = element('input', undefined, valBox);
+                inputVal.type = 'number';
+                inputVal.min = '1';
+                inputVal.step = '1';
+                inputVal.required = true;
+                inputVal.value = value.value || 60;
+                inputVal.className = 'form-control form-control-sm mr-2';
+                inputVal.style.cssText = 'height:26px; width:95px; background:#1f2937; border:1px solid #374151; color:#f9fafb; font-size:11.5px; padding:2px 6px;';
+                var badgeVal = element('span', undefined, valBox);
+                badgeVal.className = 'badge badge-dark text-info border border-secondary px-2 py-1';
+                badgeVal.style.fontSize = '10.5px';
+                function updateValBadge() { badgeVal.innerText = formatDurationBadge(Number(inputVal.value)) + ' purchased'; }
+                inputVal.oninput = updateValBadge;
+                updateValBadge();
+
+                var tdExp = element('td', undefined, row);
+                tdExp.className = 'align-middle py-1';
+                var expBox = element('div', undefined, tdExp);
+                expBox.className = 'd-flex align-items-center';
+                var inputExp = element('input', undefined, expBox);
+                inputExp.type = 'number';
+                inputExp.min = '1';
+                inputExp.step = '1';
+                inputExp.required = true;
+                inputExp.value = value.expiration || 1440;
+                inputExp.className = 'form-control form-control-sm mr-2';
+                inputExp.style.cssText = 'height:26px; width:110px; background:#1f2937; border:1px solid #374151; color:#f9fafb; font-size:11.5px; padding:2px 6px;';
+                var badgeExp = element('span', undefined, expBox);
+                badgeExp.className = 'badge badge-dark text-success border border-secondary px-2 py-1';
+                badgeExp.style.fontSize = '10.5px';
+                function updateExpBadge() { badgeExp.innerText = formatDurationBadge(Number(inputExp.value)) + ' validity'; }
+                inputExp.oninput = updateExpBadge;
+                updateExpBadge();
+
+                var tdAction = element('td', undefined, row);
+                tdAction.className = 'text-center align-middle py-1';
+                var removeBtn = element('button', undefined, tdAction);
+                removeBtn.type = 'button';
+                removeBtn.className = 'btn btn-xs btn-outline-danger py-0 px-1';
+                removeBtn.innerHTML = '<i class="fas fa-trash-alt" style="font-size:10px;"></i>';
+                removeBtn.onclick = function () { row.remove(); };
             }
-            (policy.brackets || []).forEach(bracket);
-            var add=element('button','Add bracket',form);add.type='button';add.onclick=function(){bracket({});};
-            var save=element('button','Save settings for new credit',form);save.type='submit';save.className='btn btn-primary m-2';
-            var message=element('p','',form);message.setAttribute('aria-live','polite');
-            form.onsubmit=function(event) {
-                event.preventDefault();save.disabled=true;
-                var data={pause_allowed:allow.checked,pause_timeout_action:action.value,brackets:[]};
-                Object.keys(controls).forEach(function(key){data[key]=controls[key].value===''?null:Number(controls[key].value);});
-                Array.from(body.rows).forEach(function(row){var values=row.querySelectorAll('input');data.brackets.push({enabled:values[0].checked,value:Number(values[1].value),expiration:Number(values[2].value)});});
-                window.fetch('/admin/api/time/policy',{method:'POST',body:JSON.stringify(data)})
-                    .then(function(r){return r.json();}).then(function(result){message.textContent=result.success?'Saved. Existing credit retains its terms.':result.error;})
-                    .catch(function(){message.textContent='Connection interrupted. Retry saving.';}).then(function(){save.disabled=false;});
+
+            bracketsList.forEach(addBracketRow);
+            addBtn.onclick = function () { addBracketRow({ value: 120, expiration: 2880, enabled: true }); };
+
+            // Combined Footer: Save Button + Diagnostics Status Pills
+            var footer = element('div', undefined, card);
+            footer.className = 'card-footer bg-dark py-2 px-3 d-flex flex-wrap justify-content-between align-items-center border-top border-secondary';
+
+            var leftAction = element('div', undefined, footer);
+            leftAction.className = 'd-flex align-items-center';
+
+            var saveBtn = element('button', undefined, leftAction);
+            saveBtn.type = 'submit';
+            saveBtn.className = 'btn btn-sm btn-primary font-weight-bold px-3 py-1 mr-2';
+            saveBtn.style.fontSize = '12px';
+            saveBtn.innerHTML = '<i class="fas fa-save mr-1"></i> Save Policy Settings';
+
+            var message = element('span', '', leftAction);
+            message.className = 'small font-weight-bold';
+            message.setAttribute('aria-live', 'polite');
+
+            var diagStrip = element('div', undefined, footer);
+            diagStrip.className = 'd-flex flex-wrap align-items-center small text-muted mt-1 mt-sm-0';
+            diagStrip.style.cssText = 'gap: 10px; font-size: 11px;';
+
+            form.onsubmit = function (event) {
+                event.preventDefault();
+                saveBtn.disabled = true;
+                message.className = 'small font-weight-bold text-info';
+                message.textContent = 'Saving settings...';
+
+                var data = {
+                    pause_allowed: allowInput.checked,
+                    pause_timeout_action: actionSelect.value,
+                    brackets: []
+                };
+                Object.keys(controls).forEach(function (key) {
+                    data[key] = controls[key].value === '' ? null : Number(controls[key].value);
+                });
+                Array.from(body.rows).forEach(function (row) {
+                    var inputs = row.querySelectorAll('input');
+                    data.brackets.push({
+                        enabled: inputs[0].checked,
+                        value: Number(inputs[1].value),
+                        expiration: Number(inputs[2].value)
+                    });
+                });
+
+                window.fetch('/admin/api/time/policy', { method: 'POST', body: JSON.stringify(data) })
+                    .then(function (r) { return r.json(); })
+                    .then(function (result) {
+                        if (result.success) {
+                            message.className = 'small font-weight-bold text-success';
+                            message.innerHTML = '<i class="fas fa-check-circle mr-1"></i> Policy saved successfully.';
+                            setTimeout(function () { if (message.textContent.indexOf('saved') !== -1) message.textContent = ''; }, 4000);
+                        } else {
+                            message.className = 'small font-weight-bold text-danger';
+                            message.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> ' + (result.error || 'Failed to save policy');
+                        }
+                    })
+                    .catch(function () {
+                        message.className = 'small font-weight-bold text-danger';
+                        message.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> Connection error.';
+                    })
+                    .then(function () { saveBtn.disabled = false; });
             };
-            nativeFetch('/admin/api/time/diagnostics').then(function(r){return r.json();}).then(function(d){
-                element('p','Accounting: '+(d.ready?'ready':'migration required')+' · Worker: '+(d.worker_healthy?'healthy':'recovering')+' · Held deposit events: '+d.held_deposit_events+' · Balance mismatches: '+d.balance_mismatches.length,section);
-            });
+
+            nativeFetch('/admin/api/time/diagnostics').then(function (r) { return r.json(); }).then(function (d) {
+                var accBadge = d.ready ? '<span class="badge badge-success px-1">Ready</span>' : '<span class="badge badge-warning px-1">Migrate</span>';
+                var workerBadge = d.worker_healthy ? '<span class="badge badge-success px-1">Healthy</span>' : '<span class="badge badge-danger px-1">Recovering</span>';
+                var mismatchBadge = (d.balance_mismatches && d.balance_mismatches.length > 0) ?
+                    '<span class="badge badge-danger px-1">' + d.balance_mismatches.length + '</span>' :
+                    '<span class="badge badge-success px-1">0</span>';
+                var heldBadge = '<span class="badge badge-secondary px-1">' + (d.held_deposit_events || 0) + '</span>';
+
+                diagStrip.innerHTML = '<span><i class="fas fa-database text-info mr-1"></i>Accounting: ' + accBadge + '</span>' +
+                    '<span><i class="fas fa-heartbeat text-success mr-1"></i>Worker: ' + workerBadge + '</span>' +
+                    '<span><i class="fas fa-archive text-warning mr-1"></i>Held: ' + heldBadge + '</span>' +
+                    '<span><i class="fas fa-balance-scale text-primary mr-1"></i>Mismatches: ' + mismatchBadge + '</span>';
+            }).catch(function () {});
         }).catch(function () {});
     }
     document.addEventListener('DOMContentLoaded', policyEditor);

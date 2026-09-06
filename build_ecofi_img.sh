@@ -1,21 +1,22 @@
 #!/bin/bash
 # ==============================================================================
-# ECO-Fi OS Image Rebuilder & Customizer
+# ECO-Fi OS Image Rebuilder & Customize
 # Deep Cleaning, Hardening & ECO-Fi Integration for Orange Pi One
 # Base: resources/PisoFi_Opi1&PC_v5.3.0-05-10-26_EXT.img
-# Target: resources/EcoFi_Opi_v1.7.img
+# Target: resources/EcoFi_Opi_v2.1.img
 # ==============================================================================
 
 set -e
 
 # Configuration
 BASE_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/PisoFi_Opi1&PC_v5.3.0-05-10-26_EXT.img"
-TARGET_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/EcoFi_Opi_v2.0.img"
+PREV_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/EcoFi_Opi_v2.0.img"
+TARGET_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/EcoFi_Opi_v2.1.img"
 MOUNT_DIR=$(mktemp -d /tmp/ecofi-build.XXXXXX)
 SOURCE_HOST="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/host"
 
 echo "======================================================================"
-echo " Starting ECO-Fi OS Image Deep Cleaning & Rebuild"
+echo " Starting ECO-Fi OS Image Deep Cleaning & Rebuild (v2.1)"
 echo " Base Image:   $BASE_IMG"
 echo " Target Image: $TARGET_IMG"
 echo "======================================================================"
@@ -30,6 +31,8 @@ cleanup() {
 trap cleanup EXIT
 if [ -f "$TARGET_IMG" ]; then
     cp --reflink=auto "$TARGET_IMG" "$WORK_IMG"
+elif [ -f "$PREV_IMG" ]; then
+    cp --reflink=auto "$PREV_IMG" "$WORK_IMG"
 else
     cp --reflink=auto "$BASE_IMG" "$WORK_IMG"
 fi
@@ -155,7 +158,7 @@ EOF
 
 rm -rf "$MOUNT_DIR/etc/network/interfaces.d/"* 2>/dev/null || true
 
-# Prevent dhcpcd from assigning link-local or default routes to LAN AP adapter
+# Prevent dhcpcd from assigning link-local or default routes to LAN AP adapte
 if [ -f "$MOUNT_DIR/etc/dhcpcd.conf" ]; then
     if ! grep -q "denyinterfaces eth1" "$MOUNT_DIR/etc/dhcpcd.conf"; then
         echo -e "\ndenyinterfaces eth1 usb0 enx*" >> "$MOUNT_DIR/etc/dhcpcd.conf"
@@ -190,7 +193,7 @@ server=1.0.0.1
 EOF
 rm -rf "$MOUNT_DIR/etc/dnsmasq.d/"* 2>/dev/null || true
 
-# Add udev hotplug rule for USB-to-Ethernet Adapter
+# Add udev hotplug rule for USB-to-Ethernet Adapte
 mkdir -p "$MOUNT_DIR/etc/udev/rules.d"
 cat << 'EOF' > "$MOUNT_DIR/etc/udev/rules.d/99-ecofi-usbnet.rules"
 ACTION=="add", SUBSYSTEM=="net", KERNEL=="eth1|usb*|enx*", RUN+="/opt/ecofi/setup_network.sh"

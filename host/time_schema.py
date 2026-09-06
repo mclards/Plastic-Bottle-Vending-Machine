@@ -9,6 +9,7 @@ disrupting existing legacy tables.
 
 import json
 import time
+import time_policy
 
 SCHEMA_VERSION = 2
 
@@ -178,8 +179,8 @@ def seed_default_policies(conn):
     now = int(time.time())
 
     # 1. pisofi_time_v1 (Standard PisoFi behavior: 3 pauses, 60 min duration, auto-resume)
-    # R24: Use empty bracket set with global fallback instead of sample demonstration fixtures.
-    default_brackets = []
+    # Pre-configured with customer-friendly validity brackets so recycled bottles never prematurely expire
+    default_brackets = list(time_policy.DEFAULT_VALIDITY_BRACKETS)
 
     c.execute("""
         INSERT OR IGNORE INTO time_policy_versions (

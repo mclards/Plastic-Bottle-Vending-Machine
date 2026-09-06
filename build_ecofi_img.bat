@@ -1,7 +1,7 @@
 @echo off
 echo ======================================================================
 echo    ECO-FI OS IMAGE BUILDER ^& CUSTOMIZER
-echo    Target: resources\EcoFi_Opi_v2.0.img
+echo    Target: resources\EcoFi_Opi_v2.1.img
 echo ======================================================================
 echo.
 echo Launching WSL build script to inject Eco-Fi software stack...
