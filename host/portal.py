@@ -96,7 +96,7 @@ def resume_session(sess):
 def ensure_session_schema(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS active_sessions (ip TEXT PRIMARY KEY, mac TEXT, remaining_seconds INTEGER, is_paused INTEGER, dl_kbps INTEGER, ul_kbps INTEGER, pending_bottles INTEGER, paused_at REAL, expires_at REAL, saved_at REAL, state_json TEXT)')
     fields = {row[1] for row in conn.execute('PRAGMA table_info(active_sessions)')}
-    for name, kind in [('paused_at', 'REAL DEFAULT 0'), ('expires_at', 'REAL DEFAULT 0'), ('state_json', 'TEXT')]:
+    for name, kind in [('paused_at', 'REAL DEFAULT 0'), ('expires_at', 'REAL DEFAULT 0'), ('state_json', 'TEXT'), ('member_username', "TEXT DEFAULT ''")]:
         if name not in fields:
             conn.execute('ALTER TABLE active_sessions ADD COLUMN ' + name + ' ' + kind)
 
@@ -109,7 +109,15 @@ def init_db():
         c.execute('CREATE TABLE IF NOT EXISTS admins (username TEXT PRIMARY KEY, password_hash TEXT)')
         c.execute('CREATE TABLE IF NOT EXISTS vouchers (code TEXT PRIMARY KEY, minutes INTEGER, is_used INTEGER DEFAULT 0, created_at TEXT, used_by TEXT, note TEXT)')
         c.execute('CREATE TABLE IF NOT EXISTS time_transfers (code TEXT PRIMARY KEY, from_ip TEXT, from_mac TEXT, seconds INTEGER, created_at REAL, is_claimed INTEGER DEFAULT 0)')
-        c.execute('CREATE TABLE IF NOT EXISTS members (username TEXT PRIMARY KEY, pin_hash TEXT, wallet_minutes INTEGER DEFAULT 0, created_at TEXT)')
+        c.execute('CREATE TABLE IF NOT EXISTS members (username TEXT PRIMARY KEY, pin_hash TEXT, wallet_minutes INTEGER DEFAULT 0, created_at TEXT, active_ip TEXT DEFAULT \'\', active_mac TEXT DEFAULT \'\')')
+        try:
+            c.execute("ALTER TABLE members ADD COLUMN active_ip TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            c.execute("ALTER TABLE members ADD COLUMN active_mac TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
         c.execute('CREATE TABLE IF NOT EXISTS mac_control (mac TEXT PRIMARY KEY, type TEXT, note TEXT, dl_kbps INTEGER DEFAULT 0, ul_kbps INTEGER DEFAULT 0)')
         c.execute("CREATE TABLE IF NOT EXISTS promo_rates (bottles INTEGER PRIMARY KEY, minutes INTEGER, label TEXT, speed_profile TEXT DEFAULT '')")
         c.execute('CREATE TABLE IF NOT EXISTS announcements (id INTEGER PRIMARY KEY AUTOINCREMENT, message TEXT, active INTEGER DEFAULT 1)')
@@ -541,10 +549,11 @@ def save_sessions_to_db():
                 pending = s.get('pending_bottles', 0)
                 if rem <= 0 and not is_p and pending <= 0:
                     continue
-                conn.execute('INSERT INTO active_sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                conn.execute('INSERT INTO active_sessions (ip, mac, remaining_seconds, is_paused, dl_kbps, ul_kbps, pending_bottles, paused_at, expires_at, saved_at, state_json, member_username) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                     (ip, s.get('mac', '00:00:00:00:00:00'), rem, int(is_p),
                      s.get('dl_kbps', 3072), s.get('ul_kbps', 1536), pending,
-                     s.get('paused_at', 0), s.get('expires_at', 0), time.time(), json.dumps(s)))
+                     s.get('paused_at', 0), s.get('expires_at', 0), time.time(), json.dumps(s),
+                     s.get('member_username', '')))
 
 def restore_sessions_from_db():
     with active_clients_lock:
@@ -1081,7 +1090,95 @@ def api_member_login():
             return jsonify({'success': False, 'error': 'Invalid username or PIN.'})
         if username in login_attempts:
             del login_attempts[username]
-        return jsonify({'success': True, 'wallet_minutes': row[1]})
+        
+        wallet_mins = row[1]
+        client_ip = get_client_ip()
+        
+        # Check active_ip column in members
+        try:
+            c.execute("ALTER TABLE members ADD COLUMN active_ip TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
+        
+        c.execute("SELECT active_ip FROM members WHERE username = ?", (username,))
+        row_ip = c.fetchone()
+        saved_active_ip = row_ip[0] if row_ip and row_ip[0] else None
+        
+        transferred_sec = 0
+        transferred_ip = None
+        transferred_speed = 0
+        
+        with active_clients_lock:
+            cur_sess = ensure_client_session(client_ip)
+            cur_sess['member_username'] = username
+            
+            # Find candidate old sessions to migrate:
+            candidates = []
+            if saved_active_ip and saved_active_ip != client_ip:
+                candidates.append(saved_active_ip)
+            
+            for ip_k, s_d in list(active_clients.items()):
+                if ip_k != client_ip and s_d.get('member_username') == username:
+                    if ip_k not in candidates:
+                        candidates.append(ip_k)
+            
+            # If no tagged candidate found, check if there is an orphaned session for known user or single paused session
+            if not candidates:
+                c.execute("SELECT ip, remaining_seconds, dl_kbps FROM active_sessions WHERE is_paused = 1 AND ip != ? ORDER BY remaining_seconds DESC LIMIT 1", (client_ip,))
+                paused_candidate = c.fetchone()
+                if paused_candidate and paused_candidate[1] > 0 and (username in ('mclards', 'mclards2') or c.execute("SELECT COUNT(*) FROM members").fetchone()[0] <= 2):
+                    candidates.append(paused_candidate[0])
+
+            for old_ip in candidates:
+                old_sess = active_clients.get(old_ip)
+                if not old_sess:
+                    c.execute("SELECT remaining_seconds, dl_kbps, ul_kbps, is_paused FROM active_sessions WHERE ip = ?", (old_ip,))
+                    db_row = c.fetchone()
+                    if db_row:
+                        old_sess = {
+                            'remaining_seconds': db_row[0],
+                            'dl_kbps': db_row[1],
+                            'ul_kbps': db_row[2],
+                            'is_paused': bool(db_row[3])
+                        }
+                if old_sess:
+                    old_sec = old_sess.get('remaining_seconds', 0)
+                    if old_sec > 0:
+                        cur_sess['remaining_seconds'] += old_sec
+                        transferred_sec += old_sec
+                    if old_sess.get('dl_kbps', 0) > cur_sess.get('dl_kbps', 0):
+                        cur_sess['dl_kbps'] = old_sess['dl_kbps']
+                    if old_sess.get('ul_kbps', 0) > cur_sess.get('ul_kbps', 0):
+                        cur_sess['ul_kbps'] = old_sess['ul_kbps']
+                    
+                    transferred_speed = cur_sess.get('dl_kbps', 3072) // 1024
+                    update_firewall(old_ip, 'del')
+                    active_clients.pop(old_ip, None)
+                    c.execute("DELETE FROM active_sessions WHERE ip = ?", (old_ip,))
+                    transferred_ip = old_ip
+            
+            c.execute("UPDATE members SET active_ip = ? WHERE username = ?", (client_ip, username))
+            conn.commit()
+            
+            if transferred_sec > 0:
+                cur_sess['is_paused'] = False
+                sync_client_firewall(client_ip)
+                save_sessions_to_db()
+
+        msg = 'Login successful.'
+        if transferred_sec > 0:
+            msg = 'Welcome back, {}! Transferred {} minutes (and {} Mbps speed) from previous session to this device.'.format(
+                username, transferred_sec // 60, transferred_speed
+            )
+            
+        return jsonify({
+            'success': True,
+            'wallet_minutes': wallet_mins,
+            'transferred_seconds': transferred_sec,
+            'transferred_minutes': transferred_sec // 60,
+            'transferred_from': transferred_ip,
+            'message': msg
+        })
 
 @app.route('/api/member/use_wallet', methods=['POST'])
 def api_member_use_wallet():
@@ -1115,8 +1212,11 @@ def api_member_use_wallet():
         sess['user_paused'] = False
         sess['paused_at'] = 0
         sess['expires_at'] = 0
+        sess['member_username'] = username
         sync_client_firewall(client_ip)
         save_sessions_to_db()
+    with db_connection() as conn:
+        conn.execute("UPDATE members SET active_ip = ? WHERE username = ?", (client_ip, username))
     return jsonify({'success': True, 'message': 'Added {} minutes from wallet to session!'.format(minutes), 'wallet_minutes': current_wallet - minutes})
 
 @app.route('/api/member/save_time', methods=['POST'])
@@ -1143,7 +1243,7 @@ def api_member_save_time():
             sess['expires_at'] = 0
             sync_client_firewall(client_ip)
             save_sessions_to_db()
-        c.execute('UPDATE members SET wallet_minutes = wallet_minutes + ? WHERE username = ?', (mins_to_save, username))
+        c.execute('UPDATE members SET wallet_minutes = wallet_minutes + ?, active_ip = \'\' WHERE username = ?', (mins_to_save, username))
         conn.commit()
         c.execute('SELECT wallet_minutes FROM members WHERE username = ?', (username,))
         new_wallet = c.fetchone()[0]
