@@ -132,7 +132,7 @@ ln -sf /lib/systemd/system/systemd-timesyncd.service "$MOUNT_DIR/etc/systemd/sys
 date -u +"%Y-%m-%d %H:%M:%S" > "$MOUNT_DIR/etc/fake-hwclock.data" 2>/dev/null || true
 
 # Set root and pi console login passwords to "root" for HDMI/serial console
-ROOT_HASH='$6$JpJzc5Fnsdll3j83$D9xx8MwvyG9KoulpMUVrD8JfSWwfOV5QkcxAdI0z4GeT5FpbC6HyeKeUNYoc1tBMtz2SjNVRFtrGd6TQ7v0UA0'
+ROOT_HASH='$6$JIArBU6F1WcXAkV2$n13SEPVG7J/mKPL1Fr0wuadMbziDVKwGQrA484i5K/MzA3IY8l1lpcx960SYyFmR1I.QTgesqTzZu1M9je9YI0'
 sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$MOUNT_DIR/etc/shadow"
 sed -i "s|^pi:[^:]*:|pi:${ROOT_HASH}:|" "$MOUNT_DIR/etc/shadow"
 
