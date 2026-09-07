@@ -195,7 +195,13 @@
         if (!/^\/admin\/?$/.test(location.pathname)) return;
         var container = document.getElementById('time-policy-container') || document.getElementById('sec-time-policy') || document.getElementById('sec-rates') || document.querySelector('.content-wrapper');
         if (!container) return;
-        if (document.getElementById('time-policy-card')) return;
+        var existingCard = document.getElementById('time-policy-card');
+        if (existingCard) {
+            if (existingCard.parentNode !== container) {
+                container.appendChild(existingCard);
+            }
+            return;
+        }
 
         nativeFetch('/admin/api/time/policy').then(function (r) { return r.json(); }).then(function (response) {
             if (!response.success) return;
