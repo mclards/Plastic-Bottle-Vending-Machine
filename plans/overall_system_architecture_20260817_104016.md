@@ -31,7 +31,7 @@ flowchart TD
     
     subgraph Config_Mode_Core_0 [CONFIG MODE (Core 0 only)]
         ConfigMode --> ShowLCD1[LCD: 'ENTERING CONFIG MODE']
-        ShowLCD1 --> StartAP[Start SoftAP: 'ECO-Fi-Hardware-Config']
+        ShowLCD1 --> StartAP[Start SoftAP: 'Eco-Fi-Hardware-Config']
         StartAP --> StartDNS[Start DNSServer: Redirect * to 192.168.4.1]
         StartDNS --> StartWeb[Start WebServer on Port 80]
         
@@ -83,7 +83,7 @@ struct MachineConfig {
 
 **3. Captive Portal Mode (GPIO 34 Trigger):**
 In `setup()`, GPIO 34 (Finish Button) is checked immediately. If held `LOW`:
-- **SoftAP Initialization:** Spawns `ECO-Fi-Hardware-Config` access point.
+- **SoftAP Initialization:** Spawns `Eco-Fi-Hardware-Config` access point.
 - **DNS Server:** A `DNSServer` resolves all DNS queries (`*`) to the ESP32's AP IP, forcing mobile devices to trigger a captive portal popup.
 - **Web Server:** 
   - `GET /` -> Serves embedded HTML UI.
@@ -110,4 +110,4 @@ Inside `sensorTaskCode`:
 2. **Boot Test (Normal):** Power on normally. Verify the 3 servos snap to their defined "close" angles.
 3. **Vending Flow:** Drop a valid item, verify Success Gate (Ch 1) opens. Drop a tin can, verify Reject Gate (Ch 2) opens downward.
 4. **Boot Test (Config):** Power off. Hold GPIO 34. Power on. Release GPIO 34 when LCD says "CONFIG MODE".
-5. **Portal Test:** Connect to `ECO-Fi-Hardware-Config`, adjust the `rej_open_angle` to 120 degrees, save, and verify the Reject Gate immediately physically updates its angle. Reboot normally to resume vending.
+5. **Portal Test:** Connect to `Eco-Fi-Hardware-Config`, adjust the `rej_open_angle` to 120 degrees, save, and verify the Reject Gate immediately physically updates its angle. Reboot normally to resume vending.

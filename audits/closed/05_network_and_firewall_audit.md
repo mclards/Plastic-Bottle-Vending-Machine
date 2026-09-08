@@ -16,7 +16,7 @@
                                           DNS: 1.1.1.1, 1.0.0.1
 ```
 
-### ECO-Fi Network Layout
+### Eco-Fi Network Layout
 ```
 [Internet] ──► [WAN port (eth0)] ──► [Orange Pi One] ──► [LAN/WiFi Bridge] ──► [Clients]
                                             │
@@ -95,7 +95,7 @@ Returns 302 → http://portal.pisofiapp.com
 [Nginx port 80] serves PHP captive portal page
 ```
 
-### ECO-Fi Detection Flow
+### Eco-Fi Detection Flow
 ```
 Client HTTP Probe
     │
@@ -116,13 +116,13 @@ Returns 302 → http://10.0.0.1/
 ```
 
 ### Finding NET-02: Captive Portal May Not Trigger [HIGH]
-**Issue:** ECO-Fi relies entirely on Nginx location-based intercepts for captive portal detection. But this only works if the client's DNS query for the probe domain resolves to `10.0.0.1` in the first place. Without a DNS hijack (dnsmasq `address=/#/10.0.0.1`), the probe will go to the real Google/Apple server, bypass our Nginx entirely, and the device will think it has internet access — **no captive portal popup will appear**.
+**Issue:** Eco-Fi relies entirely on Nginx location-based intercepts for captive portal detection. But this only works if the client's DNS query for the probe domain resolves to `10.0.0.1` in the first place. Without a DNS hijack (dnsmasq `address=/#/10.0.0.1`), the probe will go to the real Google/Apple server, bypass our Nginx entirely, and the device will think it has internet access — **no captive portal popup will appear**.
 
 **Current State:** The original dnsmasq.conf in the base image has `address=/portal.pisofiapp.com/10.0.0.1` but does NOT have a wildcard hijack. It relies on the individual `address=` entries for known probe domains.
 
 **Recommended Fix:** Add to `build_ecofi_img.sh`:
 ```bash
-# Inject ECO-Fi dnsmasq override
+# Inject Eco-Fi dnsmasq override
 cat << 'EOF' > "$MOUNT_DIR/etc/dnsmasq.d/ecofi_captive.conf"
 # Hijack ALL DNS to 10.0.0.1 for unauthenticated clients
 # Authenticated clients bypass DNS hijack via ipset
@@ -161,7 +161,7 @@ iptables -t nat -A PREROUTING -m set ! --match-set ecofi_auth src -p tcp --dport
     └── TTL --ttl-set 64 (anti-tethering)
 ```
 
-### ECO-Fi Firewall Architecture (Current)
+### Eco-Fi Firewall Architecture (Current)
 ```
 [PREROUTING/nat]
     │
@@ -175,7 +175,7 @@ iptables -t nat -A PREROUTING -m set ! --match-set ecofi_auth src -p tcp --dport
 ```
 
 ### Finding NET-03: Missing FORWARD Chain Rules [HIGH]
-**Issue:** ECO-Fi only manages the PREROUTING chain (via ipset). It does not set up FORWARD chain rules to explicitly DROP traffic from unauthenticated clients. On most systems, the default FORWARD policy is ACCEPT, which means **unauthenticated clients may still be able to access the internet** via direct IP connections (bypassing DNS/HTTP).
+**Issue:** Eco-Fi only manages the PREROUTING chain (via ipset). It does not set up FORWARD chain rules to explicitly DROP traffic from unauthenticated clients. On most systems, the default FORWARD policy is ACCEPT, which means **unauthenticated clients may still be able to access the internet** via direct IP connections (bypassing DNS/HTTP).
 
 **Recommended Fix:**
 ```python
@@ -223,7 +223,7 @@ dhcp-option=160,http://portal.pisofiapp.com
 dhcp-option=114,http://portal.pisofiapp.com
 ```
 
-These references to `portal.pisofiapp.com` should be updated to either `10.0.0.1` or a new ECO-Fi domain.
+These references to `portal.pisofiapp.com` should be updated to either `10.0.0.1` or a new Eco-Fi domain.
 
 **Recommended Fix:** Add to `build_ecofi_img.sh`:
 ```bash

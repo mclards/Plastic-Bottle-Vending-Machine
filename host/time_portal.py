@@ -67,15 +67,32 @@ class TimePortal(object):
         for path,name,fn,methods in endpoints:
             app.view_functions[name]=self.guarded(fn)
 
+    FRIENDLY_ERRORS = {
+        'invalid_username_or_pin': 'Incorrect username or PIN.',
+        'invalid_username': 'Invalid username provided.',
+        'invalid_voucher': 'This voucher code is invalid or already used.',
+        'clock_not_ready': 'System initializing. Please try again in a minute.',
+        'storage_bin_full': 'The machine is full. Please contact the administrator.',
+        'unknown_deposit': 'Deposit session not found.',
+        'hardware_unavailable': 'Hardware unavailable. Please check back later.',
+        'insufficient_wallet_balance': 'Insufficient balance for this operation.',
+        'storage_unavailable': 'System storage is temporarily unavailable.',
+        'deposit_not_found': 'Deposit session expired or not found.',
+        'device_not_registered': 'Your device is not registered.',
+    }
+
     def guarded(self,fn):
         def route(*args,**kwargs):
             try:
                 return fn(*args,**kwargs)
             except (ValueError,KeyError,TypeError) as error:
-                return jsonify(success=False,error=str(error)),400
+                err_str = str(error)
+                msg = self.FRIENDLY_ERRORS.get(err_str, err_str.replace('_', ' ').capitalize())
+                return jsonify(success=False,error=err_str,message=msg),400
             except sqlite3.Error:
                 self.p.log.exception('Entitlement transaction failed')
-                return jsonify(success=False,error='storage_unavailable',retryable=True),503
+                msg = self.FRIENDLY_ERRORS.get('storage_unavailable')
+                return jsonify(success=False,error='storage_unavailable',message=msg,retryable=True),503
         return route
 
     def now(self):

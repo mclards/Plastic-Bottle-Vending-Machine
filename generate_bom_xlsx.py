@@ -9,7 +9,7 @@ def create_econnect_bom_workbook(filename):
     wb.remove(default_sheet)
 
     # -------------------------------------------------------------
-    # STYLES & COLOR PALETTE (ECO-Fi BRANDED PALETTE)
+    # STYLES & COLOR PALETTE (Eco-Fi BRANDED PALETTE)
     # -------------------------------------------------------------
     forest_green = "1B4D3E"
     emerald_mid = "2E7D32"
@@ -66,7 +66,7 @@ def create_econnect_bom_workbook(filename):
     # Title Block
     ws_summary.row_dimensions[1].height = 32
     ws_summary.merge_cells("A1:G1")
-    ws_summary["A1"] = "ECO-Fi PLASTIC BOTTLE-TO-WIFI VENDO SYSTEM"
+    ws_summary["A1"] = "Eco-Fi PLASTIC BOTTLE-TO-WIFI VENDO SYSTEM"
     ws_summary["A1"].font = font_title
     ws_summary["A1"].fill = fill_title
     ws_summary["A1"].alignment = align_center
@@ -80,7 +80,7 @@ def create_econnect_bom_workbook(filename):
 
     # Metadata Block
     metadata = [
-        ("Project Standard:", "ECO-Fi Bottle-to-WiFi Reverse Vending System", "Builder Scope:", "Firmware, Electronics Assembly, AS7263 NIR, PCA9685, Chute & Portal"),
+        ("Project Standard:", "Eco-Fi Bottle-to-WiFi Reverse Vending System", "Builder Scope:", "Firmware, Electronics Assembly, AS7263 NIR, PCA9685, Chute & Portal"),
         ("Developer / Builder:", "Electrical Engineer & IoT Project Builder", "Professional Rate:", "₱500.00 / hour (Senior Electrical & IoT Engineering Rate)"),
         ("Date Prepared:", "August 2026", "Cabinet Scope:", "Client-Supplied / Excluded (Builder provides dimensional cutout guide)"),
         ("Sensing & Actuation:", "4\" PVC Drop Chute + AS7263 NIR Spectrometer + LJ12A3 + 2x Servos", "Core Gateway:", "Orange Pi One (Allwinner H3 512MB) + Armbian Server")
@@ -237,7 +237,7 @@ def create_econnect_bom_workbook(filename):
     # Title Block
     ws_bom.row_dimensions[1].height = 32
     ws_bom.merge_cells("A1:K1")
-    ws_bom["A1"] = "ECO-Fi VENDO - ITEMIZED BILL OF MATERIALS (BOM)"
+    ws_bom["A1"] = "Eco-Fi VENDO - ITEMIZED BILL OF MATERIALS (BOM)"
     ws_bom["A1"].font = font_title
     ws_bom["A1"].fill = fill_title
     ws_bom["A1"].alignment = align_center
@@ -260,7 +260,7 @@ def create_econnect_bom_workbook(filename):
         cell.alignment = align_center
         cell.border = border_cell
 
-    # Grouped Items Data for ECO-Fi (Including AS7263 NIR Spectrometer, 4" PVC Chute & PCA9685 Driver)
+    # Grouped Items Data for Eco-Fi (Including AS7263 NIR Spectrometer, 4" PVC Chute & PCA9685 Driver)
     bom_groups = [
         ("GROUP A: COMPUTING, STORAGE & NETWORKING (BUILDER SCOPE)", [
             ("A1", "Computing", "Orange Pi One (512MB RAM)", "Allwinner H3 Quad-Core Cortex-A7", 1, "pc", "Linux gateway, Eco-Fi Flask captive portal, SQLite, iptables", 1250.00, 80.00),
@@ -541,7 +541,7 @@ def create_econnect_bom_workbook(filename):
         ws_labor.column_dimensions[get_column_letter(idx)].width = width
 
     # Save to target filenames
-    filenames = ["Smart_EcoFi_Vendo_BoM_and_Costing.xlsx", "ECO_Fi_Vendo_BoM_and_Costing.xlsx"]
+    filenames = ["Smart_EcoFi_Vendo_BoM_and_Costing.xlsx", "Eco_Fi_Vendo_BoM_and_Costing.xlsx"]
     for fn in filenames:
         try:
             wb.save(fn)

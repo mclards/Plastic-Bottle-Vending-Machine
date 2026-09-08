@@ -227,7 +227,11 @@ def _terminal(conn,g,now,reason,op=None):
         return
     if g['remaining_us']:
         _move(conn,'grant:'+g['id'],'sink:expired',g['remaining_us'],reason,now,op)
-    conn.execute("UPDATE time_grants SET state='EXPIRED',updated_at=? WHERE id=?",(now,g['id']))
+    if g['state']=='WALLET':
+        conn.execute("UPDATE time_grants SET state='EXPIRED',updated_at=? WHERE id=?",(now,g['id']))
+        _wallet_projection(conn,g['owner_id'],now)
+    else:
+        conn.execute("UPDATE time_grants SET state='EXPIRED',updated_at=? WHERE id=?",(now,g['id']))
     _close_pauses(conn,g['id'],now,'EXPIRED')
 
 
@@ -536,7 +540,8 @@ def _action(conn,cd,action,payload,op,now,mono):
         if g['state']=='ACTIVE':
             _pause(conn,cd,g,now)
         amount = to_us(payload['seconds']) if 'seconds' in payload else g['remaining_us']
-        _fragment(conn,grant(conn,g['id']),wallet_owner,amount,'WALLET',now,op,'wallet_save')
+        child = _fragment(conn,grant(conn,g['id']),wallet_owner,amount,'WALLET',now,op,'wallet_save')
+        conn.execute('UPDATE time_grants SET valid_until_utc=NULL, activated_at_utc=NULL WHERE id=?',(child['id'],))
         _wallet_projection(conn,wallet_owner,now)
     elif action=='WALLET_WITHDRAW':
         amount = to_us(payload.get('seconds',0))

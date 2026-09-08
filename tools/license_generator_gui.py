@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ECO-Fi Master Vendor License Generator GUI
+Eco-Fi Master Vendor License Generator GUI
 Desktop App for Windows/Linux to generate machine-locked activation keys.
 """
 
@@ -18,7 +18,7 @@ from license_manager import compute_activation_pin, normalize_hwid
 class LicenseGeneratorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("ECO-Fi Vendo - Master License Key Generator")
+        self.root.title("Eco-Fi Vendo - Master License Key Generator")
         self.root.geometry("640x600")
         self.root.resizable(False, False)
         self.root.configure(bg="#0F172A")
@@ -32,7 +32,7 @@ class LicenseGeneratorApp:
 
         title_lbl = tk.Label(
             header_frame,
-            text="ECO-Fi LICENSE GENERATOR",
+            text="Eco-Fi LICENSE GENERATOR",
             font=("Segoe UI", 16, "bold"),
             fg="#10B981",
             bg="#1E293B"
@@ -240,7 +240,7 @@ class LicenseGeneratorApp:
         raw_hwid = self.hwid_entry.get().strip()
         tier = self.tier_var.get()
 
-        if not raw_hwid or raw_hwid == "ECOFI-":
+        if not raw_hwid or raw_hwid == "Eco-Fi-":
             messagebox.showerror("Validation Error", "Please enter the Target Machine Hardware ID (HWID).")
             return
 
@@ -250,11 +250,11 @@ class LicenseGeneratorApp:
         self.hwid_entry.insert(0, hwid)
 
         import re
-        if not re.match(r'^ECOFI-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$', hwid):
+        if not re.match(r'^Eco-Fi-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$', hwid):
             messagebox.showwarning(
                 "HWID Format Warning",
                 f"The entered HWID [{hwid}] does not appear to contain 16 hex characters.\n\n"
-                "Please ensure you copied the entire HWID (e.g. ECOFI-AADD-284E-E7A4-309C)."
+                "Please ensure you copied the entire HWID (e.g. AADD-284E-E7A4-309C)."
             )
 
         pin = compute_activation_pin(hwid, tier)
@@ -286,7 +286,7 @@ class LicenseGeneratorApp:
             return
 
         lic_data = {
-            "vendor": "ECO-Fi Technologies",
+            "vendor": "Eco-Fi Technologies",
             "licensee": client,
             "machine_hwid": hwid,
             "tier": tier,

@@ -7,7 +7,7 @@
 
 ## Overview
 
-The build script takes the original PisoFi OS image, copies it, mounts the ext4 partition, purges all legacy PisoFi services, injects ECO-Fi software, and configures Nginx + systemd for our portal.
+The build script takes the original PisoFi OS image, copies it, mounts the ext4 partition, purges all legacy PisoFi services, injects Eco-Fi software, and configures Nginx + systemd for our portal.
 
 ---
 
@@ -89,7 +89,7 @@ Static assets served directly from `/opt/ecofi/static/` with 7-day cache ✅
 Proxy to `127.0.0.1:5000` with proper headers ✅
 
 **Finding BUILD-02: Missing Nginx WebSocket Proxy** [LOW]
-The original PisoFi had a WebSocket proxy on `/ws` to port 8080. While ECO-Fi uses polling instead of WebSocket, if WebSocket support is ever added, a `/ws` location block would need to be added.
+The original PisoFi had a WebSocket proxy on `/ws` to port 8080. While Eco-Fi uses polling instead of WebSocket, if WebSocket support is ever added, a `/ws` location block would need to be added.
 
 ### Step 4.5: Static IP Configuration ✅ (Added by our patch)
 ```bash
@@ -175,13 +175,13 @@ The script does not modify dnsmasq.conf. The base image still has:
 **Recommended Fix:** See Network Audit (NET-05).
 
 ### BUILD-08: No Firewall Initialization Script [MEDIUM]
-The original PisoFi has a dedicated `pisofi_rules.service` that runs on boot to flush and reinitialize all iptables rules. ECO-Fi's `setup_firewall()` runs inside `portal.py`'s `time_daemon()`, which means firewall rules are not applied until the Python app starts.
+The original PisoFi has a dedicated `pisofi_rules.service` that runs on boot to flush and reinitialize all iptables rules. Eco-Fi's `setup_firewall()` runs inside `portal.py`'s `time_daemon()`, which means firewall rules are not applied until the Python app starts.
 
 **Recommended Fix:** Add a lightweight systemd service that runs before `ecofi_portal.service`:
 ```bash
 cat << 'EOF' > "$MOUNT_DIR/etc/systemd/system/ecofi_firewall.service"
 [Unit]
-Description=ECO-Fi Firewall Initialization
+Description=Eco-Fi Firewall Initialization
 Before=ecofi_portal.service
 After=network.target
 

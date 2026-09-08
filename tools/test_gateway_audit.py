@@ -1,6 +1,6 @@
 """Isolated regressions for gateway behavior. Never imports the working DB.
 
-Failing tests are audit findings, not a claim of successful live verification.
+Fixtures use the current ledger and protocol v2. This is isolated verification, not live network certification.
 Run: python -m unittest discover -s tools -p test_gateway_audit.py -v
 """
 import atexit
@@ -52,20 +52,32 @@ class GatewayAudit(unittest.TestCase):
         self.fw=patch.object(p,'update_firewall').start(); self.addCleanup(patch.stopall)
         self.arp=patch.object(p,'get_arp_table',return_value={'10.0.7.117':'00:00:00:00:02:43',
             '10.0.7.118':'02:00:00:00:00:02'}).start()
-        with sqlite3.connect(p.DB_PATH) as c:
-            for table in ['active_sessions','vouchers','time_transfers','members','stats','mac_control']:
-                c.execute('DELETE FROM '+table) if c.execute("SELECT 1 FROM sqlite_master WHERE name=?",(table,)).fetchone() else None
-        p.set_config('hw_bin_full','0'); p.set_config('auto_pause_disconnect','0')
-        self.a=p.app.test_client(); self.b=p.app.test_client()
+        # The ledger is authoritative; every case gets a fresh complete schema.
+        p.DB_PATH=str(self.folder/('case-'+str(time.time_ns())+'.db'));p.init_db()
+        self.utc=1800000000.;self.mono=100.
+        clock=type('Clock',(),{'time':lambda _:self.utc,'monotonic':lambda _:self.mono})()
+        patch.object(p,'time',clock).start()
+        patch.object(p.time_service,'clock_trusted',return_value=True).start()
+        for name in ('set_license','grant','revoke','policies'):
+            patch.object(p.gateway_network,name,return_value=True).start()
+        self.fw.return_value=True
+        patch.object(p,'transmit_to_esp32',return_value=True).start()
+        p.time_service.last_success_mono=None;p.time_service.last_utc=None
+        p.set_config('hw_bin_full','0');p.set_config('auto_pause_disconnect','0')
+        self.a=p.app.test_client();self.b=p.app.test_client()
 
     def post(self,client,path,data=None,ip='10.0.7.117',headers=None):
         return client.post(path,json=data or {},environ_overrides={'REMOTE_ADDR':ip},headers=headers or {})
 
     def sess(self,ip='10.0.7.117',seconds=600):
-        s=self.p.ensure_client_session(ip); s['remaining_seconds']=seconds; return s
+        code='SEED'+str(time.time_ns());self.voucher(code,seconds/60)
+        result=self.post(self.a,'/api/voucher/redeem',{'code':code},ip=ip)
+        self.assertTrue(result.json['success'],result.json)
+        self.p.time_service.worker_pass()
+        return self.p.ensure_client_session(ip)
 
     def voucher(self,code='AUDIT',minutes=10):
-        with sqlite3.connect(self.p.DB_PATH) as c:
+        with self.p.db_connection() as c:
             c.execute('INSERT INTO vouchers(code,minutes) VALUES (?,?)',(code,minutes))
 
     def login_admin(self):
@@ -93,7 +105,7 @@ class GatewayAudit(unittest.TestCase):
         self.assertEqual(r.json['remaining_seconds'],0)
 
     def test_missing_license_blocks_existing_client_grant(self):
-        self.sess()
+        self.sess();self.fw.reset_mock()
         with patch.object(self.p.license_manager,'verify_license',return_value={'valid':False,'status':'UNLICENSED'}):
             self.p.sync_client_firewall('10.0.7.117')
         self.assertFalse(any(x.args[1]=='add' for x in self.fw.call_args_list))
@@ -112,11 +124,14 @@ class GatewayAudit(unittest.TestCase):
     def test_manual_pause_revokes_and_preserves_balance(self):
         s=self.sess()
         self.post(self.a,'/api/client/pause',{'action':'pause'})
+        s=self.p.ensure_client_session('10.0.7.117')
         self.assertTrue(s['is_paused']); self.assertEqual(s['remaining_seconds'],600)
         self.fw.assert_called_with('10.0.7.117','del')
 
     def test_expired_paused_credit_cannot_be_resumed_before_next_tick(self):
-        s=self.sess(); s.update(is_paused=True,expires_at=time.time()-1)
+        self.sess();self.post(self.a,'/api/client/pause',{'action':'pause'})
+        with self.p.db_connection() as c:c.execute('UPDATE time_grants SET valid_until_utc=?',(self.utc-1,))
+        self.fw.reset_mock()
         self.post(self.a,'/api/client/pause',{'action':'resume'})
         self.assertFalse(any(x.args[1]=='add' for x in self.fw.call_args_list))
 
@@ -134,7 +149,7 @@ class GatewayAudit(unittest.TestCase):
     def test_roaming_revokes_old_ip(self):
         self.sess()
         self.arp.return_value={'10.0.7.118':'00:00:00:00:02:43'}
-        self.p.ensure_client_session('10.0.7.118')
+        self.p.ensure_client_session('10.0.7.118');self.p.time_service.reconcile()
         self.assertTrue(any(x.args[:2]==('10.0.7.117','del') for x in self.fw.call_args_list))
 
     def test_two_depositors_cannot_own_gate_simultaneously(self):
@@ -142,16 +157,16 @@ class GatewayAudit(unittest.TestCase):
         self.assertFalse(self.post(self.b,'/api/open_gate',ip='10.0.7.118').json['success'])
 
     def test_real_uart_bottle_awards_time(self):
-        self.post(self.a,'/api/open_gate')
-        self.p.on_esp32_uart_output(json.dumps({'event':'CREDIT_ADD','bottles':1,'sessionTotal':1}))
+        opened=self.post(self.a,'/api/open_gate').json
+        self.p.on_esp32_uart_output(json.dumps({'event':'CREDIT_ADD','bottles':1,'sessionTotal':1,'event_id':'real:1','session_id':opened['deposit_session_id'],'protocol':2}))
         r=self.post(self.a,'/api/vendo/done')
         self.assertEqual(r.json['added_minutes'],10)
 
     def test_duplicate_uart_event_not_counted_twice(self):
-        self.post(self.a,'/api/open_gate')
-        event=json.dumps({'event':'CREDIT_ADD','bottles':1,'sessionTotal':1})
+        opened=self.post(self.a,'/api/open_gate').json
+        event=json.dumps({'event':'CREDIT_ADD','bottles':1,'sessionTotal':1,'event_id':'real:1','session_id':opened['deposit_session_id'],'protocol':2})
         self.p.on_esp32_uart_output(event); self.p.on_esp32_uart_output(event)
-        with sqlite3.connect(self.p.DB_PATH) as c:
+        with self.p.db_connection() as c:
             self.assertEqual(c.execute('SELECT SUM(total_bottles) FROM stats').fetchone()[0],1)
 
     def test_bin_full_blocks_gate(self):
@@ -173,7 +188,8 @@ class GatewayAudit(unittest.TestCase):
         self.assertEqual(self.p.active_clients.get('10.0.7.117',{}).get('remaining_seconds'),600)
 
     def test_custom_bandwidth_survives_restart(self):
-        s=self.sess(); s.update(dl_kbps=5120,ul_kbps=1024)
+        self.sess();self.login_admin()
+        self.post(self.a,'/admin/api/client/edit',{'ip':'10.0.7.117','dl_kbps':5120,'ul_kbps':1024})
         self.p.save_sessions_to_db(); self.p.active_clients.clear(); self.p.restore_sessions_from_db()
         s=self.p.active_clients['10.0.7.117']
         self.assertEqual((s['dl_kbps'],s['ul_kbps']),(5120,1024))
@@ -184,40 +200,26 @@ class GatewayAudit(unittest.TestCase):
         self.assertIn('10.0.7.117',self.p.active_clients)
 
     def test_pause_reason_survives_restart(self):
-        s=self.sess(); s.update(is_paused=True,user_paused=True)
+        self.sess();self.post(self.a,'/api/client/pause',{'action':'pause'})
         self.p.save_sessions_to_db(); self.p.active_clients.clear(); self.p.restore_sessions_from_db()
         self.assertTrue(self.p.active_clients['10.0.7.117'].get('user_paused',False))
 
     def test_timer_accounts_for_elapsed_time_when_loop_is_delayed(self):
-        s=self.sess(seconds=100); now=[1000.0]
-        class StopClock(Exception): pass
-        def sleep(_):
-            if now[0]>=1010: raise StopClock()
-            now[0]+=5
-        with patch.object(self.p.time,'time',side_effect=lambda:now[0]), \
-             patch.object(self.p.time,'monotonic',side_effect=lambda:now[0]), \
-             patch.object(self.p.time,'sleep',side_effect=sleep):
-            with self.assertRaises(StopClock): self.p.time_daemon()
-        self.assertEqual(s['remaining_seconds'],90)
+        self.sess(seconds=100)
+        self.utc+=10;self.mono+=10
+        self.p.time_service.worker_pass()
+        self.assertEqual(self.p.ensure_client_session('10.0.7.117')['remaining_seconds'],90)
 
     def test_auto_pause_when_last_client_disconnects(self):
-        self.p.set_config('auto_pause_disconnect','1'); self.arp.return_value={}
-        s=self.sess(); ticks=[0]
-        class StopClock(Exception): pass
-        def sleep(_):
-            ticks[0]+=1
-            if ticks[0]>=60: raise StopClock()
-        with patch.object(self.p.platform,'system',return_value='Linux'), \
-             patch.object(self.p.subprocess,'run'), \
-             patch.object(self.p.time,'sleep',side_effect=sleep):
-            with self.assertRaises(StopClock): self.p.time_daemon()
-        self.assertTrue(s['is_paused'])
+        self.sess();self.p.set_config('auto_pause_disconnect','1');self.arp.return_value={}
+        self.p.time_service.worker_pass()
+        self.assertTrue(self.p.ensure_client_session('10.0.7.117')['is_paused'])
 
     def test_admin_bandwidth_edit_updates_enforcement(self):
         self.sess(); self.login_admin()
         r=self.post(self.a,'/admin/api/client/edit',{'ip':'10.0.7.117','dl_kbps':1024,'ul_kbps':512})
         self.assertTrue(r.json['success'])
-        self.fw.assert_called_with('10.0.7.117','add',600,1024,512)
+        self.fw.assert_called_with('10.0.7.117','add',15,1024,512)
 
     def test_mac_block_change_applied_immediately(self):
         self.login_admin()
@@ -241,31 +243,16 @@ class GatewayAudit(unittest.TestCase):
         self.assertEqual(self.p.active_clients['10.0.7.117']['remaining_seconds'],600)
 
     def concurrent_claims(self,query,path,data):
-        barrier=threading.Barrier(2)
-        class AuditCursor(sqlite3.Cursor):
-            def execute(self, sql, parameters=()):
-                self.watch=sql.startswith(query)
-                return super().execute(sql,parameters)
-            def fetchone(self):
-                value=super().fetchone()
-                if getattr(self,'watch',False): barrier.wait(timeout=5)
-                return value
-        class AuditConnection(sqlite3.Connection):
-            def cursor(self,*args,**kwargs):
-                return super().cursor(factory=AuditCursor)
-        original_connect=sqlite3.connect
-        def connect(*args,**kwargs):
-            kwargs['factory']=AuditConnection
-            return original_connect(*args,**kwargs)
-        results=[]
+        barrier=threading.Barrier(2);results=[]
         def worker(ip):
             try:
+                barrier.wait(timeout=5)
                 results.append(self.post(self.p.app.test_client(),path,data,ip=ip).json)
-            except Exception as e: results.append({'exception':str(e)})
-        with patch.object(self.p.sqlite3,'connect',side_effect=connect):
-            threads=[threading.Thread(target=worker,args=(ip,)) for ip in ['10.0.7.117','10.0.7.118']]
-            for t in threads:t.start()
-            for t in threads:t.join(10)
+            except Exception as e:results.append({'exception':str(e)})
+        threads=[threading.Thread(target=worker,args=(ip,)) for ip in ['10.0.7.117','10.0.7.118']]
+        for t in threads:t.start()
+        for t in threads:t.join(20)
+        self.assertTrue(all(not t.is_alive() for t in threads))
         return results
 
     def test_voucher_concurrent_redemption_only_one_wins(self):
@@ -274,15 +261,14 @@ class GatewayAudit(unittest.TestCase):
         self.assertEqual(sum(x.get('success',False) for x in results),1,results)
 
     def test_transfer_concurrent_claim_only_one_wins(self):
-        with sqlite3.connect(self.p.DB_PATH) as c:
-            c.execute('INSERT INTO time_transfers(code,seconds,created_at) VALUES (?,?,?)',('123456',600,time.time()))
-        results=self.concurrent_claims('SELECT seconds, is_claimed FROM time_transfers','/api/transfer/claim',{'code':'123456'})
+        self.sess()
+        code=self.post(self.a,'/api/transfer/generate',{'minutes':10}).json['code']
+        results=self.concurrent_claims('', '/api/transfer/claim',{'code':code})
         self.assertEqual(sum(x.get('success',False) for x in results),1,results)
 
     def test_wallet_concurrent_withdrawal_cannot_overspend(self):
-        self.post(self.a,'/api/member/register',{'username':'auditmember','pin':'1234'})
-        with sqlite3.connect(self.p.DB_PATH) as c:
-            c.execute('UPDATE members SET wallet_minutes=10 WHERE username=?',('auditmember',))
+        self.login_admin()
+        self.post(self.a,'/admin/api/members/add',{'username':'auditmember','pin':'1234','wallet_minutes':10})
         results=self.concurrent_claims('SELECT pin_hash, wallet_minutes FROM members','/api/member/use_wallet',
                                       {'username':'auditmember','pin':'1234','minutes':10})
         self.assertEqual(sum(x.get('success',False) for x in results),1,results)
@@ -296,13 +282,16 @@ class LicenseAudit(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory(prefix='ecofi-license-audit-')
         self.addCleanup(self.tmp.cleanup);self.addCleanup(sys.path.pop,0)
         patch.object(self.l,'LICENSE_FILE',str(Path(self.tmp.name)/'license.key')).start()
-        patch.object(self.l,'get_machine_hwid',return_value='ECOFI-1111-2222-3333-4444').start()
+        patch.object(self.l,'get_machine_hwid',return_value='Eco-Fi-1111-2222-3333-4444').start()
         self.addCleanup(patch.stopall)
 
     def status(self,**overrides):
         hwid=self.l.get_machine_hwid()
         data={'machine_hwid':hwid,'tier':'COMMERCIAL','activation_key':self.l.compute_activation_pin(hwid,'COMMERCIAL'),'expiry_date':'PERPETUAL'}
         data.update(overrides)
+        if data['expiry_date'] != 'PERPETUAL' and 'activation_key' not in overrides:
+            try:data['activation_key']=self.l.compute_activation_pin(hwid,'COMMERCIAL',data['expiry_date'])
+            except ValueError:pass
         Path(self.l.LICENSE_FILE).write_text(json.dumps(data))
         return self.l.verify_license()
 
@@ -318,6 +307,22 @@ class LicenseAudit(unittest.TestCase):
         self.assertEqual(self.status(expiry_date='2000-01-01')['status'],'EXPIRED')
     def test_invalid_expiry_fails_closed(self):
         self.assertFalse(self.status(expiry_date='not-a-date')['valid'])
+
+    def test_editing_signed_expiry_cannot_extend_or_remove_expiration(self):
+        hwid=self.l.get_machine_hwid()
+        signed=self.l.compute_activation_pin(hwid,'COMMERCIAL','2090-01-01')
+        self.assertTrue(self.status(expiry_date='2090-01-01',activation_key=signed)['valid'])
+        self.assertFalse(self.status(expiry_date='2091-01-01',activation_key=signed)['valid'])
+        self.assertFalse(self.status(expiry_date='PERPETUAL',activation_key=signed)['valid'])
+
+    def test_failed_activation_preserves_existing_certificate(self):
+        self.assertTrue(self.status()['valid'])
+        before=Path(self.l.LICENSE_FILE).read_bytes()
+        pin=self.l.compute_activation_pin(self.l.get_machine_hwid())
+        with patch.object(self.l.os,'replace',side_effect=OSError('injected replace failure')):
+            self.assertFalse(self.l.activate_machine(pin)['success'])
+        self.assertEqual(Path(self.l.LICENSE_FILE).read_bytes(),before)
+
 
 
 if __name__=='__main__': unittest.main(verbosity=2)

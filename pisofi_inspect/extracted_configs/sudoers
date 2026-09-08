@@ -1,0 +1,56 @@
+#
+# This file MUST be edited with the 'visudo' command as root.
+#
+# Please consider adding local content in /etc/sudoers.d/ instead of
+# directly modifying this file.
+#
+# See the man page for details on how to write a sudoers file.
+#
+Defaults	env_reset
+Defaults	mail_badpass
+Defaults	secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Host alias specification
+
+# User alias specification
+
+# Cmnd alias specification
+
+# User privilege specification
+root	ALL=(ALL:ALL) ALL
+pi	ALL=(ALL:ALL) ALL
+
+# Allow members of group sudo to execute any command
+%sudo	ALL=(ALL:ALL) ALL
+
+# See sudoers(5) for more information on "#include" directives:
+
+#includedir /etc/sudoers.d
+
+www-data  ALL = (ALL) NOPASSWD:ALL
+ALL    ALL = (root) NOPASSWD: /sbin/iptables
+ALL    ALL = (root) NOPASSWD: /usr/local/bin/tcset
+ALL    ALL = (root) NOPASSWD: /usr/local/bin/tcshow
+ALL    ALL = (root) NOPASSWD: /sbin/reboot
+ALL    ALL = (root) NOPASSWD: /sbin/shutdown
+ALL    ALL = (root) NOPASSWD: /bin/mv
+ALL    ALL = (root) NOPASSWD: /bin/date
+ALL    ALL = (root) NOPASSWD: /usr/bin/timedatectl
+ALL    ALL = (root) NOPASSWD: /usr/bin/php
+ALL    ALL = (root) NOPASSWD: /sbin/tc
+ALL    ALL = (root) NOPASSWD: /bin/systemctl
+ALL    ALL = (root) NOPASSWD: /bin/sh
+ALL    ALL = (root) NOPASSWD: /sbin/ip
+ALL    ALL = (root) NOPASSWD: /bin/cp
+ALL    ALL = (root) NOPASSWD: /bin/rm
+ALL    ALL = (root) NOPASSWD: /usr/sbin/service
+ALL    ALL = (root) NOPASSWD: /usr/local/bin/pisofier
+ALL    ALL = (root) NOPASSWD: /usr/local/bin/conf_copy
+ALL    ALL = (root) NOPASSWD: /usr/local/bin/pisofi_resetconnections
+ALL    ALL = (root) NOPASSWD: /usr/local/bin/reset_pins
+ALL    ALL = (root) NOPASSWD: /usr/local/bin/site_control
+ALL    ALL = (root) NOPASSWD: /usr/local/bin/pin_value_changer
+ALL    ALL = (root) NOPASSWD: /usr/local/bin/pins
+ALL    ALL = (root) NOPASSWD: /usr/bin/php
+                                                                       
+

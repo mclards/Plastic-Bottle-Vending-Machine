@@ -1,0 +1,8 @@
+<?php
+// Identity compatibility only. Vendor licensing/cache restoration has been removed.
+function ___did___() { return \App\Pisofi\Server\LocalLicense::hardwareId(); }
+function gdid() { return ___did___(); }
+function coinreader_lk_sync() { return true; }
+function coinreader_lkck() { return true; }
+function coinreader_i() { return true; }
+if (PHP_SAPI === 'cli' && isset($argv[1])) { exit(0); }

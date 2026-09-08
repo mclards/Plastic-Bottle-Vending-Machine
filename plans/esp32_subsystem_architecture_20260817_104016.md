@@ -20,7 +20,7 @@ The ESP32 utilizes a physical button (`GPIO 34`) to determine its boot state, co
 
 ### Mode A: Hardware Config Portal (Single Core)
 **Trigger:** `GPIO 34` held `LOW` during boot.
-- **Networking:** Spawns a SoftAP (`ECO-Fi-Hardware-Config`) and a DNS Server (`192.168.4.1`) on Core 0.
+- **Networking:** Spawns a SoftAP (`Eco-Fi-Hardware-Config`) and a DNS Server (`192.168.4.1`) on Core 0.
 - **Web UI:** Serves a mobile-responsive captive portal.
 - **Persistence:** Allows the technician to adjust `MachineConfig` variables (Servo Open/Close angles, NIR thresholds, Bin Distance) and saves them permanently into Non-Volatile Storage (NVS) using the `Preferences.h` library.
 - **Safety:** The main vending loop is entirely suspended. Real-time testing of servo angles snaps the hardware into position immediately upon saving.

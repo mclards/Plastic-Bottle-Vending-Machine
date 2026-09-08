@@ -232,7 +232,7 @@ crw-rw---- 1 root dialout 4, 71 May 11 23:35 /dev/ttyS7
  * Debug mode: off
 net.ipv4.ip_forward = 1
 ==================================================
-  SMART ECO-FI REVERSE VENDING MACHINE
+  SMART Eco-Fi REVERSE VENDING MACHINE
   Captive Portal : http://localhost:5000/
   Simulator UI   : http://localhost:5000/simulator
   Admin Panel    : http://localhost:5000/admin
@@ -246,7 +246,7 @@ net.ipv4.ip_forward = 1
     link/ether a2:f2:9e:c8:06:fa brd ff:ff:ff:ff:ff:ff
 net.ipv4.ip_forward = 1
 ==================================================
-  SMART ECO-FI REVERSE VENDING MACHINE
+  SMART Eco-Fi REVERSE VENDING MACHINE
   Captive Portal : http://localhost:5000/
   Simulator UI   : http://localhost:5000/simulator
   Admin Panel    : http://localhost:5000/admin

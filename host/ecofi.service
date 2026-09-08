@@ -1,5 +1,5 @@
 [Unit]
-Description=ECO-Fi Reverse Vending Machine Captive Portal & Web Engine
+Description=Eco-Fi Reverse Vending Machine Captive Portal & Web Engine
 After=network.target network-online.target nginx.service ecofi_firewall.service
 
 [Service]

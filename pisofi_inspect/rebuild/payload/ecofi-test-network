@@ -1,0 +1,32 @@
+#!/bin/bash
+# Add a stable management address and allow SSH from the bench subnet.
+set -euo pipefail
+LAN=eth0
+if ip link show eth1 >/dev/null 2>&1; then LAN=eth1; fi
+ip link show "$LAN" >/dev/null 2>&1 || exit 0
+if systemctl -q is-active NetworkManager; then
+    METHOD=$(nmcli -t -f ipv4.method connection show ecofi-eth0 2>/dev/null | cut -d: -f2 || true)
+    if [ "$LAN" = eth0 ] && [ "$METHOD" != manual ]; then
+        nmcli connection modify ecofi-eth0 ipv4.method manual ipv4.addresses 10.0.0.1/19 ipv4.gateway '' ipv4.dns 1.1.1.1,1.0.0.1
+        nmcli connection up ecofi-eth0 || true
+    elif [ "$LAN" = eth1 ] && [ "$METHOD" != auto ]; then
+        nmcli connection modify ecofi-eth0 ipv4.method auto ipv4.addresses '' ipv4.gateway ''
+        nmcli connection up ecofi-eth0 || true
+    fi
+fi
+DB_CHANGE=$(php /opt/ecofi-test/network.php 2>/dev/null || true)
+if [ "$DB_CHANGE" = changed ]; then
+    /usr/local/bin/pisofier reload >/dev/null 2>&1 || true
+fi
+ip link set "$LAN" up
+if ! ip -4 addr show dev "$LAN" | grep -q 'inet 10.0.0.1/19'; then
+    ip addr add 10.0.0.1/19 dev "$LAN"
+fi
+iptables -C INPUT -i "$LAN" -s 10.0.0.0/19 -p tcp --dport 22 -j ACCEPT 2>/dev/null ||
+    iptables -I INPUT 1 -i "$LAN" -s 10.0.0.0/19 -p tcp --dport 22 -j ACCEPT
+iptables -C OUTPUT -o "$LAN" -d 10.0.0.0/19 -p tcp --sport 22 -j ACCEPT 2>/dev/null ||
+    iptables -I OUTPUT 1 -o "$LAN" -d 10.0.0.0/19 -p tcp --sport 22 -j ACCEPT
+if [ -f /etc/dnsmasq.conf ] && ! grep -q "^interface=$LAN$" /etc/dnsmasq.conf; then
+    sed -i -E "s/^interface=eth[01]$/interface=$LAN/;s/(dhcp-option=|dhcp-range=)eth[01],/\1$LAN,/" /etc/dnsmasq.conf
+    systemctl try-restart dnsmasq || true
+fi

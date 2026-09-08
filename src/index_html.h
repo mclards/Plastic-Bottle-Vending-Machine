@@ -7,7 +7,7 @@ const char* index_html PROGMEM = R"rawliteral(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ECO-Fi Hardware Configuration</title>
+    <title>Eco-Fi Hardware Configuration</title>
     <style>
         :root {
             --bg: #f8fafc;
@@ -217,7 +217,7 @@ const char* index_html PROGMEM = R"rawliteral(
 <body>
     <div class="container">
         <div class="header">
-            <h1>ECO-Fi Hardware Configuration</h1>
+            <h1>Eco-Fi Hardware Configuration</h1>
             <p>ESP32 Controller Parameters &amp; Servo Calibration</p>
         </div>
 

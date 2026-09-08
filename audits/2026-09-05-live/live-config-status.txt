@@ -1,4 +1,4 @@
-{"valid": true, "expiry": "PERPETUAL", "tier": "COMMERCIAL", "licensee": "Store Owner", "status": "ACTIVATED", "hwid": "ECOFI-AADD-284E-E7A4-309C", "message": "Genuine ECO-Fi COMMERCIAL License Activated."}
+{"valid": true, "expiry": "PERPETUAL", "tier": "COMMERCIAL", "licensee": "Store Owner", "status": "ACTIVATED", "hwid": "AADD-284E-E7A4-309C", "message": "Genuine Eco-Fi COMMERCIAL License Activated."}
 # A sample configuration for dhcpcd.
 # See dhcpcd.conf(5) for details.
 
@@ -87,7 +87,7 @@ iproute2	4.9.0-1+deb9u1
 1778812252 e2:d1:42:8e:8d:97 10.0.18.129 * 01:e2:d1:42:8e:8d:97
 1778815333 00:00:00:00:02:43 10.0.7.117 InverterEngr 01:00:00:00:00:02:43
 [Unit]
-Description=ECO-Fi Captive Portal & Web Engine
+Description=Eco-Fi Captive Portal & Web Engine
 After=network.target nginx.service ecofi_firewall.service
 
 [Service]
@@ -104,7 +104,7 @@ Environment=PORT=5000
 [Install]
 WantedBy=multi-user.target
 [Unit]
-Description=ECO-Fi Firewall Initialization
+Description=Eco-Fi Firewall Initialization
 Before=ecofi_portal.service
 After=network.target
 

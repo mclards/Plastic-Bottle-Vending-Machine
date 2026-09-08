@@ -1,0 +1,2 @@
+PASS: ARM Python runtime, Flask pages/auth, vouchers, pause, network acknowledgement, duplicate receipts, finalization, diagnostics and backup
+dnsmasq: syntax check OK.

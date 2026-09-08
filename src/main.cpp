@@ -12,6 +12,11 @@
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include "index_html.h"
+#include "machine_config.h"
+#include "release_version.h"
+
+// One UART write includes the newline, preventing cross-task JSON interleaving.
+void emitSerialLine(const String& line) { Serial.print(line + "\n"); }
 
 #define PIN_IR_TOP 18
 #define PIN_IR_BOTTOM 19
@@ -41,34 +46,20 @@ bool pca9685Found = false;
 AS726X spectrometer;
 bool spectrometerFound = false;
 
-struct MachineConfig {
-    int bin_full_threshold_cm = 15;
-    int pet_nir_w_min = 200;
-    int pet_nir_w_max = 5000;
-    int entrance_gate_timeout = 60;
-    
-    // Hardware Timings
-    int settle_time_ms = 500;
-    int success_drop_tout_ms = 3000;
-    int reject_drop_time_ms = 2000;
-
-    // Independent Servo Angles for Fine-Tuning
-    int ent_open_angle = 90;
-    int ent_close_angle = 0;
-    int suc_open_angle = 90;
-    int suc_close_angle = 0;
-    int rej_open_angle = 90;
-    int rej_close_angle = 0;
-};
 MachineConfig config;
+MachineConfig desiredConfig; // UART task owns this; sensor task owns runtime config.
+QueueHandle_t configQueue;
+std::atomic<bool> configRestartRequested{false};
+std::atomic<int> requestedGateTimeout{60};
+std::atomic<bool> finishRequested{false};
 Preferences preferences;
 
 bool isConfigMode = false;
 WebServer server(80);
 DNSServer dnsServer;
 
-volatile bool topIrTriggered = false;
-volatile bool bottomIrTriggered = false;
+std::atomic<bool> topIrTriggered{false};
+std::atomic<bool> bottomIrTriggered{false};
 
 std::atomic<bool> isBinFull{false};
 std::atomic<int> currentSessionBottles{0};
@@ -119,7 +110,14 @@ String receiptId() {
 }
 void scopedEvent(const char* event, const char* session) {
     JsonDocument doc; doc["event"] = event; doc["protocol"] = 2; doc["session_id"] = session;
-    String output; serializeJson(doc, output); Serial.println(output);
+    String output; serializeJson(doc, output); emitSerialLine(output);
+}
+void gateStateEvent(bool open) {
+    char session[37];
+    xSemaphoreTake(creditMutex, portMAX_DELAY);
+    strlcpy(session, creditJournal.session, sizeof(session));
+    xSemaphoreGive(creditMutex);
+    scopedEvent(open ? "GATE_OPEN" : "GATE_CLOSED", session);
 }
 void postEvent(EventMsg kind) {
     QueuedEvent event = {}; event.kind = kind;
@@ -157,7 +155,7 @@ void replayCredit() {
     doc["protocol"] = 2; doc["bottles"] = creditJournal.phase == 2 ? 1 : 0;
     doc["sessionTotal"] = creditJournal.total; doc["phase"] = creditJournal.phase;
     xSemaphoreGive(creditMutex);
-    String output; serializeJson(doc, output); Serial.println(output);
+    String output; serializeJson(doc, output); emitSerialLine(output);
 }
 
 void IRAM_ATTR isrTopIr() { topIrTriggered = true; }
@@ -242,6 +240,16 @@ void handleRoot() {
 }
 
 void handleSave() {
+    const char* fields[] = {"bin_cm", "ent_tout", "stl_ms", "suc_tout", "rej_time", "nir_min", "nir_max",
+        "ent_open", "ent_close", "suc_open", "suc_close", "rej_open", "rej_close"};
+    for (const char* field : fields) {
+        if (!server.hasArg(field)) continue;
+        String value = server.arg(field);
+        bool numeric = value.length() > 0 && value.length() <= 5;
+        for (size_t i = 0; i < value.length(); ++i) numeric = numeric && value[i] >= '0' && value[i] <= '9';
+        if (!numeric) { server.send(400, "text/plain", "Invalid hardware settings"); return; }
+    }
+    MachineConfig previous = config;
     if (server.hasArg("bin_cm")) config.bin_full_threshold_cm = server.arg("bin_cm").toInt();
     if (server.hasArg("ent_tout")) config.entrance_gate_timeout = server.arg("ent_tout").toInt();
     if (server.hasArg("stl_ms")) config.settle_time_ms = server.arg("stl_ms").toInt();
@@ -256,6 +264,11 @@ void handleSave() {
     if (server.hasArg("rej_open")) config.rej_open_angle = server.arg("rej_open").toInt();
     if (server.hasArg("rej_close")) config.rej_close_angle = server.arg("rej_close").toInt();
 
+    if (!validMachineConfig(config)) {
+        config = previous;
+        server.send(400, "text/plain", "Invalid hardware settings");
+        return;
+    }
     savePreferences();
     
     // Snap servos to new values immediately to visually test tuning
@@ -274,6 +287,7 @@ void handleSave() {
 }
 
 void configPortalTaskCode(void* parameter) {
+    (void)parameter;
     unsigned long lastActivityTime = millis();
     while (true) {
         if (WiFi.softAPgetStationNum() > 0) {
@@ -281,7 +295,7 @@ void configPortalTaskCode(void* parameter) {
         }
         
         if (millis() - lastActivityTime > 60000) {
-            Serial.println("Config Portal Inactivity Timeout. Rebooting...");
+            emitSerialLine("Config Portal Inactivity Timeout. Rebooting...");
             lcd.clear();
             lcd.setCursor(0, 0); lcd.print("CONFIG TIMEOUT");
             lcd.setCursor(0, 1); lcd.print("Rebooting...");
@@ -296,6 +310,7 @@ void configPortalTaskCode(void* parameter) {
 }
 
 void sensorTaskCode(void* parameter) {
+    (void)parameter;
     TickType_t lastUltrasonicCheck = xTaskGetTickCount();
     bool lastBinState = false;
 
@@ -305,6 +320,23 @@ void sensorTaskCode(void* parameter) {
     setServoAngle(PCA_CHANNEL_REJECT, config.rej_close_angle);
 
     while (true) {
+        // Apply configuration only between complete mechanical cycles. Only this
+        // task drives vending servos; the UART task never interrupts a drop.
+        MachineConfig pending;
+        if (xQueueReceive(configQueue, &pending, 0) == pdTRUE) {
+            config = pending;
+            savePreferences();
+            setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
+            setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
+            setServoAngle(PCA_CHANNEL_REJECT, config.rej_close_angle);
+            emitSerialLine("{\"event\":\"CONFIG_SAVED\"}");
+        }
+        if (configRestartRequested) {
+            entranceGateRequested = false;
+            setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
+            preferences.putBool("force_cfg", true);
+            ESP.restart();
+        }
         // 1. Check Bin Status
         if (xTaskGetTickCount() - lastUltrasonicCheck >= pdMS_TO_TICKS(1000)) {
             int distance = getBinDistanceCm();
@@ -327,18 +359,21 @@ void sensorTaskCode(void* parameter) {
         // 2. Await Entrance Request
         if (entranceGateRequested.exchange(false)) {
             xSemaphoreTake(creditMutex, portMAX_DELAY);
-            bool permitted = creditStorageOk && creditJournal.phase == 0 && creditJournal.session[0];
+            bool permitted = creditStorageOk && creditJournal.phase == 0 && creditJournal.session[0] &&
+                !finishRequested && !configRestartRequested && pca9685Found && spectrometerFound;
             if (permitted) depositCycleBusy = true;
             xSemaphoreGive(creditMutex);
             if (!permitted) { vTaskDelay(pdMS_TO_TICKS(50)); continue; }
             setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_open_angle); // Open entrance
+            gateStateEvent(true);
             topIrTriggered = false;
             
             unsigned long openTime = millis();
             bool dropped = false;
             bool wasForced = false;
             
-            while (millis() - openTime < (config.entrance_gate_timeout * 1000UL)) {
+            const uint32_t gateTimeoutMs = requestedGateTimeout.load() * 1000UL;
+            while (millis() - openTime < gateTimeoutMs) {
                 if (topIrTriggered || forceGateClose) {
                     if (topIrTriggered) dropped = true;
                     if (forceGateClose) wasForced = true;
@@ -348,6 +383,7 @@ void sensorTaskCode(void* parameter) {
             }
             
             setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle); // Close entrance
+            gateStateEvent(false);
             forceGateClose = false;
             
             if (!dropped) {
@@ -373,7 +409,11 @@ void sensorTaskCode(void* parameter) {
                 isValid = false;
                 rejectReason = MSG_REJECT_NON_PLASTIC;
             }
-            else if (spectrometerFound) {
+            else if (!spectrometerFound) {
+                isValid = false;
+                rejectReason = MSG_REJECT_NIR;
+            }
+            else {
                 spectrometer.takeMeasurements();
                 int nirAbsorption = spectrometer.getCalibratedW();
                 if (nirAbsorption < config.pet_nir_w_min || nirAbsorption > config.pet_nir_w_max) {
@@ -398,7 +438,7 @@ void sensorTaskCode(void* parameter) {
                 unsigned long gateOpenTime = millis();
                 bool passedDrop = false;
 
-                while (millis() - gateOpenTime < config.success_drop_tout_ms) {
+                while (millis() - gateOpenTime < static_cast<uint32_t>(config.success_drop_tout_ms)) {
                     if (bottomIrTriggered) {
                         passedDrop = true;
                         break;
@@ -435,6 +475,7 @@ void sensorTaskCode(void* parameter) {
 }
 
 void commTaskCode(void* parameter) {
+    (void)parameter;
     QueuedEvent queued;
 
     while (true) {
@@ -446,11 +487,11 @@ void commTaskCode(void* parameter) {
                     lcd.setCursor(0, 1); lcd.print("STATUS: STORAGE FULL");
                     lcd.setCursor(0, 2); lcd.print("Empty Bin Required  ");
                     digitalWrite(PIN_LED_RED, HIGH);
-                    Serial.println("{\"event\":\"BIN_FULL\"}");
+                    emitSerialLine("{\"event\":\"BIN_FULL\"}");
                     break;
                 
                 case MSG_BIN_OK:
-                    Serial.println("{\"event\":\"BIN_OK\"}");
+                    emitSerialLine("{\"event\":\"BIN_OK\"}");
                     lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
                     lcd.setCursor(0, 2); lcd.print("Rate: 1 Bottle = 15m");
                     digitalWrite(PIN_LED_RED, LOW);
@@ -520,11 +561,12 @@ void commTaskCode(void* parameter) {
 
 void setup() {
     Serial.begin(115200);
+    emitSerialLine(String("{\"event\":\"BOOT\",\"protocol\":2,\"firmware_version\":\"") + ECOFI_VERSION + "\"}");
     pinMode(PIN_IR_TOP, INPUT_PULLUP);
     pinMode(PIN_IR_BOTTOM, INPUT_PULLUP);
     pinMode(PIN_PROX_METAL, INPUT_PULLUP);
     pinMode(PIN_PROX_CAPACITIVE, INPUT_PULLUP);
-    pinMode(PIN_FINISH_BTN, INPUT_PULLUP);
+    pinMode(PIN_FINISH_BTN, INPUT); // GPIO34 requires an external pull-up resistor.
     pinMode(PIN_ULTRASONIC_TRIG, OUTPUT);
     pinMode(PIN_ULTRASONIC_ECHO, INPUT);
     pinMode(PIN_BUZZER, OUTPUT);
@@ -535,9 +577,8 @@ void setup() {
     attachInterrupt(digitalPinToInterrupt(PIN_IR_BOTTOM), isrBottomIr, FALLING);
 
     Wire.begin(21, 22);
-    pwm.begin();
-    pwm.setPWMFreq(50);
-    pca9685Found = true;
+    pca9685Found = pwm.begin();
+    if (pca9685Found) pwm.setPWMFreq(50);
 
     lcd.init();
     lcd.backlight();
@@ -546,17 +587,20 @@ void setup() {
     oled.setTextSize(1);
     oled.setTextColor(WHITE);
     oled.setCursor(0, 10);
-    oled.println("Booting ECO-Fi...");
+    oled.println("Booting Eco-Fi...");
     oled.display();
 
     if (spectrometer.begin() == false) {
-        Serial.println("AS7263 Sensor missing!");
+        emitSerialLine("AS7263 Sensor missing!");
         spectrometerFound = false;
     } else {
         spectrometerFound = true;
     }
 
     loadPreferences();
+    if (!validMachineConfig(config)) config = MachineConfig{};
+    desiredConfig = config;
+    requestedGateTimeout = config.entrance_gate_timeout;
     setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
     setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
     setServoAngle(PCA_CHANNEL_REJECT, config.rej_close_angle);
@@ -571,7 +615,7 @@ void setup() {
         currentSessionBottles = creditJournal.total;
     }
     if (!creditMutex || !creditStorageOk) {
-        Serial.println("{\"event\":\"STORAGE_ERROR\"}");
+        emitSerialLine("{\"event\":\"STORAGE_ERROR\"}");
         // Never replace an unreadable journal with an empty one.
         while (true) delay(1000);
     }
@@ -584,19 +628,19 @@ void setup() {
     // Check for Config Mode Trigger
     if (forceConfig || digitalRead(PIN_FINISH_BTN) == LOW) {
         isConfigMode = true;
-        lcd.setCursor(0, 0); lcd.print("=== ECO-Fi CONFIG ==");
-        lcd.setCursor(0, 1); lcd.print("WIFI: ECO-Fi-Config ");
+        lcd.setCursor(0, 0); lcd.print("=== Eco-Fi CONFIG ==");
+        lcd.setCursor(0, 1); lcd.print("WIFI: Eco-Fi-Config ");
         lcd.setCursor(0, 2); lcd.print("IP: 192.168.4.1     ");
         
         oled.clearDisplay();
         oled.setCursor(0, 0);
         oled.println("CONFIG MODE");
         oled.println("Connect to WiFi:");
-        oled.println("ECO-Fi-Config");
+        oled.println("Eco-Fi-Config");
         oled.display();
 
         WiFi.mode(WIFI_AP);
-        WiFi.softAP("ECO-Fi-Hardware-Config", "admin1234");
+        WiFi.softAP("Eco-Fi-Hardware-Config", "admin1234");
         dnsServer.start(53, "*", WiFi.softAPIP());
 
         server.on("/", handleRoot);
@@ -611,16 +655,21 @@ void setup() {
     }
 
     // Normal Vending Setup
-    lcd.setCursor(0, 0); lcd.print("=== ECO-Fi VENDO ===");
+    lcd.setCursor(0, 0); lcd.print("=== Eco-Fi VENDO ===");
     lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
     lcd.setCursor(0, 2); lcd.print("Rate: 1 Bottle = 15m");
     lcd.setCursor(0, 3); lcd.print("Session Bottles: 0  ");
 
     eventQueue = xQueueCreate(10, sizeof(QueuedEvent));
+    configQueue = xQueueCreate(1, sizeof(MachineConfig));
     uiMutex = xSemaphoreCreateMutex();
 
-    xTaskCreatePinnedToCore(sensorTaskCode, "SensorTask", 4096, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(commTaskCode, "CommTask", 4096, NULL, 1, NULL, 1);
+    if (!eventQueue || !configQueue || !uiMutex ||
+        xTaskCreatePinnedToCore(commTaskCode, "CommTask", 4096, NULL, 1, NULL, 1) != pdPASS ||
+        xTaskCreatePinnedToCore(sensorTaskCode, "SensorTask", 4096, NULL, 1, NULL, 0) != pdPASS) {
+        emitSerialLine("{\"event\":\"STARTUP_ERROR\"}");
+        while (true) delay(1000);
+    }
 }
 
 void loop() {
@@ -629,23 +678,44 @@ void loop() {
         return;
     }
 
-    if (Serial.available()) {
-        String msg = Serial.readStringUntil('\n');
+    static char serialLine[1024];
+    static size_t serialLength = 0;
+    static bool serialOverflow = false;
+    bool messageReady = false;
+    for (int budget = 0; budget < 256 && Serial.available(); ++budget) {
+        char ch = Serial.read();
+        if (ch == '\n') {
+            if (!serialOverflow) { serialLine[serialLength] = 0; messageReady = true; }
+            serialLength = 0; serialOverflow = false;
+            break;
+        }
+        if (ch != '\r' && !serialOverflow) {
+            if (serialLength < sizeof(serialLine) - 1) serialLine[serialLength++] = ch;
+            else serialOverflow = true;
+        }
+    }
+    if (messageReady) {
+        String msg(serialLine);
         JsonDocument command;
-        if (deserializeJson(command, msg)) return;
+        if (deserializeJson(command, msg)) command.clear();
         const char* cmd = command["cmd"] | "";
         const char* sid = command["session_id"] | "";
         if (strcmp(cmd, "OPEN_GATE") == 0) {
+            int timeout = command["timeout"] | desiredConfig.entrance_gate_timeout;
             xSemaphoreTake(creditMutex, portMAX_DELAY);
             bool same = strcmp(sid, creditJournal.session) == 0;
             if (command["protocol"] == 2 && strlen(sid) > 0 && strlen(sid) <= 36 &&
-                creditStorageOk && creditJournal.phase == 0 && (!depositCycleBusy || same)) {
+                creditStorageOk && creditJournal.phase == 0 && (!depositCycleBusy || same) &&
+                !finishRequested && !configRestartRequested && timeout >= 1 && timeout <= 600) {
                 if (!same) {
                     strlcpy(creditJournal.session, sid, sizeof(creditJournal.session));
                     creditJournal.total = 0; currentSessionBottles = 0;
                     saveCreditJournal();
                 }
-                if (creditStorageOk) entranceGateRequested = true;
+                if (creditStorageOk) {
+                    if (!depositCycleBusy) forceGateClose = false;
+                    requestedGateTimeout = timeout; entranceGateRequested = true;
+                }
             }
             xSemaphoreGive(creditMutex);
         } else if (strcmp(cmd, "CREDIT_ACK") == 0) {
@@ -664,37 +734,83 @@ void loop() {
                 entranceGateRequested = false; forceGateClose = true;
             }
             xSemaphoreGive(creditMutex);
-        } else if (msg.indexOf("\"TRIGGER_CONFIG\"") >= 0) {
-            preferences.putBool("force_cfg", true);
-            ESP.restart();
-        } else if (msg.indexOf("\"SET_CONFIG\"") >= 0) {
-            JsonDocument doc;
-            DeserializationError error = deserializeJson(doc, msg);
-            if (!error) {
-                if (!doc["bin_full_threshold_cm"].isNull()) config.bin_full_threshold_cm = doc["bin_full_threshold_cm"];
-                if (!doc["pet_nir_w_min"].isNull()) config.pet_nir_w_min = doc["pet_nir_w_min"];
-                if (!doc["pet_nir_w_max"].isNull()) config.pet_nir_w_max = doc["pet_nir_w_max"];
-                if (!doc["entrance_gate_timeout"].isNull()) config.entrance_gate_timeout = doc["entrance_gate_timeout"];
-                if (!doc["settle_time_ms"].isNull()) config.settle_time_ms = doc["settle_time_ms"];
-                if (!doc["success_drop_tout_ms"].isNull()) config.success_drop_tout_ms = doc["success_drop_tout_ms"];
-                if (!doc["reject_drop_time_ms"].isNull()) config.reject_drop_time_ms = doc["reject_drop_time_ms"];
-                if (!doc["ent_open_angle"].isNull()) config.ent_open_angle = doc["ent_open_angle"];
-                if (!doc["ent_close_angle"].isNull()) config.ent_close_angle = doc["ent_close_angle"];
-                if (!doc["suc_open_angle"].isNull()) config.suc_open_angle = doc["suc_open_angle"];
-                if (!doc["suc_close_angle"].isNull()) config.suc_close_angle = doc["suc_close_angle"];
-                if (!doc["rej_open_angle"].isNull()) config.rej_open_angle = doc["rej_open_angle"];
-                if (!doc["rej_close_angle"].isNull()) config.rej_close_angle = doc["rej_close_angle"];
-                
-                savePreferences();
-                
-                // Snap servos to their new close positions immediately
-                setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
-                setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
-                setServoAngle(PCA_CHANNEL_REJECT, config.rej_close_angle);
-                
-                Serial.println("{\"event\":\"CONFIG_SAVED\"}");
+        } else if (strcmp(cmd, "TRIGGER_CONFIG") == 0) {
+            configRestartRequested = true;
+            entranceGateRequested = false; forceGateClose = true;
+        } else if (strcmp(cmd, "FINISH_ACK") == 0) {
+            xSemaphoreTake(creditMutex, portMAX_DELAY);
+            if (command["protocol"] == 2 && strcmp(sid, creditJournal.session) == 0) { finishRequested = false; forceGateClose = false; }
+            xSemaphoreGive(creditMutex);
+        } else if (strcmp(cmd, "SET_CONFIG") == 0) {
+            MachineConfig next = desiredConfig;
+            bool fieldsValid = true;
+            if (!command["bin_full_threshold_cm"].isNull()) {
+                if (!command["bin_full_threshold_cm"].is<int>()) fieldsValid = false;
+                else next.bin_full_threshold_cm = command["bin_full_threshold_cm"];
             }
+            if (!command["pet_nir_w_min"].isNull()) {
+                if (!command["pet_nir_w_min"].is<int>()) fieldsValid = false;
+                else next.pet_nir_w_min = command["pet_nir_w_min"];
+            }
+            if (!command["pet_nir_w_max"].isNull()) {
+                if (!command["pet_nir_w_max"].is<int>()) fieldsValid = false;
+                else next.pet_nir_w_max = command["pet_nir_w_max"];
+            }
+            if (!command["entrance_gate_timeout"].isNull()) {
+                if (!command["entrance_gate_timeout"].is<int>()) fieldsValid = false;
+                else next.entrance_gate_timeout = command["entrance_gate_timeout"];
+            }
+            if (!command["settle_time_ms"].isNull()) {
+                if (!command["settle_time_ms"].is<int>()) fieldsValid = false;
+                else next.settle_time_ms = command["settle_time_ms"];
+            }
+            if (!command["success_drop_tout_ms"].isNull()) {
+                if (!command["success_drop_tout_ms"].is<int>()) fieldsValid = false;
+                else next.success_drop_tout_ms = command["success_drop_tout_ms"];
+            }
+            if (!command["reject_drop_time_ms"].isNull()) {
+                if (!command["reject_drop_time_ms"].is<int>()) fieldsValid = false;
+                else next.reject_drop_time_ms = command["reject_drop_time_ms"];
+            }
+            if (!command["ent_open_angle"].isNull()) {
+                if (!command["ent_open_angle"].is<int>()) fieldsValid = false;
+                else next.ent_open_angle = command["ent_open_angle"];
+            }
+            if (!command["ent_close_angle"].isNull()) {
+                if (!command["ent_close_angle"].is<int>()) fieldsValid = false;
+                else next.ent_close_angle = command["ent_close_angle"];
+            }
+            if (!command["suc_open_angle"].isNull()) {
+                if (!command["suc_open_angle"].is<int>()) fieldsValid = false;
+                else next.suc_open_angle = command["suc_open_angle"];
+            }
+            if (!command["suc_close_angle"].isNull()) {
+                if (!command["suc_close_angle"].is<int>()) fieldsValid = false;
+                else next.suc_close_angle = command["suc_close_angle"];
+            }
+            if (!command["rej_open_angle"].isNull()) {
+                if (!command["rej_open_angle"].is<int>()) fieldsValid = false;
+                else next.rej_open_angle = command["rej_open_angle"];
+            }
+            if (!command["rej_close_angle"].isNull()) {
+                if (!command["rej_close_angle"].is<int>()) fieldsValid = false;
+                else next.rej_close_angle = command["rej_close_angle"];
+            }
+            if (fieldsValid && validMachineConfig(next)) {
+                desiredConfig = next;
+                xQueueOverwrite(configQueue, &next);
+            } else emitSerialLine("{\"event\":\"CONFIG_INVALID\"}");
         }
+    }
+    // Debounced physical finish. Complete/ACK the pending receipt before FINISH.
+    static bool buttonWasDown = false;
+    static uint32_t buttonChanged = 0;
+    static bool buttonHandled = false;
+    bool down = digitalRead(PIN_FINISH_BTN) == LOW;
+    if (down != buttonWasDown) { buttonWasDown = down; buttonChanged = millis(); buttonHandled = false; }
+    if (down && !buttonHandled && millis() - buttonChanged >= 50) {
+        buttonHandled = true;
+        finishRequested = true; entranceGateRequested = false; forceGateClose = true;
     }
     static uint32_t lastReceiptSend = 0;
     if (millis() - lastReceiptSend >= 1000) {
@@ -703,6 +819,12 @@ void loop() {
         if (!creditStorageOk) saveCreditJournal();
         xSemaphoreGive(creditMutex);
         replayCredit();
+        xSemaphoreTake(creditMutex, portMAX_DELAY);
+        if (finishRequested && !depositCycleBusy && creditStorageOk && creditJournal.phase == 0) {
+            if (creditJournal.session[0]) scopedEvent("FINISH", creditJournal.session);
+            else finishRequested = false;
+        }
+        xSemaphoreGive(creditMutex);
     }
     vTaskDelay(pdMS_TO_TICKS(100));
 }

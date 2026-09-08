@@ -1,7 +1,7 @@
 # Audit 04: Security Audit
 
 **Date:** August 17, 2026  
-**Scope:** Both original PisoFi v5.3.0 image and ECO-Fi `portal.py`
+**Scope:** Both original PisoFi v5.3.0 image and Eco-Fi `portal.py`
 
 ---
 
@@ -11,7 +11,7 @@
 **Location:** `/etc/environment`  
 **Issue:** MySQL credentials (`wipi`/`wipi`) are stored in plaintext in the environment file and sourced by every bash script.
 
-**Our Status:** ✅ Not applicable — ECO-Fi uses SQLite with no authentication (file-level access only, which is appropriate for an embedded single-user device).
+**Our Status:** ✅ Not applicable — Eco-Fi uses SQLite with no authentication (file-level access only, which is appropriate for an embedded single-user device).
 
 ---
 
@@ -27,7 +27,7 @@
 **Location:** `/usr/local/bin/ngrok` (30MB binary), `pisofi_ngrok.service`  
 **Issue:** The original image ships with a full Ngrok binary and service that creates a public tunnel to the admin panel. This effectively opens a remote backdoor to the device. Anyone with the Ngrok URL can access the full admin panel.
 
-**Our Status:** ✅ Removed — ECO-Fi intentionally does not include Ngrok or any remote access tunnel.
+**Our Status:** ✅ Removed — Eco-Fi intentionally does not include Ngrok or any remote access tunnel.
 
 ---
 
@@ -35,11 +35,11 @@
 **Location:** `pisofi_remotesubscriber.service`, `pisofi_datasync.service`, `pisofi_remotebackup.service`  
 **Issue:** Multiple services connect to external PisoFi cloud servers. The PHP code is obfuscated, making it impossible to audit what data is being exfiltrated. Includes `check_status` script that phones home on every boot.
 
-**Our Status:** ✅ Removed — ECO-Fi is fully self-contained with no external connections.
+**Our Status:** ✅ Removed — Eco-Fi is fully self-contained with no external connections.
 
 ---
 
-## Findings in ECO-Fi (`portal.py`)
+## Findings in Eco-Fi (`portal.py`)
 
 ### SEC-05: Hardcoded Flask Secret Key [HIGH]
 **Location:** [portal.py line 31](file:///d:/PROJECTS_IO/Plastic-Bottle-Vending-Machine/host/portal.py#L31)  
@@ -156,7 +156,7 @@ def api_member_login():
 
 ## Security Comparison Summary
 
-| Category | PisoFi v5.3.0 | ECO-Fi |
+| Category | PisoFi v5.3.0 | Eco-Fi |
 |----------|---------------|--------|
 | Credentials | Hardcoded MySQL creds in plaintext | Hardcoded Flask secret (fixable) |
 | Remote Access | Ngrok backdoor + cloud phone-home | No remote access (secure) |
@@ -166,4 +166,4 @@ def api_member_login():
 | Authentication | PHP session-based | Flask session-based (same level) |
 | Data at Rest | MySQL (unencrypted) | SQLite (unencrypted, same level) |
 
-**Overall:** ECO-Fi is significantly more secure than PisoFi by design (no backdoors, no phone-home, readable code), but has 3 issues that should be fixed before production deployment (SEC-05, SEC-08, SEC-07).
+**Overall:** Eco-Fi is significantly more secure than PisoFi by design (no backdoors, no phone-home, readable code), but has 3 issues that should be fixed before production deployment (SEC-05, SEC-08, SEC-07).

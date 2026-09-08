@@ -15,7 +15,7 @@ This was a verification/debugging run. No application fixes were deployed, no im
 * Download/upload traffic across the physical USB-LAN and IFB shaper, using a temporary traffic server on the OPi. These measurements test LAN shaping, not ISP capacity.
 * A brief live missing-license interval, with restoration performed by the remote process even if the test connection closes.
 * **38 isolated regression tests: 17 passed, 21 failed.** Tests used a temporary copy of the same application source and a disposable database. They did not create vouchers, members, or simulated bottle deposits on the production OPi.
-* Read-only inspection of the original PisoFi image and the saved ECO-Fi image. The original was not booted and its cloud services were not contacted.
+* Read-only inspection of the original PisoFi image and the saved Eco-Fi image. The original was not booted and its cloud services were not contacted.
 
 The supplied `D:\PROJECTS\_IO\...\resources\PisoFi\_Opi1&PC\_v5.3.0-05-10-26\_EXT.img` path was absent. The original image available and inspected in this workspace was `resources/PisoFi_Opi1&PC_v5.3.0-05-10-26_EXT.img` (3,162,022,400 bytes).
 
@@ -84,7 +84,7 @@ The probe used 2 MiB downloads and 512 KiB uploads. Payload rates include connec
 | LIVE-22 | High | The board clock is May 12, 2026 while the workstation and upstream HTTP date are September 5. NTP is disabled/unsynchronized. Date-based expiry and reports cannot be trusted. | `timedatectl`, `date -u`, upstream response |
 | LIVE-23 | High | An invalid expiry string is accepted as a valid license because the parser catches the error and proceeds. Expiry metadata is not included in the activation-PIN calculation. | `host/license_manager.py`: `verify_license`; malformed-expiry regression |
 | LIVE-24 | Medium | `eth1` also has a link-local address and an extra default route, despite the intended WAN/LAN split. Two DHCP client processes were present. WAN worked during testing; recovery behavior is not established. | Live address/route/process snapshot |
-| LIVE-25 | High | The saved ECO-Fi image differs from the live/workspace code. Comparison differs after newline normalization and also at Python AST level. | [Image comparison](image-comparison.json) |
+| LIVE-25 | High | The saved Eco-Fi image differs from the live/workspace code. Comparison differs after newline normalization and also at Python AST level. | [Image comparison](image-comparison.json) |
 | LIVE-26 | Medium | Physical finish-button behavior is not implemented in the inspected firmware's normal runtime; `PIN_FINISH_BTN` is read at boot for configuration. `OPEN_GATE` does not parse its transmitted per-command timeout, and the hardware session total is not reset per portal session. | `src/main.cpp`: button and serial command paths; source-only finding, physical firmware identity unverified |
 
 These are behavioral failures, not merely missing UI labels. The isolated proof output is in [isolated-regressions.txt](isolated-regressions.txt); executable cases are in [test_gateway_audit.py](../../tools/test_gateway_audit.py).
@@ -93,13 +93,13 @@ These are behavioral failures, not merely missing UI labels. The isolated proof 
 
 The original image was mounted read-only with journal replay disabled. Selected source files were copied as evidence; no original PHP was executed.
 
-* [DeviceLicense](original_DeviceLicense.php), [NoLicense](original_NoLicense.php), and [TrialLicense](original_TrialLicense.php) implement distinct license states. NoLicense reports expired; trial validity uses an expiration date. The original also has server registration and license verification paths. ECO-Fi's offline license file is a different design and currently is not enforced.
+* [DeviceLicense](original_DeviceLicense.php), [NoLicense](original_NoLicense.php), and [TrialLicense](original_TrialLicense.php) implement distinct license states. NoLicense reports expired; trial validity uses an expiration date. The original also has server registration and license verification paths. Eco-Fi's offline license file is a different design and currently is not enforced.
 * [DeviceConfigurationMiddleware](original_DeviceConfigurationMiddleware.php) contains registration/no-license screens, online license refresh, and offline verification handling. [PortalController](original_PortalController.php) checks license expiry in vending connection paths. This establishes a source-level difference; exact original cloud responses and all existing-session behavior were not live-tested.
 * Original [NetworkManager](original_NetworkManager.php) exposes configurable auto-pause/auto-resume settings. [pauseconnections.php](original_pauseconnections.php) has conditional boot behavior. The old audit's claim that original PisoFi unconditionally pauses every session at boot was too broad.
-* Original [Pisofier](original_Pisofier.php) passes MAC, IP, mark, and download/upload rates into its networking implementation. ECO-Fi's live fallback authorizes only by IP.
-* The original controller/model inventory includes WiPass, data plans, desktop sessions, connection transfers, and additional credit/account features. The old comparison's claim that transfer capability was wholly exclusive to ECO-Fi is not supported by the inspected original sources.
+* Original [Pisofier](original_Pisofier.php) passes MAC, IP, mark, and download/upload rates into its networking implementation. Eco-Fi's live fallback authorizes only by IP.
+* The original controller/model inventory includes WiPass, data plans, desktop sessions, connection transfers, and additional credit/account features. The old comparison's claim that transfer capability was wholly exclusive to Eco-Fi is not supported by the inspected original sources.
 
-| Feature area | Current ECO-Fi verification status |
+| Feature area | Current Eco-Fi verification status |
 |---|---|
 | WAN/LAN addressing, DHCP, NAT | Working at inspection; recovery/extra-route concerns open |
 | Captive portal and paid DNS/probe release | Failing |
@@ -119,7 +119,7 @@ The original image was mounted read-only with journal replay disabled. Selected 
 | Alerts/Telegram | Not sent; no external-recipient messaging performed |
 | Tethering control | TTL rewrite exists; no tethered-device test and no anti-tethering guarantee |
 | Multiple simultaneous physical clients/AP isolation | Not verified; isolated logical clients do not prove this |
-| Cloud registration, remote management/backup, PPPoE, desktop/charging, complete original feature set | Not established as implemented/equivalent in ECO-Fi |
+| Cloud registration, remote management/backup, PPPoE, desktop/charging, complete original feature set | Not established as implemented/equivalent in Eco-Fi |
 | WAN outage, USB unplug/replug recovery, cold boot, long soak, maximum client count | Not certified by this run |
 
 The original's complete behavior cannot be certified by static inspection or by running only the replacement application. A full 1:1 claim would need an original-image test board plus a feature-by-feature acceptance specification, including which original PC/coin/cloud features are intended in this bottle-vending adaptation.

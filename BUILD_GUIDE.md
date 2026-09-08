@@ -1,9 +1,9 @@
-# ECO-Fi OS Image Build Guide
+# Eco-Fi OS Image Build Guide
 
-This guide explains how to build, flash, and troubleshoot the custom ECO-Fi Orange Pi image.
+This guide explains how to build, flash, and troubleshoot the custom Eco-Fi Orange Pi image.
 
 ## Overview
-The ECO-Fi system operates on a custom, hardened version of the Orange Pi Linux distribution. We use a bash script to automatically mount a clean base image, strip out legacy dependencies, and inject our offline Python backend and captive portal software.
+The Eco-Fi system operates on a custom, hardened version of the Orange Pi Linux distribution. We use a bash script to automatically mount a clean base image, strip out legacy dependencies, and inject our offline Python backend and captive portal software.
 
 ## How to Build the Image
 
@@ -16,17 +16,17 @@ If you make changes to the Python backend (`host/*.py`) or the web UI (`portal_t
    ```
 3. Run the automated build script as root:
    ```bash
-   wsl --user root bash build_ecofi_img.sh
+   sudo bash build_ecofi_img.sh
    ```
-4. The script will output progress logs. It takes about 1-2 minutes to copy the base image and inject the new files.
-5. Once successful, the new image will be output to the `resources/` folder (e.g., `resources/EcoFi_Opi_v1.7.img`).
+4. The script reads `VERSION` (currently `2.2.0`), preserves the previous v2.1 base, runs ARM runtime smoke tests and a filesystem check, and writes a new image plus SHA-256 checksum. Existing release filenames are never overwritten.
+5. Once successful, the new image will be output to the `resources/` folder (e.g., `resources/EcoFi_Opi_v2.2.0.img`).
 
 ---
 
 ### Step 3: Flash to MicroSD Card
 1. Insert your MicroSD card (16GB or 32GB recommended) into your PC card reader.
 2. Download and launch **BalenaEtcher** or **Raspberry Pi Imager**.
-3. Open BalenaEtcher, select the newly built `EcoFi_Opi_v1.7.img` file.
+3. Open BalenaEtcher, select the newly built `EcoFi_Opi_v2.2.0.img` file.
 4. Select your MicroSD card as the target.
 5. Click **Flash!**
 
@@ -36,7 +36,7 @@ Once the SD card is flashed and inserted into the Orange Pi:
 
 1. **Power:** Provide a stable 5V / 3A power supply to the Orange Pi.
 2. **WAN (Internet):** Plug an ethernet cable from your ISP router into the main, built-in Ethernet port (`eth0`). This provides internet access to the machine.
-3. **LAN (Wi-Fi AP):** Plug your USB Wi-Fi adapter or USB-to-Ethernet adapter into the USB port. The system will automatically detect it and create the `10.0.0.1` Access Point network.
+3. **LAN (Wi-Fi AP):** Plug the USB-to-Ethernet adapter into the Orange Pi and connect it to a separate access point in bridge/AP mode. The gateway assigns `10.0.0.1/19` to that Ethernet LAN; this image does not configure a USB Wi-Fi radio as an access point.
 4. **ESP32 Connection:** Connect the ESP32 to the Orange Pi's GPIO Hardware UART pins (UART1):
    - ESP32 GND -> OPi Pin 6 (GND)
    - ESP32 TX  -> OPi Pin 10 (UART1 RX)

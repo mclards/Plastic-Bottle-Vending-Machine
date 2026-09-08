@@ -12,7 +12,7 @@ To instantly get the AI back up to speed with the exact conversation history and
 Please read the conversation transcript located at:
 C:\Users\User\.gemini\antigravity-ide\brain\d23d3dfb-ae4b-4cd7-8a3c-bf43be851031\.system_generated\logs\transcript.jsonl
 
-This file contains our complete previous conversation history. Please review it to regain full context on the ECO-Fi Plastic Bottle Vending Machine project, the implementation plans we've created, and the split-brain issues we discovered. Once you've read it, let me know that your memory is restored and we can continue working!
+This file contains our complete previous conversation history. Please review it to regain full context on the Eco-Fi Plastic Bottle Vending Machine project, the implementation plans we've created, and the split-brain issues we discovered. Once you've read it, let me know that your memory is restored and we can continue working!
 ```
 
 ## Other Important Files to Reference

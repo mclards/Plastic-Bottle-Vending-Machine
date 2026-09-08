@@ -27,7 +27,7 @@ flowchart TD
     end
 
     subgraph Core Gateway [Orange Pi - Armbian / Linux]
-        NGINX[Nginx Reverse Proxy :80] --> FLASK[ECO-Fi Web Engine :5000]
+        NGINX[Nginx Reverse Proxy :80] --> FLASK[Eco-Fi Web Engine :5000]
         FLASK --> DB[(SQLite: vendo_sessions.db)]
         FLASK --> FW[Dynamic ipset & iptables Firewall]
         FLASK --> TC[Traffic Control: 3 Mbps Bandwidth Shaper]
@@ -135,7 +135,7 @@ The ESP32 firmware is developed in C++ using **PlatformIO**. It executes a dual-
 
 ## 5. Orange Pi Firmware & OS Image Builder
 
-We provide an automated, reproducible builder script (`build_ecofi_img.sh` / `build_ecofi_img.bat`) that transforms a base Armbian image into a production-hardened **ECO-Fi OS Image**.
+We provide an automated, reproducible builder script (`build_ecofi_img.sh` / `build_ecofi_img.bat`) that transforms a base Armbian image into a production-hardened **Eco-Fi OS Image**.
 
 ### Automated Image Build (WSL / Linux)
 ```bash

@@ -1,7 +1,8 @@
 @echo off
 echo ======================================================================
-echo    ECO-FI OS IMAGE BUILDER ^& CUSTOMIZER
-echo    Target: resources\EcoFi_Opi_v2.1.img
+echo    Eco-Fi OS IMAGE BUILDER ^& CUSTOMIZER
+set /p ECOFI_VERSION=<"%~dp0VERSION"
+echo    Target: resources\EcoFi_Opi_v%ECOFI_VERSION%.img
 echo ======================================================================
 echo.
 echo Launching WSL build script to inject Eco-Fi software stack...

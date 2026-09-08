@@ -1,5 +1,5 @@
 """
-ECO-Fi Hardware Licensing & Anti-Cloning Engine
+Eco-Fi Hardware Licensing & Anti-Cloning Engine
 Handles Silicon Hardware ID (HWID) extraction, cryptographic license verification,
 and offline activation validation.
 """
@@ -15,16 +15,16 @@ VENDOR_SECRET_SALT = 'ECOFI_MASTER_SOVEREIGN_KEY_2026_SECURE_SALT_v1'
 def normalize_hwid(hwid: str) -> str:
     """
     Normalizes any raw, partial, or user-copied HWID string into canonical
-    format: ECOFI-XXXX-XXXX-XXXX-XXXX (16 hexadecimal characters with ECOFI- prefix).
+    format: XXXX-XXXX-XXXX-XXXX (16 hexadecimal characters with Eco-Fi- prefix).
     
     Accepts:
-      - Full copied string: 'ECOFI-AADD-284E-E7A4-309C'
-      - Accidental double prefix: 'ECOFI-ECOFI-AADD-284E-E7A4-309C'
+      - Full copied string: 'AADD-284E-E7A4-309C'
+      - Accidental double prefix: 'Eco-Fi-AADD-284E-E7A4-309C'
       - Stripped / raw hex: 'AADD284EE7A4309C'
       - Standard 4x4 blocks: 'AADD-284E-E7A4-309C'
       - Lowercase: 'ecofi-aadd-284e-e7a4-309c'
-      - Spaces instead of dashes: 'ECOFI AADD 284E E7A4 309C'
-      - Extra leading/trailing quotes or spaces: ' "ECOFI-AADD-284E-E7A4-309C" '
+      - Spaces instead of dashes: 'Eco-Fi AADD 284E E7A4 309C'
+      - Extra leading/trailing quotes or spaces: ' "AADD-284E-E7A4-309C" '
     """
     if not hwid:
         return ""
@@ -33,9 +33,9 @@ def normalize_hwid(hwid: str) -> str:
     hex_chars = re.sub(r'[^0-9A-F]', '', raw)
     if len(hex_chars) >= 16:
         h = hex_chars[:16]
-        return 'ECOFI-{}-{}-{}-{}'.format(h[0:4], h[4:8], h[8:12], h[12:16])
+        return '{}-{}-{}-{}'.format(h[0:4], h[4:8], h[8:12], h[12:16])
     if hex_chars:
-        return 'ECOFI-{}'.format(hex_chars)
+        return '{}'.format(hex_chars)
     return str(hwid).strip().upper()
 
 def get_machine_hwid() -> str:
@@ -80,7 +80,7 @@ def get_machine_hwid() -> str:
         pass
     raw_signature = '{}|{}|{}|{}'.format(cpu_serial, sd_cid, mac_addr, VENDOR_SECRET_SALT)
     sha = hashlib.sha256(raw_signature.encode('utf-8')).hexdigest().upper()
-    return 'ECOFI-{}-{}-{}-{}'.format(sha[:4], sha[4:8], sha[8:12], sha[12:16])
+    return '{}-{}-{}-{}'.format(sha[:4], sha[4:8], sha[8:12], sha[12:16])
 
 def compute_activation_pin(hwid: str, tier: str='COMMERCIAL') -> str:
     """
@@ -122,7 +122,7 @@ def verify_license() -> dict:
                     return {'valid': False, 'status': 'EXPIRED', 'hwid': current_hwid, 'tier': stored_tier, 'licensee': licensee, 'message': 'License expired on {}. Contact vendor for renewal.'.format(expiry)}
             except Exception:
                 pass
-        return {'valid': True, 'status': 'ACTIVATED', 'hwid': current_hwid, 'tier': stored_tier, 'licensee': licensee, 'expiry': expiry, 'message': 'Genuine ECO-Fi {} License Activated.'.format(stored_tier)}
+        return {'valid': True, 'status': 'ACTIVATED', 'hwid': current_hwid, 'tier': stored_tier, 'licensee': licensee, 'expiry': expiry, 'message': 'Genuine Eco-Fi {} License Activated.'.format(stored_tier)}
     except Exception as e:
         return {'valid': False, 'status': 'ERROR', 'hwid': current_hwid, 'tier': 'NONE', 'licensee': 'Error', 'message': 'License read error: {}'.format(e)}
 
@@ -137,7 +137,7 @@ def activate_machine(activation_pin: str, licensee_name: str='Store Owner', tier
     expected_clean = re.sub(r'[^0-9A-F]', '', expected_pin.strip().upper())
     if clean_pin != expected_clean:
         return {'success': False, 'message': 'Invalid Activation PIN. Please check your Hardware ID and try again.'}
-    license_data = {'vendor': 'ECO-Fi Technologies', 'licensee': licensee_name, 'machine_hwid': current_hwid, 'tier': tier, 'activation_key': expected_pin, 'activated_at': time.strftime('%Y-%m-%d %H:%M:%S'), 'expiry_date': 'PERPETUAL'}
+    license_data = {'vendor': 'Eco-Fi Technologies', 'licensee': licensee_name, 'machine_hwid': current_hwid, 'tier': tier, 'activation_key': expected_pin, 'activated_at': time.strftime('%Y-%m-%d %H:%M:%S'), 'expiry_date': 'PERPETUAL'}
     try:
         os.makedirs(os.path.dirname(LICENSE_FILE), exist_ok=True)
         with open(LICENSE_FILE, 'w') as f:
@@ -148,7 +148,7 @@ def activate_machine(activation_pin: str, licensee_name: str='Store Owner', tier
 if __name__ == '__main__':
     hwid = get_machine_hwid()
     print('======================================================')
-    print(' ECO-Fi Cryptographic Hardware Identifier & Validator')
+    print(' Eco-Fi Cryptographic Hardware Identifier & Validator')
     print('======================================================')
     print(' Detected Machine HWID: {}'.format(hwid))
     status = verify_license()

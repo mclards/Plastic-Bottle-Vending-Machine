@@ -16,7 +16,7 @@ The ESP32 is correctly isolated. No networking, firewall, or accounting logic ex
 ### ✅ PASS — Mode A: Hardware Config Portal (GPIO 34 trigger)
 
 In `setup()` (line 470), the code correctly checks `digitalRead(PIN_FINISH_BTN) == LOW` and `forceConfig` flag. When triggered, it:
-- Starts SoftAP `ECO-Fi-Hardware-Config` on Core 0 via `xTaskCreatePinnedToCore`
+- Starts SoftAP `Eco-Fi-Hardware-Config` on Core 0 via `xTaskCreatePinnedToCore`
 - Runs `DNSServer` to redirect all `*` DNS to `192.168.4.1`
 - Serves a captive portal UI from `index_html.h` with live-value substitution
 - `handleSave()` snaps servos to new positions immediately after `POST /save`

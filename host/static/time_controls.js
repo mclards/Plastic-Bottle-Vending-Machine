@@ -8,6 +8,21 @@
         if (parent) parent.appendChild(node);
         return node;
     }
+    function formatTime(totalSec) {
+        totalSec = Math.max(0, Math.floor(Number(totalSec) || 0));
+        if (totalSec <= 0) return '0d 00h:00m:00s';
+        var d = Math.floor(totalSec / 86400);
+        var h = Math.floor((totalSec % 86400) / 3600);
+        var m = Math.floor((totalSec % 3600) / 60);
+        var s = Math.floor(totalSec % 60);
+        var hh = (h < 10 ? '0' : '') + h;
+        var mm = (m < 10 ? '0' : '') + m;
+        var ss = (s < 10 ? '0' : '') + s;
+        return d + 'd ' + hh + 'h:' + mm + 'm:' + ss + 's';
+    }
+    if (typeof window !== 'undefined' && !window.formatTime) {
+        window.formatTime = formatTime;
+    }
     function duration(seconds) {
         seconds = Math.max(0, Math.floor(Number(seconds) || 0));
         var d = Math.floor(seconds / 86400);
@@ -80,8 +95,12 @@
                 }
                 if (/^\/api\/member\//.test(path) && data.wallet_seconds != null) {
                     setTimeout(function () {
-                        var wallet = document.getElementById('mem-wallet-mins');
-                        if (wallet) wallet.textContent = duration(data.wallet_seconds);
+                        if (typeof updateWalletCard === 'function') {
+                            updateWalletCard(data.wallet_seconds, data.wallet_minutes);
+                        } else {
+                            var wallet = document.getElementById('mem-wallet-mins');
+                            if (wallet) wallet.textContent = typeof formatTime === 'function' ? formatTime(data.wallet_seconds) : duration(data.wallet_seconds);
+                        }
                     }, 0);
                 }
                 return response;
@@ -182,7 +201,7 @@
                         button.disabled = true;
                         window.fetch('/api/client/switch', {method:'POST',body:JSON.stringify({grant_id:grant.id})})
                             .then(function (r) { return r.json(); }).then(function (result) {
-                                if (!result.success) element('div', result.error || 'Unable to switch credit.', panel);
+                                if (!result.success) element('div', result.message || result.error || 'Unable to switch credit.', panel);
                                 if (window.syncPortal) window.syncPortal();
                             }).catch(function () { element('div', 'Connection interrupted. Retry this action.', panel); })
                             .then(function () { button.disabled = false; });
@@ -451,7 +470,7 @@
                             setTimeout(function () { if (message.textContent.indexOf('Saved') !== -1) message.textContent = ''; }, 3000);
                         } else {
                             message.className = 'small font-weight-bold text-danger';
-                            message.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> ' + (result.error || 'Error');
+                            message.innerHTML = '<i class="fas fa-exclamation-triangle mr-1"></i> ' + (result.message || result.error || 'Error');
                         }
                     })
                     .catch(function () {

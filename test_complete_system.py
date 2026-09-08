@@ -26,13 +26,13 @@ def request_get(path):
 
 def run_tests():
     print("==================================================================")
-    print("      RUNNING 100% COMPREHENSIVE ECO-FI SYSTEM TEST SUITE        ")
+    print("      RUNNING 100% COMPREHENSIVE Eco-Fi SYSTEM TEST SUITE        ")
     print("==================================================================")
 
     # 1. Captive Portal UI & Status
     print("[*] Testing Captive Portal UI (GET /)...")
     status, html = request_get("/")
-    assert status == 200 and "ECO-Fi" in html
+    assert status == 200 and "Eco-Fi" in html
     print("    [+] Captive Portal UI loaded successfully.")
 
     print("[*] Testing Portal Status API (GET /api/vendo/status)...")
@@ -69,6 +69,9 @@ def run_tests():
     assert state["session_bottles"] >= 1
     print(f"    [+] Valid PET accepted! Session bottles = {state['session_bottles']}")
 
+    # 4.1 Commit Deposit Session (Convert Bottles to Time)
+    request_json("/api/vendo/done", {})
+
     # 5. Client Session Verification
     status, client_status = request_json("/api/vendo/status")
     assert client_status["client_time_remaining"] > 0
@@ -77,7 +80,7 @@ def run_tests():
     # 6. Admin Panel Dashboard & Statistics
     print("[*] Testing Admin Dashboard (GET /admin)...")
     status, html = request_get("/admin")
-    assert status == 200 and "ECO-Fi MASTER" in html
+    assert status == 200 and "Eco-Fi Master" in html
     print("    [+] AdminLTE Master Panel loaded.")
 
     status, stats = request_json("/admin/api/stats")
@@ -123,15 +126,15 @@ def run_tests():
     print(f"    [+] Voucher redeemed successfully: {rres['message']}")
 
     # 9.1 Test Time Transfer with exact minutes
-    print("[*] Testing Time Transfer generation with exact minutes (10m)...")
-    status, tres = request_json("/api/transfer/generate", {"minutes": 10})
-    assert status == 200 and tres.get("success") and tres.get("minutes") == 10
+    print("[*] Testing Time Transfer generation with exact minutes (5m)...")
+    status, tres = request_json("/api/transfer/generate", {"minutes": 5})
+    assert status == 200 and tres.get("success") and (tres.get("minutes") == 5 or tres.get("minutes") == 5.0)
     t_code = tres["code"]
-    print(f"    [+] Generated 10-minute Transfer Code: {t_code}")
+    print(f"    [+] Generated 5-minute Transfer Code: {t_code}")
 
     status, tc_res = request_json("/api/transfer/claim", {"code": t_code})
     assert status == 200 and tc_res.get("success")
-    print(f"    [+] Claimed 10-minute Transfer Code successfully.")
+    print(f"    [+] Claimed 5-minute Transfer Code successfully.")
 
     # 10. Member Accounts & Wallet Management
     print("[*] Testing Member Account Registration & Top-Up...")
@@ -189,8 +192,8 @@ def run_tests():
     request_json("/admin/api/walled_garden/delete", {"domain": "sampleportal.edu.ph"})
     print("    [+] Cleaned up walled garden domain.")
 
-    # 13. Audio Multi-Event Settings & Chimes (Pure ECO-Fi Branding)
-    print("[*] Testing 3-Channel Audio Event Settings (ECO-Fi Branded)...")
+    # 13. Audio Multi-Event Settings & Chimes (Pure Eco-Fi Branding)
+    print("[*] Testing 3-Channel Audio Event Settings (Eco-Fi Branded)...")
     status, ares = request_json("/admin/api/audio/settings", {
         "audio_bg": "/static/audio/eco_loop.wav",
         "audio_insert": "/static/audio/eco_chime.wav",
@@ -230,7 +233,7 @@ def run_tests():
     print("    [+] Windows NCSI Probe (/ncsi.txt) returned 'Microsoft NCSI'.")
 
     print("\n==================================================================")
-    print("  ALL ECO-FI SYSTEMS, MODALS, BUTTONS & APIS PASSED 100% PERFECTLY! ")
+    print("  ALL Eco-Fi SYSTEMS, MODALS, BUTTONS & APIS PASSED 100% PERFECTLY! ")
     print("==================================================================")
 
 if __name__ == "__main__":

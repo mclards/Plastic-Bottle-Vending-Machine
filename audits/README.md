@@ -1,8 +1,12 @@
+> **Latest release verification — September 8, 2026: v2.2.0.** 118 isolated tests pass after remediation. The full Orange Pi image and ESP32 package were rebuilt and verified, including ARM runtime, filesystem, configuration, checksum and packaged-content checks. Physical acceptance remains open. See [the release verification report](2026-09-08-release/REPORT.md).
+
+> **Latest local verification — September 8, 2026:** 110 isolated tests pass after remediation; firmware builds successfully. Physical acceptance remains open. See [the local verification report](2026-09-08-local/REPORT.md) for fixes, compatibility notes and evidence.
+
 > **Current status ? September 5, 2026: LIVE VERIFICATION FAILED.** See the [live OPi report](2026-09-05-live/REPORT.md): 38 isolated checks found 21 failures, with live failures in licensing, DNS, client identity, MAC blocking, and access revocation. The August 17 closure below is historical and does not certify the current installation.
 
-# ECO-Fi Project Audit — FINAL CLOSURE REPORT
+# Eco-Fi Project Audit — FINAL CLOSURE REPORT
 
-**Project:** ECO-Fi Plastic Bottle Reverse Vending Machine WiFi Portal  
+**Project:** Eco-Fi Plastic Bottle Reverse Vending Machine WiFi Portal  
 **Base Image:** `PisoFi_Opi1&PC_v5.3.0-05-10-26_EXT.img`  
 **Target Image:** `EcoFi_Opi_v1.0.img`  
 **Audit Opened:** August 17, 2026  
@@ -45,7 +49,7 @@ audits/
 | Audit Doc | Scope | Findings |
 |-----------|-------|----------|
 | [01_original_pisofi_architecture.md](./closed/01_original_pisofi_architecture.md) | Full OS teardown: 16 services, binaries, DB schema, network config | 8 active backdoor/phone-home services discovered |
-| [02_ecofi_feature_alignment.md](./closed/02_ecofi_feature_alignment.md) | 28-feature PisoFi vs ECO-Fi gap matrix | 5 critical missing features, 3 ECO-Fi improvements |
+| [02_ecofi_feature_alignment.md](./closed/02_ecofi_feature_alignment.md) | 28-feature PisoFi vs Eco-Fi gap matrix | 5 critical missing features, 3 Eco-Fi improvements |
 | [03_critical_gaps_and_fixes.md](./closed/03_critical_gaps_and_fixes.md) | Runtime & functionality gaps | GAP-01–GAP-07 identified |
 | [04_security_audit.md](./closed/04_security_audit.md) | Security vulnerabilities | SEC-05–SEC-10 identified |
 | [05_network_and_firewall_audit.md](./closed/05_network_and_firewall_audit.md) | Network topology, DNS, firewalls | NET-01–NET-05 identified |

@@ -32,7 +32,7 @@ def run_suite():
 
     # 2. Check Initial Portal & State
     status, html = request_html("/")
-    assert status == 200 and "ECO-Fi" in html
+    assert status == 200 and "Eco-Fi" in html
     print("[+] [Portal] Captive Portal loaded with live HTML UI.")
 
     # 3. Client Clicks 'Insert Plastic Bottle' -> Triggers Gate Opening
@@ -53,6 +53,8 @@ def run_suite():
     status, state = request_json("/simulator/api/state")
     print(f"    Validation complete! LCD Line 1: '{state['lcd_lines'][1].strip()}', Session Bottles: {state['session_bottles']}")
     assert state['session_bottles'] >= 1
+
+    request_json("/api/vendo/done", method="POST")
 
     status, client_status = request_json("/api/status")
     print(f"    Client Internet Balance: {client_status['remaining_seconds']} seconds ({client_status['remaining_seconds']//60} mins)")

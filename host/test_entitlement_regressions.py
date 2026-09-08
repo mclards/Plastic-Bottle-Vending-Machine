@@ -248,6 +248,7 @@ class PortalRegression(unittest.TestCase):
         with patch.object(threading.Thread,'start'):spec.loader.exec_module(cls.p)
         cls.p.esp32.running=False;atexit.unregister(cls.p.save_sessions_to_db)
         cls.p.app.testing=True
+        cls.original_transmit=staticmethod(cls.p.transmit_to_esp32)
 
     @classmethod
     def tearDownClass(cls):
@@ -400,6 +401,197 @@ class PortalRegression(unittest.TestCase):
         self.assertTrue(result['success'],result)
         self.assertEqual(self.scalar('SELECT SUM(issued_us) FROM time_grants'),125500000)
         self.assertEqual(self.scalar('SELECT SUM(remaining_us) FROM time_grants'),125500000)
+
+    def test_test_environment_does_not_bypass_admin_login(self):
+        with patch.dict(os.environ,{'TESTING':'1'}):
+            self.assertEqual(self.request('/admin/api/clients',get=True).status_code,401)
+
+    def test_disabled_simulator_requires_login_then_returns_404(self):
+        self.assertEqual(self.request('/simulator/api/state',get=True).status_code,401)
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        self.assertEqual(self.request('/simulator/api/state',get=True).status_code,404)
+        self.p.set_config('simulator_enabled','1')
+        self.assertEqual(self.request('/simulator/api/state',get=True).status_code,200)
+
+    def test_wallet_deduction_is_atomic_and_idempotent(self):
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        self.assertTrue(self.request('/admin/api/members/add',{'username':'audit','pin':'1234','wallet_minutes':10}).get_json()['success'])
+        data={'username':'audit','minutes':-3,'operation_id':'deduct-once'}
+        for _ in range(2):self.assertTrue(self.request('/admin/api/members/topup',data).get_json()['success'])
+        self.assertEqual(self.scalar("SELECT SUM(remaining_us) FROM time_grants WHERE state='WALLET'"),420000000)
+        self.assertEqual(self.request('/admin/api/members/topup',dict(data,minutes=-4)).status_code,400)
+        self.assertEqual(self.request('/admin/api/members/topup',{'username':'audit','minutes':-8}).status_code,400)
+        self.assertEqual(self.scalar('SELECT SUM(remaining_us) FROM time_grants'),420000000)
+
+    def test_member_delete_preserves_ledger_and_revokes_access(self):
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        self.request('/admin/api/members/add',{'username':'audit','pin':'1234','wallet_minutes':10})
+        self.request('/api/member/login',{'username':'audit','pin':'1234'})
+        self.assertTrue(self.request('/api/member/use_wallet',{'username':'audit','pin':'1234','minutes':5}).get_json()['success'])
+        self.p.time_service.worker_pass()
+        with patch.object(self.p,'update_firewall',return_value=True) as network:
+            self.assertTrue(self.request('/admin/api/members/delete',{'username':'audit'}).get_json()['success'])
+        self.assertTrue(any(call.args[:2]==('10.0.0.2','del') for call in network.call_args_list))
+        self.assertEqual(self.scalar('SELECT SUM(remaining_us) FROM time_grants'),0)
+        self.assertEqual(self.scalar('SELECT COUNT(*) FROM ledger_accounts a JOIN time_grants g ON a.grant_id=g.id WHERE a.balance_us<>g.remaining_us'),0)
+        self.assertEqual(self.scalar('SELECT COALESCE(SUM(delta_us),0) FROM time_ledger'),0)
+
+
+    def test_physical_finish_retries_finalize_once(self):
+        opened=self.request('/api/vendo/open_gate').get_json();sent=[];self.p.transmit_to_esp32=sent.append
+        sid=opened['deposit_session_id']
+        self.p.on_esp32_uart_output(json.dumps({'event':'CREDIT_ADD','event_id':'finish:1','session_id':sid,'bottles':1,'protocol':2}))
+        for _ in range(2):self.p.on_esp32_uart_output(json.dumps({'event':'FINISH','session_id':sid,'protocol':2}))
+        self.assertEqual(self.scalar('SELECT SUM(issued_us) FROM time_grants'),600000000)
+        self.assertEqual(sum(item['cmd']=='FINISH_ACK' for item in sent),2)
+
+    def test_unsynchronized_modern_date_does_not_become_trusted(self):
+        service=self.p.time_service;service.clock_checked=None;service.clock_ok=False
+        result=type('Result',(),{'returncode':0,'stdout':b'NTPSynchronized=no'})()
+        with patch.dict(os.environ,{'ECOFI_TRUST_CLOCK':'0'}),patch.object(self.p.platform,'system',return_value='Linux'),patch.object(self.p.subprocess,'run',return_value=result) as run:
+            self.utc=1800000000.
+            self.assertFalse(type(service).clock_trusted(service))
+            self.assertFalse(type(service).clock_trusted(service))
+            self.assertEqual(run.call_count,1)
+            self.mono+=11;result.stdout=b'NTPSynchronized=yes'
+            self.assertTrue(type(service).clock_trusted(service))
+            self.assertTrue(all(call.args[0][0]=='timedatectl' for call in run.call_args_list))
+
+    def test_default_garden_does_not_bypass_captive_probes(self):
+        self.assertEqual(self.scalar('SELECT COUNT(*) FROM walled_garden'),0)
+
+    def test_disconnect_routes_revoke_authoritative_grants(self):
+        self.voucher();self.p.time_service.worker_pass()
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        with patch.object(self.p,'update_firewall',return_value=True) as network:
+            result=self.request('/admin/api/clients/disconnect',{'ip':'10.0.0.2'})
+        self.assertTrue(result.get_json()['success'])
+        self.assertEqual(self.scalar('SELECT desired_state FROM connections'),'DISCONNECTED')
+        self.assertTrue(any(call.args[:2]==('10.0.0.2','del') for call in network.call_args_list))
+        self.assertTrue(self.request('/admin/api/system/flush_sessions').get_json()['success'])
+        self.assertEqual(self.scalar('SELECT SUM(delta_us) FROM time_ledger'),0)
+
+    def test_backup_zip_round_trip_includes_wal_and_restores_ledger(self):
+        import io,zipfile
+        # Keep a reader open so committed pages remain in WAL during export.
+        keeper=sqlite3.connect(self.p.DB_PATH);self.addCleanup(keeper.close)
+        keeper.execute('PRAGMA journal_mode=WAL')
+        self.voucher()
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        backup=self.request('/admin/api/system/backup/download',get=True)
+        self.assertEqual(backup.status_code,200)
+        with zipfile.ZipFile(io.BytesIO(backup.data)) as archive:self.assertIn('ecofi.db',archive.namelist())
+        self.voucher(60,'AFTER_BACKUP')
+        restored=self.client.post('/admin/api/system/backup/restore',data={'backup_file':(io.BytesIO(backup.data),'backup.zip')})
+        self.assertEqual(restored.status_code,200,restored.get_json())
+        self.assertEqual(self.scalar('SELECT SUM(remaining_us) FROM time_grants'),600000000)
+        self.assertEqual(self.scalar('SELECT COUNT(*) FROM ledger_accounts a JOIN time_grants g ON a.grant_id=g.id WHERE a.balance_us<>g.remaining_us'),0)
+        self.assertEqual(self.request('/admin/api/clients',get=True).status_code,401)
+
+    def test_invalid_backup_cannot_replace_existing_credit(self):
+        import io
+        self.voucher()
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        result=self.client.post('/admin/api/system/backup/restore',data={'backup_file':(io.BytesIO(b'invalid'),'backup.db')})
+        self.assertEqual(result.status_code,400)
+        self.assertEqual(self.scalar('SELECT SUM(remaining_us) FROM time_grants'),600000000)
+
+
+    def test_hardware_settings_validate_before_persistence_or_transmission(self):
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        sent=[];self.p.transmit_to_esp32=sent.append
+        for data in ({'settle_time_ms':-1},{'ent_open_angle':181},{'pet_nir_w_min':6000},{'entrance_gate_timeout':0},['invalid']):
+            response=self.client.post('/admin/api/esp32/save',json=data)
+            self.assertEqual(response.status_code,400,response.get_json())
+        self.assertFalse(sent)
+        self.assertEqual(self.p.get_config('esp_settle_time_ms','unset'),'unset')
+        response=self.client.post('/admin/api/esp32/save',json={'settle_time_ms':750})
+        self.assertEqual(response.status_code,200,response.get_json())
+        self.assertEqual(self.p.get_config('esp_settle_time_ms'),'750')
+        self.assertEqual(sent[-1]['settle_time_ms'],750)
+
+    def test_portal_admin_simulator_render_and_inline_javascript_parse(self):
+        import re,subprocess
+        node=shutil.which('node')
+        if not node:self.skipTest('Node is required for inline JavaScript syntax verification')
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        self.p.set_config('simulator_enabled','1')
+        count=0
+        for path in ('/','/admin','/simulator','/admin/login'):
+            response=self.request(path,get=True)
+            self.assertEqual(response.status_code,200,path)
+            for script in re.findall(r'<script[^>]*>(.*?)</script>',response.get_data(as_text=True),re.S|re.I):
+                if not script.strip():continue
+                count+=1
+                filename=os.path.join(self.folder.name,'script-'+str(count)+'.js')
+                with open(filename,'w',encoding='utf-8') as stream:stream.write(script)
+                check=subprocess.run([node,'--check',filename],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                self.assertEqual(check.returncode,0,path+': '+check.stderr.decode('utf-8','replace'))
+        self.assertGreater(count,0)
+
+
+    def test_captive_probe_requires_confirmed_licensed_access(self):
+        self.voucher()
+        self.assertFalse(self.p.check_client_online('10.0.0.2'))
+        self.p.time_service.worker_pass()
+        self.assertTrue(self.p.check_client_online('10.0.0.2'))
+        self.p.license_valid=lambda:False
+        self.assertFalse(self.p.check_client_online('10.0.0.2'))
+
+    def test_hardware_unavailable_does_not_report_open_gate_success(self):
+        self.p.transmit_to_esp32=lambda data:False
+        response=self.request('/api/vendo/open_gate')
+        self.assertEqual(response.status_code,400)
+        self.assertEqual(response.get_json()['error'],'hardware_unavailable')
+        self.assertEqual(self.scalar('SELECT status FROM deposit_sessions'),'HOLD')
+
+    def test_simulator_transport_routes_only_to_selected_backend(self):
+        self.p.set_config('simulator_enabled','1')
+        with patch.object(self.p.esp32,'receive_uart') as simulator,patch.object(self.p,'ser') as physical:
+            self.assertTrue(self.original_transmit({'cmd':'OPEN_GATE'}))
+            simulator.assert_called_once();physical.write.assert_not_called()
+        self.p.set_config('simulator_enabled','0')
+        with patch.object(self.p,'ser',None):self.assertFalse(self.original_transmit({'cmd':'OPEN_GATE'}))
+
+    def test_disabled_backend_cannot_inject_receipt(self):
+        opened=self.request('/api/vendo/open_gate').get_json()
+        event=json.dumps({'event':'CREDIT_ADD','event_id':'source:1','session_id':opened['deposit_session_id'],'bottles':1,'protocol':2})
+        self.p.time_service.on_event(event,source='simulator')
+        self.assertEqual(self.scalar('SELECT COUNT(*) FROM deposit_events'),0)
+        self.p.set_config('simulator_enabled','1')
+        self.p.time_service.on_event(event,source='physical')
+        self.assertEqual(self.scalar('SELECT COUNT(*) FROM deposit_events'),0)
+        self.p.time_service.on_event(event,source='simulator')
+        self.assertEqual(self.scalar('SELECT COUNT(*) FROM deposit_events'),1)
+
+    def test_empty_walled_garden_installs_no_builtin_bypasses(self):
+        with patch.object(self.p.platform,'system',return_value='Linux'),patch.object(self.p.gateway_network,'policies') as policies,patch.object(self.p.time_service,'worker_pass'):
+            self.p.apply_walled_garden_and_macs()
+        self.assertEqual(policies.call_args[0],(set(),set()))
+
+
+    def test_usb_lan_name_matches_gateway_and_neighbor_lookup(self):
+        with patch.dict(os.environ,{},clear=True),patch.object(self.p.os,'listdir',return_value=['lo','eth0','enx001122334455']):
+            self.assertEqual(self.p.get_lan_interface(),'enx001122334455')
+        with patch.dict(os.environ,{'ECOFI_LAN_IFACE':'usb0'}):
+            self.assertEqual(self.p.get_lan_interface(),'usb0')
+
+
+    def test_license_loss_preserves_receipt_without_reopening_intake(self):
+        opened=self.request('/api/vendo/open_gate').get_json();sent=[]
+        self.p.transmit_to_esp32=sent.append;self.p.license_valid=lambda:False
+        self.p.on_esp32_uart_output(json.dumps({'event':'CREDIT_ADD','event_id':'license-loss:1','session_id':opened['deposit_session_id'],'bottles':1,'protocol':2}))
+        self.assertEqual(self.scalar('SELECT COUNT(*) FROM deposit_events'),1)
+        self.assertEqual([packet['cmd'] for packet in sent],['CREDIT_ACK'])
+
+
+    def test_configured_walled_garden_resolves_public_addresses(self):
+        with self.p.db_connection() as conn:conn.execute("INSERT INTO walled_garden(domain,note) VALUES ('example.test','operator')")
+        answers=[(2,1,6,'',('93.184.216.34',0)),(2,1,6,'',('10.0.0.1',0))]
+        with patch.object(self.p.platform,'system',return_value='Linux'),patch.object(self.p.socket,'getaddrinfo',return_value=answers),patch.object(self.p.gateway_network,'policies') as policies,patch.object(self.p.time_service,'worker_pass'):
+            self.p.apply_walled_garden_and_macs()
+        self.assertEqual(policies.call_args[0],(set(),{'93.184.216.34'}))
+
 
 
 def uuid_token():

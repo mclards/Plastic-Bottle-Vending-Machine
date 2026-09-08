@@ -88,7 +88,7 @@ atexit.register(save_sessions_to_db)
 ### Problem
 PisoFi enforces per-client download/upload speed limits using Linux `tc` (traffic control) with HTB (Hierarchical Token Bucket) queuing. It creates a unique traffic class per connected client with their allocated bandwidth.
 
-ECO-Fi tracks `dl_kbps` and `ul_kbps` per client session, but **never executes any `tc` commands**. All clients share the full internet pipe equally.
+Eco-Fi tracks `dl_kbps` and `ul_kbps` per client session, but **never executes any `tc` commands**. All clients share the full internet pipe equally.
 
 ### Impact
 - One user streaming 4K video (25+ Mbps) will starve all other users
@@ -157,7 +157,7 @@ def remove_client_bandwidth(ip, mark):
 ### Problem
 PisoFi's `inspector` daemon checks the ARP table every 60 seconds. If a paying client's MAC address disappears from the ARP table (meaning they've disconnected from WiFi), their timer is automatically paused. When they reconnect, the inspector detects their MAC reappearing and resumes their timer.
 
-ECO-Fi only supports manual pause via the UI button. If a user's phone goes to sleep, they walk out of range, or they switch to mobile data, their timer keeps counting down.
+Eco-Fi only supports manual pause via the UI button. If a user's phone goes to sleep, they walk out of range, or they switch to mobile data, their timer keeps counting down.
 
 ### Impact
 - Users lose paid time when their device sleeps or goes out of range
@@ -280,7 +280,7 @@ def check_network_health():
 ### Problem
 PisoFi uses dnsmasq `address=` directives to hijack `portal.pisofiapp.com` to `10.0.0.1`. It also sets DHCP options 160 and 114 to `http://portal.pisofiapp.com` which triggers captive portal detection on many devices.
 
-ECO-Fi's `build_ecofi_img.sh` does **not modify the existing dnsmasq configuration**. The original dnsmasq config still has `portal.pisofiapp.com` references, and our Nginx redirects go to `http://10.0.0.1/` directly.
+Eco-Fi's `build_ecofi_img.sh` does **not modify the existing dnsmasq configuration**. The original dnsmasq config still has `portal.pisofiapp.com` references, and our Nginx redirects go to `http://10.0.0.1/` directly.
 
 ### Impact
 - If a device resolves `portal.pisofiapp.com` externally, it will get a real IP (not our portal)
@@ -292,7 +292,7 @@ In `build_ecofi_img.sh`, add a step to update dnsmasq.conf:
 ```bash
 # Update dnsmasq configuration
 cat << 'EOF' > "$MOUNT_DIR/etc/dnsmasq.d/ecofi.conf"
-# ECO-Fi DNS Hijack Configuration
+# Eco-Fi DNS Hijack Configuration
 address=/#/10.0.0.1
 dhcp-option=160,http://10.0.0.1
 dhcp-option=114,http://10.0.0.1

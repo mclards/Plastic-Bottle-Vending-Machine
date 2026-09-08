@@ -1,0 +1,19 @@
+#!/usr/bin/php
+<?php
+require '/.cache/tmp/55/05/pfi/app/Pisofi/Server/LocalLicense.php';
+use App\Pisofi\Server\LocalLicense;
+$command=isset($argv[1])?$argv[1]:'status';
+if($command==='install') {
+    if(!isset($argv[2]) || !is_file($argv[2]) || filesize($argv[2])>65536) {fwrite(STDERR,"Supply a local signed license file (maximum 64 KiB).\n");exit(2);}
+    $document=file_get_contents($argv[2]);
+    $check=LocalLicense::validateDocument($document,file_get_contents('/etc/ecofi/license-public.pem'),LocalLicense::hardwareId(),time());
+    if(!$check['valid']) {fwrite(STDERR,$check['reason']."\n");exit(1);}
+    $temp=tempnam('/etc/ecofi','.license-');
+    if(!$temp || file_put_contents($temp,$document)===false) {fwrite(STDERR,"Run this command as root.\n");exit(1);}
+    chmod($temp,0644);
+    if(!rename($temp,'/etc/ecofi/license.json')) {unlink($temp);exit(1);}
+    echo "Signed license installed.\n";
+} elseif($command!=='status') {fwrite(STDERR,"Usage: ecofi-license [status | install FILE]\n");exit(2);}
+$state=LocalLicense::load();
+echo json_encode(['hardware_id'=>LocalLicense::hardwareId(),'license'=>$state],JSON_PRETTY_PRINT),"\n";
+exit($state['valid']?0:1);

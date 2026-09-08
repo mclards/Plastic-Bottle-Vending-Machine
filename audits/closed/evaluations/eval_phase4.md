@@ -86,7 +86,7 @@ rm -f "$MOUNT_DIR/etc/network/interfaces.d/eth0" 2>/dev/null || true   # L138
 **`ecofi_firewall.service` (L154–L168):**
 ```ini
 [Unit]
-Description=ECO-Fi Firewall Initialization
+Description=Eco-Fi Firewall Initialization
 Before=ecofi_portal.service
 After=network.target
 

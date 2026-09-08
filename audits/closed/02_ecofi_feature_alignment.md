@@ -1,4 +1,4 @@
-# Audit 02: ECO-Fi vs PisoFi Feature Alignment Matrix
+# Audit 02: Eco-Fi vs PisoFi Feature Alignment Matrix
 
 **Date:** August 17, 2026
 
@@ -6,7 +6,7 @@
 
 ## Feature Comparison Table
 
-| # | Feature | PisoFi v5.3.0 | ECO-Fi `portal.py` | Alignment |
+| # | Feature | PisoFi v5.3.0 | Eco-Fi `portal.py` | Alignment |
 |---|---------|---------------|---------------------|-----------|
 | 1 | Captive Portal Detection (Android) | Nginx `302` → `portal.pisofiapp.com` on `/generate_204`, `/gen_204` | Nginx `302` → `http://10.0.0.1/` on `/generate_204`, `/gen_204` | ✅ Aligned |
 | 2 | Captive Portal Detection (iOS) | Nginx `302` on `/hotspot-detect.html` + `CaptiveNetworkSupport` UA check | Nginx `302` → `http://10.0.0.1/` on `/hotspot-detect.html` + Flask route | ✅ Aligned |
@@ -70,7 +70,7 @@
 
 ---
 
-## ECO-Fi Exclusive Enhancements (Not in PisoFi)
+## Eco-Fi Exclusive Enhancements (Not in PisoFi)
 
 1. **Time Transfer System** — Users can generate transfer codes and share time with friends
 2. **Member Save Time** — Save unused time to wallet for future use

@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+install -d -m 755 /etc/ecofi /var/lib/ecofi /run/sshd
+if [ ! -s /etc/ecofi/device-id ]; then
+    cat /proc/sys/kernel/random/uuid > /etc/ecofi/device-id
+    chmod 644 /etc/ecofi/device-id
+fi
+if [ ! -f /var/lib/ecofi/identity-initialized ]; then
+    ssh-keygen -A
+    touch /var/lib/ecofi/identity-initialized
+fi
+/usr/local/sbin/ecofi-test-network

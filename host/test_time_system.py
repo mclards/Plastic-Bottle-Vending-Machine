@@ -42,6 +42,10 @@ class TestTimePolicy(unittest.TestCase):
         res = time_policy.calculate_bracket_validity(2000 * 60, self.sample_brackets, global_validity_min=1440)
         self.assertEqual(res, 2000 * 60)
 
+    def test_fractional_purchase_crosses_bracket_ceiling(self):
+        self.assertEqual(time_policy.calculate_bracket_validity(3600.001,self.sample_brackets),259200)
+        self.assertEqual(time_policy.calculate_bracket_validity(3599.999,self.sample_brackets),86400)
+
     def test_global_fallback_floor(self):
         # 30 hours (108,000s) browsing, global 24 hours (86,400s)
         # Should get at least 30 hours validity, not truncated to 24 hours
@@ -251,8 +255,8 @@ class TestTransitionEngine(unittest.TestCase):
         self.assertTrue(res['success'])
         self.assertEqual(res['state'], 'ACTIVE')
         self.assertEqual(res['remaining_seconds'], 3600)
-        # 3600s matches 60 min ceiling -> 1440 min (86400s)
-        self.assertEqual(res['valid_until_utc'], self.now_utc + 86400)
+        # The shipped default assigns 48 hours to the 60-minute bracket.
+        self.assertEqual(res['valid_until_utc'], self.now_utc + 172800)
 
         # Check ledger
         c = self.conn.cursor()

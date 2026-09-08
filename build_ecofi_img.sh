@@ -1,42 +1,36 @@
 #!/bin/bash
 # ==============================================================================
-# ECO-Fi OS Image Rebuilder & Customize
-# Deep Cleaning, Hardening & ECO-Fi Integration for Orange Pi One
+# Eco-Fi OS Image Rebuilder & Customizer
+# Deep Cleaning, Hardening & Eco-Fi Integration for Orange Pi One
 # Base: resources/PisoFi_Opi1&PC_v5.3.0-05-10-26_EXT.img
-# Target: resources/EcoFi_Opi_v2.1.img
+# Target: resources/EcoFi_Opi_v<VERSION>.img
 # ==============================================================================
 
-set -e
-
-# Configuration
-BASE_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/PisoFi_Opi1&PC_v5.3.0-05-10-26_EXT.img"
-PREV_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/EcoFi_Opi_v2.0.img"
-TARGET_IMG="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/EcoFi_Opi_v2.1.img"
+set -euo pipefail
+ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+VERSION=$(tr -d '\r\n' < "$ROOT_DIR/VERSION")
+[[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid release version" >&2; exit 1; }
+[[ $EUID -eq 0 ]] || { echo "Run this image builder as root." >&2; exit 1; }
+PREV_IMG="$ROOT_DIR/resources/EcoFi_Opi_v2.1.img"
+TARGET_IMG="$ROOT_DIR/resources/EcoFi_Opi_v${VERSION}.img"
+SOURCE_HOST="$ROOT_DIR/host"
+[[ ! -e "$TARGET_IMG" ]] || { echo "Release already exists: $TARGET_IMG. Use a new version." >&2; exit 1; }
+[[ -f "$PREV_IMG" ]] || { echo "Required clean base is missing: $PREV_IMG" >&2; exit 1; }
+for command in mount umount losetup qemu-arm-static dpkg-deb sha256sum e2fsck; do command -v "$command" >/dev/null; done
 MOUNT_DIR=$(mktemp -d /tmp/ecofi-build.XXXXXX)
-SOURCE_HOST="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/host"
-
-echo "======================================================================"
-echo " Starting ECO-Fi OS Image Deep Cleaning & Rebuild (v2.1)"
-echo " Base Image:   $BASE_IMG"
-echo " Target Image: $TARGET_IMG"
-echo "======================================================================"
-
-# Build a staging copy. A failed build cannot replace the previous image.
 WORK_IMG=$(mktemp "${TARGET_IMG}.building.XXXXXX")
+LOOP_DEVICE=""
 cleanup() {
-    if mountpoint -q "$MOUNT_DIR"; then umount "$MOUNT_DIR"; fi
+    if mountpoint -q "$MOUNT_DIR"; then umount "$MOUNT_DIR" || return; fi
+    if [[ -n "$LOOP_DEVICE" ]]; then losetup -d "$LOOP_DEVICE" || return; fi
     rmdir "$MOUNT_DIR" 2>/dev/null || true
     if [ -f "$WORK_IMG" ]; then rm -f -- "$WORK_IMG"; fi
 }
 trap cleanup EXIT
-if [ -f "$TARGET_IMG" ]; then
-    cp --reflink=auto "$TARGET_IMG" "$WORK_IMG"
-elif [ -f "$PREV_IMG" ]; then
-    cp --reflink=auto "$PREV_IMG" "$WORK_IMG"
-else
-    cp --reflink=auto "$BASE_IMG" "$WORK_IMG"
-fi
-mount -o loop,offset=4194304 "$WORK_IMG" "$MOUNT_DIR"
+printf 'Building Eco-Fi v%s from %s\nOutput: %s\n' "$VERSION" "$PREV_IMG" "$TARGET_IMG"
+cp --reflink=auto "$PREV_IMG" "$WORK_IMG"
+LOOP_DEVICE=$(losetup --find --show --offset 4194304 "$WORK_IMG")
+mount "$LOOP_DEVICE" "$MOUNT_DIR"
 if [ -e "$MOUNT_DIR/opt/ecofi/vendo_sessions.db" ]; then
     echo "Refusing to rebuild an image containing a customer database. Export and migrate it separately." >&2
     exit 1
@@ -50,6 +44,18 @@ rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/zerotier-one.servic
 rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/php7.0-fpm.service" 2>/dev/null || true
 rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/mariadb.service" 2>/dev/null || true
 rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/mysql.service" 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/NetworkManager"* 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/systemd/system/network-online.target.wants/NetworkManager"* 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/smbd.service" 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/nmbd.service" 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/rsync.service" 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/systemd/system/multi-user.target.wants/pppd-dns.service" 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/systemd/system/timers.target.wants/phpsessionclean.timer" 2>/dev/null || true
+rm -rf "$MOUNT_DIR/etc/NetworkManager/system-connections/"* 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/udev/rules.d/70-persistent-net.rules" 2>/dev/null || true
+rm -rf "$MOUNT_DIR/home/pisofi" 2>/dev/null || true
+rm -f "$MOUNT_DIR/etc/environment" 2>/dev/null || true
+touch "$MOUNT_DIR/etc/environment"
 rm -rf "$MOUNT_DIR/var/www/html/pisofi" 2>/dev/null || true
 rm -rf "$MOUNT_DIR/var/www/html/"* 2>/dev/null || true
 rm -rf "$MOUNT_DIR/.cache" 2>/dev/null || true
@@ -72,8 +78,8 @@ rm -rf "$MOUNT_DIR/usr/local/bin/zerotier-one" "$MOUNT_DIR/var/lib/zerotier-one"
 rm -rf "$MOUNT_DIR/etc/pisofi" 2>/dev/null || true
 rm -rf "$MOUNT_DIR/var/lib/mysql" 2>/dev/null || true
 
-# Step 4: Configure Nginx as an ultra-fast Reverse Proxy to ECO-Fi Portal (port 5000)
-echo "[4/6] Configuring Nginx reverse proxy for ECO-Fi..."
+# Step 4: Configure Nginx as an ultra-fast Reverse Proxy to Eco-Fi Portal (port 5000)
+echo "[4/6] Configuring Nginx reverse proxy for Eco-Fi..."
 mkdir -p "$MOUNT_DIR/etc/nginx/sites-available"
 mkdir -p "$MOUNT_DIR/etc/nginx/sites-enabled"
 rm -f "$MOUNT_DIR/etc/nginx/sites-enabled/"* 2>/dev/null || true
@@ -83,6 +89,12 @@ server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name _;
+    server_tokens off;
+
+    # Security Headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
 
     # Static Assets Cache
     location /static/ {
@@ -91,7 +103,7 @@ server {
         add_header Cache-Control "public, no-transform";
     }
 
-    # Proxy all traffic to ECO-Fi Python Web Engine
+    # Proxy all traffic to Eco-Fi Python Web Engine
     location / {
         proxy_pass http://127.0.0.1:5000;
         proxy_set_header Host $host;
@@ -110,9 +122,27 @@ ln -sf ../sites-available/ecofi "$MOUNT_DIR/etc/nginx/sites-enabled/ecofi"
 # Configure networking: eth0 = WAN (ISP via DHCP), eth1 = LAN (Access Point static 10.0.0.1/19)
 echo "[4/6.5] Enforcing eth0 as WAN (DHCP) and eth1 as LAN (10.0.0.1/19) with authoritative dnsmasq DHCP..."
 
-# Permanent IPv4 Forwarding in sysctl
+# Permanent Hardened Kernel Network Stack in sysctl
 mkdir -p "$MOUNT_DIR/etc/sysctl.d"
-echo "net.ipv4.ip_forward=1" > "$MOUNT_DIR/etc/sysctl.d/99-ecofi.conf"
+cat << 'EOF' > "$MOUNT_DIR/etc/sysctl.d/99-ecofi.conf"
+# Eco-Fi Hardened Kernel Network Stack
+net.ipv4.ip_forward=1
+net.ipv4.tcp_syncookies=1
+net.ipv4.conf.all.rp_filter=1
+net.ipv4.conf.default.rp_filter=1
+net.ipv4.conf.all.accept_redirects=0
+net.ipv4.conf.default.accept_redirects=0
+net.ipv4.conf.all.send_redirects=0
+net.ipv4.conf.all.accept_source_route=0
+net.ipv4.icmp_echo_ignore_broadcasts=1
+net.ipv4.icmp_ignore_bogus_error_responses=1
+net.netfilter.nf_conntrack_max=65536
+net.ipv4.tcp_fin_timeout=30
+net.ipv4.tcp_keepalive_time=300
+net.ipv6.conf.all.disable_ipv6=1
+net.ipv6.conf.default.disable_ipv6=1
+net.ipv6.conf.lo.disable_ipv6=1
+EOF
 sed -i 's/#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' "$MOUNT_DIR/etc/sysctl.conf" 2>/dev/null || true
 
 # System Hostname Branding
@@ -139,6 +169,18 @@ ROOT_HASH='$6$JIArBU6F1WcXAkV2$n13SEPVG7J/mKPL1Fr0wuadMbziDVKwGQrA484i5K/MzA3IY8
 sed -i "s|^root:[^:]*:|root:${ROOT_HASH}:|" "$MOUNT_DIR/etc/shadow"
 sed -i "s|^pi:[^:]*:|pi:${ROOT_HASH}:|" "$MOUNT_DIR/etc/shadow"
 
+# Sanitize /etc/sudoers: Purge dangerous wildcard NOPASSWD backdoors left by PisoFi
+cat << 'EOF' > "$MOUNT_DIR/etc/sudoers"
+Defaults	env_reset
+Defaults	mail_badpass
+Defaults	secure_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+root	ALL=(ALL:ALL) ALL
+%sudo	ALL=(ALL:ALL) ALL
+pi	ALL=(ALL:ALL) NOPASSWD: ALL
+EOF
+chmod 440 "$MOUNT_DIR/etc/sudoers"
+
 # Configure /etc/network/interfaces: eth0 = WAN (ISP via DHCP), eth1 = LAN (AP static 10.0.0.1/19)
 cat << 'EOF' > "$MOUNT_DIR/etc/network/interfaces"
 auto lo
@@ -148,7 +190,6 @@ auto eth0
 allow-hotplug eth0
 iface eth0 inet dhcp
 
-auto eth1
 allow-hotplug eth1
 iface eth1 inet static
     address 10.0.0.1
@@ -158,7 +199,7 @@ EOF
 
 rm -rf "$MOUNT_DIR/etc/network/interfaces.d/"* 2>/dev/null || true
 
-# Prevent dhcpcd from assigning link-local or default routes to LAN AP adapte
+# Prevent dhcpcd from assigning link-local or default routes to LAN AP adapter
 if [ -f "$MOUNT_DIR/etc/dhcpcd.conf" ]; then
     if ! grep -q "denyinterfaces eth1" "$MOUNT_DIR/etc/dhcpcd.conf"; then
         echo -e "\ndenyinterfaces eth1 usb0 enx*" >> "$MOUNT_DIR/etc/dhcpcd.conf"
@@ -179,25 +220,50 @@ domain=ecofi.local
 local=/ecofi.local/
 listen-address=10.0.0.1,127.0.0.1
 
-# Auto-configured interface: eth0 in Bench Mode (default), eth1 in Production Mode
-interface=eth0
-dhcp-range=10.0.0.100,10.0.31.254,255.255.224.0,72h
-dhcp-option=3,10.0.0.1
-dhcp-option=6,10.0.0.1
+# Strictly bind to LAN (eth1) and explicitly protect WAN (eth0) from rogue DHCP
+interface=eth1
+except-interface=eth0
+dhcp-range=set:ecofi_lan,10.0.0.100,10.0.31.254,255.255.224.0,72h
+dhcp-option=tag:ecofi_lan,3,10.0.0.1
+dhcp-option=tag:ecofi_lan,6,10.0.0.1
+
+# RFC 8910 & RFC 7710 Captive Portal Discovery for Android, iOS, and macOS
+dhcp-option=114,http://10.0.0.1/
+dhcp-option=160,http://10.0.0.1/
 
 address=/localhost/127.0.0.1
 address=/ecofi-vendo/10.0.0.1
 
+# Synthetic captive portal detection records (instant offline popup)
+address=/captive.apple.com/10.0.0.1
+address=/connectivitycheck.gstatic.com/10.0.0.1
+address=/connectivitycheck.android.com/10.0.0.1
+address=/clients3.google.com/10.0.0.1
+address=/www.msftconnecttest.com/10.0.0.1
+address=/www.msftncsi.com/10.0.0.1
+address=/detectportal.firefox.com/10.0.0.1
+
+# Fast, redundant upstream DNS servers with all-servers querying
 server=1.1.1.1
+server=8.8.8.8
 server=1.0.0.1
+server=8.8.4.4
+all-servers
 EOF
 rm -rf "$MOUNT_DIR/etc/dnsmasq.d/"* 2>/dev/null || true
 
-# Add udev hotplug rule for USB-to-Ethernet Adapte
+# Add udev hotplug rule for USB-to-Ethernet Adapter:
+# Trigger ecofi_firewall.service asynchronously without blocking udev workers or causing systemd deadlocks!
 mkdir -p "$MOUNT_DIR/etc/udev/rules.d"
 cat << 'EOF' > "$MOUNT_DIR/etc/udev/rules.d/99-ecofi-usbnet.rules"
-ACTION=="add", SUBSYSTEM=="net", KERNEL=="eth1|usb*|enx*", RUN+="/opt/ecofi/setup_network.sh"
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="eth1|usb*|enx*", TAG+="systemd", ENV{SYSTEMD_WANTS}+="ecofi_firewall.service"
 EOF
+
+# Clean up boot arguments in armbianEnv.txt
+if [ -f "$MOUNT_DIR/boot/armbianEnv.txt" ]; then
+    sed -i '/^extraargs=/d' "$MOUNT_DIR/boot/armbianEnv.txt"
+    echo "extraargs=net.ifnames=0 biosdevname=0" >> "$MOUNT_DIR/boot/armbianEnv.txt"
+fi
 
 mkdir -p "$MOUNT_DIR/opt/ecofi"
 cat << 'EOF' > "$MOUNT_DIR/opt/ecofi/setup_network.sh"
@@ -241,21 +307,16 @@ if [[ -n "$LAN_IFACE" ]]; then
 
     # Explicitly enforce NAT Masquerade out eth0 to ISP
     iptables -t nat -C POSTROUTING -o eth0 -j MASQUERADE 2>/dev/null || iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-else
-    # =========================================================================
-    # SINGLE-PORT BENCH TEST MODE (DEPRECATED):
-    # We no longer automatically hijack eth0 here, because it causes a boot race 
-    # condition if the USB adapter is just slow to initialize. 
-    # =========================================================================
-    echo "No USB LAN adapter detected yet. Waiting for udev..."
-fi
 
-# Restart dnsmasq cleanly so DHCP is 100% active on the designated LAN interface
-systemctl restart dnsmasq 2>/dev/null || true
+    # Restart dnsmasq cleanly so DHCP is 100% active on the designated LAN interface
+    systemctl restart dnsmasq 2>/dev/null || true
+else
+    echo "No USB LAN adapter detected yet."
+fi
 EOF
 chmod +x "$MOUNT_DIR/opt/ecofi/setup_network.sh"
 
-# Step 5: Inject Offline Python 3.5 Packages and ECO-Fi Software Stack
+# Step 5: Inject Offline Python 3.5 Packages and Eco-Fi Software Stack
 echo "[5/6] Injecting offline Python 3.5 dependencies into rootfs..."
 mkdir -p "$MOUNT_DIR/usr/local/lib/python3.5/dist-packages"
 if [ -d "/var/cache/ecofi_wheels_py35" ]; then
@@ -263,32 +324,41 @@ if [ -d "/var/cache/ecofi_wheels_py35" ]; then
 fi
 
 # Inject ipset binary and shared library
-DEBS_DIR="/mnt/d/PROJECTS_IO/Plastic-Bottle-Vending-Machine/resources/debs"
+DEBS_DIR="$ROOT_DIR/resources/debs"
 if [ -d "$DEBS_DIR" ]; then
     echo "Injecting ipset & libipset3 packages into rootfs..."
     dpkg-deb -x "$DEBS_DIR/libipset3_6.30-2_armhf.deb" "$MOUNT_DIR"
     dpkg-deb -x "$DEBS_DIR/ipset_6.30-2_armhf.deb" "$MOUNT_DIR"
 fi
 
-echo "[5/6.5] Injecting ECO-Fi software stack into /opt/ecofi..."
+echo "[5/6.5] Injecting Eco-Fi software stack into /opt/ecofi..."
 mkdir -p "$MOUNT_DIR/opt/ecofi"
 for module in portal.py license_manager.py esp32_simulator.py gateway_network.py time_schema.py time_policy.py transition_engine.py time_portal.py migrate_legacy_sessions.py; do
     cp "$SOURCE_HOST/$module" "$MOUNT_DIR/opt/ecofi/"
 done
 if [ -d "$SOURCE_HOST/templates" ]; then cp -r "$SOURCE_HOST/templates" "$MOUNT_DIR/opt/ecofi/"; fi
-if [ -d "$SOURCE_HOST/static" ]; then cp -r "$SOURCE_HOST/static" "$MOUNT_DIR/opt/ecofi/"; fi
+if [ -d "$SOURCE_HOST/static" ]; then
+    [[ ! -L "$MOUNT_DIR/opt/ecofi/static" ]] || exit 1
+    rm -rf -- "$MOUNT_DIR/opt/ecofi/static"
+    cp -r "$SOURCE_HOST/static" "$MOUNT_DIR/opt/ecofi/"
+fi
+cp "$ROOT_DIR/VERSION" "$MOUNT_DIR/opt/ecofi/VERSION"
+printf 'ECOFI_VERSION=%s\nBASE_IMAGE=%s\nBUILD_UTC=%s\n' "$VERSION" "$(basename "$PREV_IMG")" "$(date -u +%FT%TZ)" > "$MOUNT_DIR/etc/ecofi-release"
+for private in license.key hwid_override.txt deposit_journal.json current_active_client.txt; do
+    [[ ! -e "$MOUNT_DIR/opt/ecofi/$private" ]] || { echo "Private runtime state found: $private" >&2; exit 1; }
+done
 
 chmod 755 "$MOUNT_DIR/opt/ecofi"
 chmod 644 "$MOUNT_DIR/opt/ecofi/"*.py 2>/dev/null || true
 chmod +x "$MOUNT_DIR/opt/ecofi/portal.py"
 
-# Step 6: Install ECO-Fi systemd service units
-echo "[6/6] Installing ECO-Fi systemd service units..."
+# Step 6: Install Eco-Fi systemd service units
+echo "[6/6] Installing Eco-Fi systemd service units..."
 
 # BUILD-08: Firewall Initialization Service
 cat << 'EOF' > "$MOUNT_DIR/etc/systemd/system/ecofi_firewall.service"
 [Unit]
-Description=ECO-Fi Firewall Initialization
+Description=Eco-Fi Firewall Initialization
 Before=ecofi_portal.service
 After=network.target
 
@@ -304,8 +374,6 @@ EOF
 
 # GAP-06 & NET-05: Update DNS Hijacking
 sed -i 's/portal.pisofiapp.com/10.0.0.1/g' "$MOUNT_DIR/etc/dnsmasq.conf" 2>/dev/null || true
-sed -i '/dhcp-option=114/d' "$MOUNT_DIR/etc/dnsmasq.conf" 2>/dev/null || true
-sed -i '/dhcp-option=160/d' "$MOUNT_DIR/etc/dnsmasq.conf" 2>/dev/null || true
 rm -f "$MOUNT_DIR/etc/dnsmasq.d/ecofi_captive.conf" 2>/dev/null || true
 
 # BUILD-06: Log Rotation
@@ -320,7 +388,7 @@ cat << 'EOF' > "$MOUNT_DIR/etc/logrotate.d/ecofi"
 }
 EOF
 
-# Main Portal Service (Starts immediately on boot, 100% offline ready)
+# Main portal starts on boot; timed access requires a trusted clock.
 cp "$SOURCE_HOST/ecofi.service" "$MOUNT_DIR/etc/systemd/system/ecofi_portal.service"
 
 # Enable services in multi-user.target
@@ -342,16 +410,22 @@ for path in glob.glob(os.environ["PYTHONPATH"].split(":")[-1]+"/*.py"):
 import flask, time_portal, transition_engine, migrate_legacy_sessions
 print("ARM Python runtime imports passed")
 '
-(cd "$MOUNT_DIR/opt/ecofi" && sha256sum *.py static/time_controls.js > release-sha256.txt)
+PYTHONHOME="$MOUNT_DIR/usr" PYTHONPATH="$MOUNT_DIR/usr/local/lib/python3.5/dist-packages" qemu-arm-static -L "$MOUNT_DIR" "$MOUNT_DIR/usr/bin/python3.5" -B "$ROOT_DIR/tools/verify_arm_runtime.py" "$MOUNT_DIR/opt/ecofi"
+qemu-arm-static -L "$MOUNT_DIR" "$MOUNT_DIR/usr/sbin/dnsmasq" --test --conf-file="$MOUNT_DIR/etc/dnsmasq.conf"
+(cd "$MOUNT_DIR/opt/ecofi" && find . -type f ! -path "./__pycache__/*" ! -name release-sha256.txt -print0 | sort -z | xargs -0 sha256sum > release-sha256.txt)
 
 # Finalize and unmount
 echo "Syncing filesystem buffers..."
 sync
 umount "$MOUNT_DIR"
-mv -f -- "$WORK_IMG" "$TARGET_IMG"
+e2fsck -f -n "$LOOP_DEVICE"
+losetup -d "$LOOP_DEVICE"
+LOOP_DEVICE=""
+mv -- "$WORK_IMG" "$TARGET_IMG"
+(cd "$ROOT_DIR/resources" && sha256sum "$(basename "$TARGET_IMG")" > "$(basename "$TARGET_IMG").sha256")
 
 echo "======================================================================"
-echo " SUCCESS: Cleaned, Hardened ECO-Fi OS Image Ready at:"
+echo " SUCCESS: Cleaned, Hardened Eco-Fi OS Image Ready at:"
 echo " $TARGET_IMG"
-echo " All legacy PisoFi services purged. Pure ECO-Fi stack running!"
+echo " All legacy PisoFi services purged. Pure Eco-Fi stack running!"
 echo "======================================================================"

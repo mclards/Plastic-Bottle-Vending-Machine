@@ -12,7 +12,6 @@ Implements pure functions for:
 - Maximum future pause allowance bounds
 """
 
-import math
 
 # Default preset values (pisofi_time_v1)
 DEFAULT_PAUSE_COUNT_MAX = 3
@@ -50,7 +49,7 @@ def calculate_bracket_validity(purchased_seconds, brackets, global_validity_min=
     if purchased_seconds <= 0:
         return None
 
-    purchased_min = int(math.floor(purchased_seconds / 60.0))
+    purchased_min = purchased_seconds / 60.0
 
     # Filter enabled brackets and sort ascending by value
     enabled_brackets = [b for b in brackets if b.get('enabled', True)]

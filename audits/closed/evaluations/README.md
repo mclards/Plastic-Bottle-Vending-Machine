@@ -1,6 +1,6 @@
-# ECO-Fi Audit Fixes — Master Evaluation Report (FINAL CLOSURE)
+# Eco-Fi Audit Fixes — Master Evaluation Report (FINAL CLOSURE)
 
-**Audit Scope:** PisoFi → ECO-Fi System Migration Security & Reliability Hardening  
+**Audit Scope:** PisoFi → Eco-Fi System Migration Security & Reliability Hardening  
 **Files Audited:** `portal.py` (Python captive portal), `build_ecofi_img.sh` (OS image builder)  
 **Closure Date:** August 17, 2026  
 **Status:** 🔒 ALL PHASES CLOSED — 20/20 Fixes Verified

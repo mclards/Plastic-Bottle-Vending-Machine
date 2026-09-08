@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ECO-Fi Master Vendor License Generator (Builder Tool)
+Eco-Fi Master Vendor License Generator (Builder Tool)
 Run this script on your PC to generate machine-locked activation PINs for your clients.
 """
 
@@ -13,7 +13,7 @@ from license_manager import compute_activation_pin, normalize_hwid
 
 def main():
     print("================================================================")
-    print("   ECO-Fi VENDO - MASTER VENDOR LICENSE GENERATOR               ")
+    print("   Eco-Fi VENDO - MASTER VENDOR LICENSE GENERATOR               ")
     print("   (Use this tool to issue activation keys for client machines) ")
     print("================================================================")
     print()
@@ -22,7 +22,7 @@ def main():
         raw_hwid = sys.argv[1].strip()
         tier = sys.argv[2].strip().upper() if len(sys.argv) >= 3 else "COMMERCIAL"
     else:
-        raw_hwid = input("Enter Client Machine Hardware ID (e.g. ECOFI-XXXX-XXXX-XXXX-XXXX): ").strip()
+        raw_hwid = input("Enter Client Machine Hardware ID (e.g. XXXX-XXXX-XXXX-XXXX): ").strip()
         if not raw_hwid:
             print("Error: Hardware ID is required.")
             return

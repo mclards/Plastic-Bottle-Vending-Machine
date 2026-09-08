@@ -1,7 +1,7 @@
 """Linux gateway enforcement. All grants have a kernel lease and an IP/MAC pair.
 
 The application renews leases every ten seconds. A dead process cannot leave
-permanent access behind. Only the ECO-Fi chains/sets and LAN qdiscs are managed.
+permanent access behind. Only the Eco-Fi chains/sets and LAN qdiscs are managed.
 Compatible with the image's Python 3.5 and iptables 1.6.
 """
 import ipaddress
@@ -52,16 +52,17 @@ def set_license(valid):
     with lock:
         if _licensed == bool(valid):
             return
+        _licensed = None  # A partial transition must disable grants and remain retryable.
         # Insert the new verdict before removing the old one: no open window.
         target = 'RETURN' if valid else 'DROP'
         ipt('-I', 'ECOFI_LICENSE', '1', '-j', target)
         while ipt('-D', 'ECOFI_LICENSE', '2', check=False).returncode == 0:
             pass
-        _licensed = bool(valid)
         if not valid:
             run(['ipset', 'flush', 'ecofi_auth'])
             run(['ipset', 'flush', 'ecofi_pairs'])
             _pairs.clear()
+        _licensed = bool(valid)
 
 
 def setup(lan='eth1', wan='eth0'):
@@ -78,6 +79,7 @@ def setup(lan='eth1', wan='eth0'):
             raise RuntimeError('ipset is required; forwarding remains closed')
         lease_set('ecofi_auth', 'hash:ip')
         lease_set('ecofi_pairs', 'hash:ip,mac')
+        _pairs.clear()
         run(['ipset', 'create', 'ecofi_garden', 'hash:ip', '-exist'])
         run(['ipset', 'flush', 'ecofi_garden'])
         chain('ECOFI_LICENSE')
@@ -113,8 +115,30 @@ def setup(lan='eth1', wan='eth0'):
         ipt('-A', 'ECOFI_FORWARD', '-i', LAN, '-o', WAN, '-m', 'set', '--match-set', 'ecofi_garden', 'dst', '-j', 'ACCEPT')
         ipt('-A', 'ECOFI_FORWARD', '-i', WAN, '-o', LAN, '-m', 'set', '--match-set', 'ecofi_garden', 'src',
             '-m', 'conntrack', '--ctstate', 'ESTABLISHED,RELATED', '-j', 'ACCEPT')
+        # Fast reject unauthenticated HTTPS from LAN with tcp-reset (triggers captive assistant instantly, no 30s hang)
+        ipt('-A', 'ECOFI_FORWARD', '-i', LAN, '-p', 'tcp', '--dport', '443', '-j', 'REJECT', '--reject-with', 'tcp-reset')
         ipt('-A', 'ECOFI_FORWARD', '-j', 'DROP')
         ipt('-D', 'ECOFI_FORWARD', '1')
+
+        # Build INPUT security chain (WAN protection & LAN access control)
+        chain('ECOFI_INPUT')
+        ipt('-A', 'ECOFI_INPUT', '-i', 'lo', '-j', 'ACCEPT')
+        ipt('-A', 'ECOFI_INPUT', '-m', 'conntrack', '--ctstate', 'ESTABLISHED,RELATED', '-j', 'ACCEPT')
+        # LAN services: DNS, DHCP, HTTP (portal), SSH (admin), ICMP ping
+        ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'udp', '--dport', '53', '-j', 'ACCEPT')
+        ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'tcp', '--dport', '53', '-j', 'ACCEPT')
+        ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'udp', '--dport', '67:68', '-j', 'ACCEPT')
+        ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'tcp', '--dport', '80', '-j', 'ACCEPT')
+        ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'tcp', '--dport', '22', '-j', 'ACCEPT')
+        ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'icmp', '--icmp-type', 'echo-request', '-j', 'ACCEPT')
+        ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-j', 'DROP')
+        # WAN protections: Allow rate-limited ping for ISP diagnostics, drop all unsolicited incoming
+        ipt('-A', 'ECOFI_INPUT', '-i', WAN, '-p', 'icmp', '--icmp-type', 'echo-request',
+            '-m', 'limit', '--limit', '5/s', '-j', 'ACCEPT')
+        ipt('-A', 'ECOFI_INPUT', '-i', WAN, '-j', 'DROP')
+        remove_jump('INPUT', 'ECOFI_INPUT')
+        ipt('-I', 'INPUT', '1', '-j', 'ECOFI_INPUT')
+
         run(['sysctl', '-w', 'net.ipv4.ip_forward=1'])
         run(['sysctl', '-w', 'net.ipv6.conf.all.forwarding=0'])
         setup_shaping()
@@ -147,7 +171,9 @@ def shape(ip, dl, ul):
         run(['tc', 'class', 'replace', 'dev', device, 'parent', '1:1', 'classid', classid, 'htb',
              'rate', '{}kbit'.format(rate), 'ceil', '{}kbit'.format(rate), 'burst', '15k'])
         if ip not in _shaped:
-            run(['tc', 'qdisc', 'add', 'dev', device, 'parent', classid, 'handle', '{:x}:'.format(mark), 'sfq', 'perturb', '10'], check=False)
+            run(['tc', 'qdisc', 'replace', 'dev', device, 'parent', classid, 'handle', '{:x}:'.format(mark), 'sfq', 'perturb', '10'])
+            # A prior partial shaping failure may have left a filter behind.
+            run(['tc', 'filter', 'del', 'dev', device, 'protocol', 'ip', 'parent', '1:', 'prio', str(mark)], check=False)
             run(['tc', 'filter', 'add', 'dev', device, 'protocol', 'ip', 'parent', '1:', 'prio', str(mark),
                  'u32', 'match', 'ip', direction, ip + '/32', 'flowid', classid])
     _shaped[ip] = values
@@ -159,7 +185,7 @@ def revoke(ip):
         mac = _pairs.pop(ip, None)
         if mac:
             run(['ipset', 'del', 'ecofi_pairs', ip + ',' + mac, '-exist'])
-        if ip in _shaped:
+        if ipaddress.ip_address(ip) in SUBNET:
             mark = 256 + (int(ipaddress.IPv4Address(ip)) & 8191)
             for device in [LAN, 'ifb0']:
                 run(['tc', 'filter', 'del', 'dev', device, 'protocol', 'ip', 'parent', '1:', 'prio', str(mark)], check=False)
@@ -168,8 +194,11 @@ def revoke(ip):
 
 
 def grant(ip, mac, seconds, dl, ul):
-    if ipaddress.ip_address(ip) not in SUBNET or ip in ('10.0.0.1', '10.0.0.0'):
+    if ipaddress.ip_address(ip) not in SUBNET or ip in ('10.0.0.1', str(SUBNET.network_address), str(SUBNET.broadcast_address)):
         raise ValueError('Client address must belong to the LAN')
+    if int(seconds) <= 0:
+        revoke(ip)
+        return False
     if not mac or mac == '00:00:00:00:00:00':
         revoke(ip)
         return False
@@ -182,9 +211,9 @@ def grant(ip, mac, seconds, dl, ul):
         try:
             shape(ip, dl, ul)  # Never authorize traffic before both shapers succeed.
             lease = str(max(1, min(30, int(seconds))))
+            _pairs[ip] = mac  # Track partial installation so failure cleanup removes it.
             run(['ipset', 'add', 'ecofi_pairs', ip + ',' + mac, 'timeout', lease, '-exist'])
             run(['ipset', 'add', 'ecofi_auth', ip, 'timeout', lease, '-exist'])
-            _pairs[ip] = mac
             return True
         except Exception:
             revoke(ip)
@@ -210,3 +239,54 @@ def policies(blocked_macs, garden_ips):
             if ipaddress.ip_address(ip).version == 4:
                 run(['ipset', 'add', 'ecofi_garden_next', ip, '-exist'])
         run(['ipset', 'swap', 'ecofi_garden_next', 'ecofi_garden'])
+
+
+def set_starlink_blocker(enabled):
+    with lock:
+        try:
+            while ipt('-D', 'ECOFI_FORWARD', '-d', '192.168.100.1/32', '-j', 'DROP', check=False).returncode == 0:
+                pass
+            if enabled:
+                ipt('-I', 'ECOFI_FORWARD', '1', '-d', '192.168.100.1/32', '-j', 'DROP', check=False)
+        except Exception as e:
+            log.warning('set_starlink_blocker error: {}'.format(e))
+
+
+def set_anti_tethering(enabled, lan=None):
+    global LAN
+    iface = lan or LAN
+    with lock:
+        try:
+            while ipt('-t', 'mangle', '-D', 'PREROUTING', '-i', iface, '-m', 'ttl', '--ttl-eq', '63', '-j', 'DROP', check=False).returncode == 0:
+                pass
+            while ipt('-t', 'mangle', '-D', 'PREROUTING', '-i', iface, '-m', 'ttl', '--ttl-eq', '127', '-j', 'DROP', check=False).returncode == 0:
+                pass
+            if enabled:
+                ipt('-t', 'mangle', '-A', 'PREROUTING', '-i', iface, '-m', 'ttl', '--ttl-eq', '63', '-j', 'DROP', check=False)
+                ipt('-t', 'mangle', '-A', 'PREROUTING', '-i', iface, '-m', 'ttl', '--ttl-eq', '127', '-j', 'DROP', check=False)
+        except Exception as e:
+            log.warning('set_anti_tethering error: {}'.format(e))
+
+
+def set_isp_gateway_access(enabled, gateway_ip='192.168.1.1'):
+    global LAN
+    with lock:
+        try:
+            while ipt('-D', 'ECOFI_FORWARD', '-i', LAN, '-d', gateway_ip + '/32', '-j', 'ACCEPT', check=False).returncode == 0:
+                pass
+            if enabled:
+                ipt('-I', 'ECOFI_FORWARD', '2', '-i', LAN, '-d', gateway_ip + '/32', '-j', 'ACCEPT', check=False)
+        except Exception as e:
+            log.warning('set_isp_gateway_access error: {}'.format(e))
+
+
+def set_gaming_qos(enabled, percent=20):
+    with lock:
+        try:
+            while ipt('-t', 'mangle', '-D', 'PREROUTING', '-p', 'udp', '-m', 'multiport', '--dports', '5000:5500,7000:8000,27000:27050,30000:30010', '-j', 'MARK', '--set-mark', '10', check=False).returncode == 0:
+                pass
+            if enabled:
+                ipt('-t', 'mangle', '-A', 'PREROUTING', '-p', 'udp', '-m', 'multiport', '--dports', '5000:5500,7000:8000,27000:27050,30000:30010', '-j', 'MARK', '--set-mark', '10', check=False)
+        except Exception as e:
+            log.warning('set_gaming_qos error: {}'.format(e))
+
