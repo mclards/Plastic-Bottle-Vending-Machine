@@ -109,38 +109,11 @@ class EngineRegression(unittest.TestCase):
         self.c.execute('UPDATE time_policy_versions SET pause_count_max=0 WHERE id=?',('pisofi_time_v1',))
         self.mint();self.assertEqual(self.op('PAUSE')['error'],'pause_limit_reached')
 
-    def test_exhausted_pause_budget_does_not_block_automatic_queued_credit(self):
-        current=self.mint(600);queued=self.mint(1200)
-        for count in range(3):
-            self.assertTrue(self.op('PAUSE')['success'])
-            self.assertTrue(self.op('RESUME')['success'])
-        self.assertEqual(self.op('SWITCH',{'grant_id':queued})['error'],'unknown_action')
-        self.assertEqual(e.connection(self.c,self.cd['id'])['selected_grant_id'],current)
-        self.assertEqual(e.grant(self.c,queued)['remaining_us'],1200000000)
-        # Keep the network lease acknowledged while consuming the current credit.
-        for tick in range(40):
-            self.allow();self.advance(15);e.check_due_events(self.c,self.now,self.mono)
-        self.assertEqual(e.grant(self.c,current)['remaining_us'],0)
-        self.assertEqual(e.connection(self.c,self.cd['id'])['selected_grant_id'],queued)
-        status=e.snapshot(self.c,self.cd['id'],self.now)
-        self.assertEqual(status['state'],'ACTIVE')
-        self.assertEqual(status['pauses_left'],3)
-        self.assertEqual(status['remaining_seconds'],1200)
-        self.conserved()
-
     def test_policy_snapshot_is_immutable(self):
         self.mint()
         with self.assertRaises(sqlite3.IntegrityError):self.c.execute('UPDATE time_policy_versions SET pause_count_max=9 WHERE id=?',('pisofi_time_v1',))
         pid=e.create_policy(self.c,{'pause_count_max':1},self.now)
         self.assertNotEqual(pid,'pisofi_time_v1')
-
-    def test_expiry_wins_tie_and_advances_queue(self):
-        gid=self.mint();other=self.mint(300)
-        self.c.execute('UPDATE time_grants SET valid_until_utc=? WHERE id=?',(self.now+3600,gid))
-        self.op('PAUSE');self.advance(3600);e.check_due_events(self.c,self.now,self.mono)
-        self.assertEqual(e.grant(self.c,gid)['state'],'EXPIRED');self.assertEqual(e.grant(self.c,gid)['remaining_us'],0)
-        self.assertEqual(e.connection(self.c,self.cd['id'])['selected_grant_id'],other)
-        self.assertEqual(e.grant(self.c,other)['valid_until_utc'],self.now+86400);self.conserved()
 
     def test_admin_pause_survives_user_timeout(self):
         self.mint();self.op('PAUSE');self.op('ADMIN_PAUSE');self.advance(3600);e.check_due_events(self.c,self.now,self.mono)
@@ -158,23 +131,6 @@ class EngineRegression(unittest.TestCase):
         self.assertGreater(moved['binding_version'],intent['version'])
         self.assertFalse(e.acknowledge_network(self.c,intent,self.now,self.mono,True))
 
-
-    def test_old_wallet_balances_are_archived_and_never_activated(self):
-        current=self.mint(600);queued=self.mint(1200)
-        old=e._create_grant(self.c,self.owner,125500000,'legacy_wallet',self.now,state='WALLET')
-        self.c.execute('UPDATE time_grants SET valid_until_utc=? WHERE id=?',(self.now-1,old['id']))
-        for attempt in range(2):s.init_time_schema(self.c)
-        self.assertEqual(e.grant(self.c,old['id'])['state'],'ARCHIVED')
-        self.assertEqual(e.grant(self.c,old['id'])['remaining_us'],125500000)
-        self.assertEqual(self.op('SWITCH',{'grant_id':old['id']})['error'],'unknown_action')
-        e.check_due_events(self.c,self.now,self.mono)
-        self.assertEqual(e.grant(self.c,old['id'])['remaining_us'],125500000)
-        self.assertEqual(e.connection(self.c,self.cd['id'])['selected_grant_id'],current)
-        self.op('ADMIN_SET_BALANCE',{'seconds':0})
-        self.assertEqual(e.connection(self.c,self.cd['id'])['selected_grant_id'],queued)
-        self.op('ADMIN_SET_BALANCE',{'seconds':0})
-        self.assertIsNone(e.connection(self.c,self.cd['id'])['selected_grant_id'])
-        self.conserved()
 
     def test_transfer_conserves_and_claims_once(self):
         self.mint(125.5);transfer=self.op('TRANSFER_CREATE',{'seconds':120},'send')

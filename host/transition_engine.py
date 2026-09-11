@@ -423,12 +423,41 @@ def _action(conn,cd,action,payload,op,now,mono):
         if amount<=0:
             raise ValueError('invalid_seconds')
         conn.execute('UPDATE connections SET admin_suspended=0,disconnect_paused=0 WHERE id=?',(cd['id'],))
-        new = _create_grant(conn,owner,amount,payload.get('origin','bottle'),now,payload.get('policy_version_id'),payload.get('source_ref'),op=op)
-        conn.execute('UPDATE time_grants SET dl_kbps=?,ul_kbps=? WHERE id=?',
-                     (int(payload.get('dl_kbps',3072)),int(payload.get('ul_kbps',1536)),new['id']))
-        _activate_next(conn,cd['id'],now,mono)
-        new = grant(conn,new['id'])
-        return {'grant_id':new['id'],'issued_seconds':amount/float(SCALE),'state':new['state'],'valid_until_utc':new['valid_until_utc']}
+        
+        if g and g['state'] in ('ACTIVE', 'PAUSED', 'HELD'):
+            _move(conn, 'external:issuance', 'grant:'+g['id'], amount, payload.get('origin','bottle')+'_reward', now, op)
+            policy_id = payload.get('policy_version_id') or metadata(conn,'active_policy','pisofi_time_v1')
+            policy = one(conn,'SELECT * FROM time_policy_versions WHERE id=?',(policy_id,))
+            if not policy: raise ValueError('policy_not_found')
+            
+            if g['state'] in ('PAUSED', 'HELD'):
+                _close_pauses(conn, g['id'], now)
+                conn.execute("UPDATE time_grants SET state='ACTIVE' WHERE id=?", (g['id'],))
+                g['state'] = 'ACTIVE'
+            
+            total_sec = (g['remaining_us'] + amount) / float(SCALE)
+            duration = time_policy.calculate_bracket_validity(total_sec, json.loads(policy['brackets_json']), policy['global_validity_min'])
+            
+            until = g['valid_until_utc']
+            if g['validity_mode'] == 'activation_relative' and g['activated_at_utc']:
+                until = g['activated_at_utc'] + duration
+            elif g['validity_mode'] == 'legacy_pause_expiry':
+                duration = int(max(24,min(720,12+1.2*math.sqrt(total_sec/60.0)+0.025*(total_sec/60.0)))*3600)
+                until = None
+                
+            conn.execute('UPDATE time_grants SET validity_duration_sec=?, valid_until_utc=?, updated_at=? WHERE id=?',
+                         (duration, until, now, g['id']))
+            conn.execute('UPDATE pause_budgets SET used_count=0 WHERE id=?', (g['pause_budget_id'],))
+            _activate_next(conn,cd['id'],now,mono)
+            updated = grant(conn, g['id'])
+            return {'grant_id':updated['id'],'issued_seconds':amount/float(SCALE),'state':updated['state'],'valid_until_utc':updated['valid_until_utc']}
+        else:
+            new = _create_grant(conn,owner,amount,payload.get('origin','bottle'),now,payload.get('policy_version_id'),payload.get('source_ref'),op=op)
+            conn.execute('UPDATE time_grants SET dl_kbps=?,ul_kbps=? WHERE id=?',
+                         (int(payload.get('dl_kbps',3072)),int(payload.get('ul_kbps',1536)),new['id']))
+            _activate_next(conn,cd['id'],now,mono)
+            new = grant(conn,new['id'])
+            return {'grant_id':new['id'],'issued_seconds':amount/float(SCALE),'state':new['state'],'valid_until_utc':new['valid_until_utc']}
     if action=='PAUSE':
         already = bool(g and g['state']=='PAUSED')
         _pause(conn,cd,g,now)
@@ -452,9 +481,13 @@ def _action(conn,cd,action,payload,op,now,mono):
     elif action=='ADMIN_DISCONNECT':
         if g:
             _close_pauses(conn,g['id'],now)
-            if g['remaining_us']:
-                _move(conn,'grant:'+g['id'],'external:correction',g['remaining_us'],'admin_kick',now,op)
-            conn.execute("UPDATE time_grants SET state='DEPLETED',updated_at=? WHERE id=?",(now,g['id']))
+        
+        active_grants = all_rows(conn, "SELECT * FROM time_grants WHERE owner_id=? AND state NOT IN ('DEPLETED','EXPIRED')", (cd['owner_id'],))
+        for grant_rec in active_grants:
+            if grant_rec['remaining_us']:
+                _move(conn, 'grant:'+grant_rec['id'], 'external:correction', grant_rec['remaining_us'], 'admin_kick', now, op)
+            conn.execute("UPDATE time_grants SET state='DEPLETED',updated_at=? WHERE id=?", (now, grant_rec['id']))
+            
         conn.execute('UPDATE connections SET admin_suspended=1,disconnect_paused=1 WHERE id=?',(cd['id'],))
     elif action=='ADMIN_ADD_TIME':
         amount=to_us(payload.get('seconds',0))
