@@ -397,8 +397,8 @@ def snapshot(conn,cid,now):
     event = ('expire' if valid is not None and (deadline is None or valid<=deadline) else p['timeout_action']) if effective is not None else 'none'
     return {'connection_id':cid,'binding_version':cd['binding_version'],'owner_id':cd['owner_id'],
         'grant_id':g['id'] if g else None,'state':g['state'] if g else 'DISCONNECTED',
-        'remaining_seconds':remaining,'is_paused':bool(g and (g['state']=='PAUSED' or cd['admin_suspended'] or cd['disconnect_paused'])),
-        'admin_paused':bool(cd['admin_suspended']),'user_paused':bool(g and g['state']=='PAUSED'),
+        'remaining_seconds':remaining,'is_paused':bool(g and g['state'] not in TERMINAL and remaining>0 and (g['state']=='PAUSED' or cd['admin_suspended'] or cd['disconnect_paused'])),
+        'admin_paused':bool(cd['admin_suspended'] and g and g['state'] not in TERMINAL and remaining>0),'user_paused':bool(g and g['state']=='PAUSED'),
         'paused_at':p['paused_at_utc'] if p else 0,'pause_deadline_utc':deadline,'valid_until_utc':valid,
         'effective_deadline_utc':effective,'expires_at':effective or 0,'next_event_type':event,
         'pause_count_used':count,'pause_count_max':cap,'pauses_left':max(0,cap-count) if cap is not None else None,
@@ -422,6 +422,7 @@ def _action(conn,cd,action,payload,op,now,mono):
         amount = to_us(payload.get('seconds',0))
         if amount<=0:
             raise ValueError('invalid_seconds')
+        conn.execute('UPDATE connections SET admin_suspended=0,disconnect_paused=0 WHERE id=?',(cd['id'],))
         new = _create_grant(conn,owner,amount,payload.get('origin','bottle'),now,payload.get('policy_version_id'),payload.get('source_ref'),op=op)
         conn.execute('UPDATE time_grants SET dl_kbps=?,ul_kbps=? WHERE id=?',
                      (int(payload.get('dl_kbps',3072)),int(payload.get('ul_kbps',1536)),new['id']))
@@ -449,9 +450,11 @@ def _action(conn,cd,action,payload,op,now,mono):
         column = 'admin_suspended' if action.startswith('ADMIN') else 'disconnect_paused'
         conn.execute('UPDATE connections SET '+column+'=? WHERE id=?',(int(action.endswith('PAUSE')),cd['id']))
     elif action=='ADMIN_DISCONNECT':
-        if g and g['state'] in ('ACTIVE','PAUSED'):
+        if g:
             _close_pauses(conn,g['id'],now)
-            conn.execute("UPDATE time_grants SET state='HELD',updated_at=? WHERE id=?",(now,g['id']))
+            if g['remaining_us']:
+                _move(conn,'grant:'+g['id'],'external:correction',g['remaining_us'],'admin_kick',now,op)
+            conn.execute("UPDATE time_grants SET state='DEPLETED',updated_at=? WHERE id=?",(now,g['id']))
         conn.execute('UPDATE connections SET admin_suspended=1,disconnect_paused=1 WHERE id=?',(cd['id'],))
     elif action=='ADMIN_ADD_TIME':
         amount=to_us(payload.get('seconds',0))

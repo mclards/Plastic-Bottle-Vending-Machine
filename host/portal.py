@@ -1843,7 +1843,7 @@ def admin_api_clients():
             admin_paused = sess.get('admin_paused', False)
             if rem <= 0 and not is_paused and pending <= 0:
                 continue
-            res.append({'ip': ip, 'mac': sess.get('mac', '00:00:00:00:00:00'), 'remaining_seconds': rem, 'is_paused': is_paused, 'admin_paused': admin_paused, 'dl_kbps': sess.get('dl_kbps', 3072), 'ul_kbps': sess.get('ul_kbps', 1536)})
+            res.append({'ip': ip, 'mac': sess.get('mac', '00:00:00:00:00:00'), 'remaining_seconds': rem, 'is_paused': is_paused, 'admin_paused': admin_paused, 'dl_kbps': sess.get('dl_kbps', 3072), 'ul_kbps': sess.get('ul_kbps', 1536), 'applied_state': sess.get('applied_state', 'DISCONNECTED'), 'desired_state': sess.get('desired_state', 'DISCONNECTED')})
         active_count = sum((1 for c in res if c['remaining_seconds'] > 0 and not c['admin_paused']))
         return jsonify(res)
 

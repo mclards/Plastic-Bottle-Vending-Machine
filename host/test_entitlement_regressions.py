@@ -332,12 +332,8 @@ class PortalRegression(unittest.TestCase):
         blocked=self.request('/api/client/pause',{'action':'resume'}).get_json()
         self.assertEqual(blocked['error'],'admin_suspended')
         current=self.request('/api/vendo/status',get=True).get_json()
-        self.assertEqual(current['state'],'HELD');self.assertEqual(current['remaining_seconds'],125.5)
-        self.assertEqual(current['pauses_left'],2)
+        self.assertEqual(current['state'],'DISCONNECTED');self.assertEqual(current['remaining_seconds'],0)
         self.assertEqual(self.scalar("SELECT COUNT(*) FROM grant_pauses WHERE status='OPEN'"),0)
-        resumed=self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':'resume'}).get_json()
-        self.assertTrue(resumed['success'])
-        self.assertEqual(self.request('/api/vendo/status',get=True).get_json()['state'],'ACTIVE')
 
     def test_failed_kick_revoke_is_pending_and_retried(self):
         self.voucher()
@@ -358,7 +354,7 @@ class PortalRegression(unittest.TestCase):
         with patch.object(self.p.platform,'system',return_value='Linux'),patch.object(self.p.gateway_network,'grant') as grant,patch.object(self.p.gateway_network,'revoke') as revoke:
             self.p.time_service.worker_pass()
         grant.assert_not_called();revoke.assert_called_with('10.0.0.2')
-        self.assertEqual(self.scalar('SELECT remaining_us FROM time_grants'),600000000)
+        self.assertEqual(self.scalar('SELECT remaining_us FROM time_grants'),0)
 
     def test_admin_targets_required_and_missing_disconnect_rejected(self):
         self.voucher()
@@ -555,12 +551,14 @@ class PortalRegression(unittest.TestCase):
         with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
         def count():return self.request('/admin/api/stats',get=True).get_json()['active_clients']
         self.assertEqual(count(),1)
-        for action in ('pause','kick'):
-            self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':action})
-            self.assertEqual(count(),0)
-            self.assertGreater(self.scalar('SELECT remaining_us FROM time_grants'),0)
-            self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':'resume'})
-            self.assertEqual(count(),1)
+        self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':'pause'})
+        self.assertEqual(count(),0)
+        self.assertGreater(self.scalar('SELECT remaining_us FROM time_grants'),0)
+        self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':'resume'})
+        self.assertEqual(count(),1)
+        self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':'kick'})
+        self.assertEqual(count(),0)
+        self.assertEqual(self.scalar('SELECT remaining_us FROM time_grants'),0)
         self.utc+=16;self.mono+=16
         self.assertEqual(count(),0)
 
