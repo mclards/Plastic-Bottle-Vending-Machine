@@ -413,13 +413,31 @@ class TimePortal(object):
                         speed=int(data[name])
                         if not 64<=speed<=1000000:raise ValueError('invalid_speed')
                         conn.execute('UPDATE time_grants SET '+name+'=?,speed_override=1 WHERE id=?',(speed,g['id']))
-                if data.get('pauses_used') is not None:
-                    pauses = int(data['pauses_used'])
-                    if pauses < 0: pauses = 0
-                    b = engine.one(conn, 'SELECT pause_count_max FROM pause_budgets WHERE id=?', (g['pause_budget_id'],))
-                    if b and b['pause_count_max'] is not None and pauses > b['pause_count_max']:
-                        pauses = b['pause_count_max']
-                    conn.execute('UPDATE pause_budgets SET used_count=? WHERE id=?', (pauses, g['pause_budget_id']))
+                if data.get('pauses_left') is not None:
+                    try:
+                        target_left = max(0, int(data['pauses_left']))
+                        b = engine.one(conn, 'SELECT * FROM pause_budgets WHERE id=?', (g['pause_budget_id'],))
+                        if b:
+                            cap = b['pause_count_max']
+                            if cap is not None:
+                                new_cap = max(cap, target_left)
+                                new_used = max(0, new_cap - target_left)
+                                conn.execute('UPDATE pause_budgets SET pause_count_max=?, used_count=?, updated_at=? WHERE id=?',
+                                             (new_cap, new_used, now))
+                            else:
+                                conn.execute('UPDATE pause_budgets SET used_count=0, updated_at=? WHERE id=?',
+                                             (now, g['pause_budget_id']))
+                    except (ValueError, TypeError):
+                        pass
+                elif data.get('pauses_used') is not None:
+                    try:
+                        pauses = max(0, int(data['pauses_used']))
+                        b = engine.one(conn, 'SELECT pause_count_max FROM pause_budgets WHERE id=?', (g['pause_budget_id'],))
+                        if b and b['pause_count_max'] is not None and pauses > b['pause_count_max']:
+                            pauses = b['pause_count_max']
+                        conn.execute('UPDATE pause_budgets SET used_count=?, updated_at=? WHERE id=?', (pauses, now, g['pause_budget_id']))
+                    except (ValueError, TypeError):
+                        pass
                 engine.refresh_desired(conn,cd['id'],now,mono,True)
             value=self.project(conn,engine.connection(conn,cd['id']),now)
         self.publish(ip,value);self.reconcile()
