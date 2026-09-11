@@ -413,6 +413,13 @@ class TimePortal(object):
                         speed=int(data[name])
                         if not 64<=speed<=1000000:raise ValueError('invalid_speed')
                         conn.execute('UPDATE time_grants SET '+name+'=?,speed_override=1 WHERE id=?',(speed,g['id']))
+                if data.get('pauses_used') is not None:
+                    pauses = int(data['pauses_used'])
+                    if pauses < 0: pauses = 0
+                    b = engine.one(conn, 'SELECT pause_count_max FROM pause_budgets WHERE id=?', (g['pause_budget_id'],))
+                    if b and b['pause_count_max'] is not None and pauses > b['pause_count_max']:
+                        pauses = b['pause_count_max']
+                    conn.execute('UPDATE pause_budgets SET used_count=? WHERE id=?', (pauses, g['pause_budget_id']))
                 engine.refresh_desired(conn,cd['id'],now,mono,True)
             value=self.project(conn,engine.connection(conn,cd['id']),now)
         self.publish(ip,value);self.reconcile()
