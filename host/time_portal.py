@@ -422,11 +422,11 @@ class TimePortal(object):
                             if cap is not None:
                                 new_cap = max(cap, target_left)
                                 new_used = max(0, new_cap - target_left)
-                                conn.execute('UPDATE pause_budgets SET pause_count_max=?, used_count=?, updated_at=? WHERE id=?',
-                                             (new_cap, new_used, now, g['pause_budget_id']))
+                                conn.execute('UPDATE pause_budgets SET pause_count_max=?, used_count=? WHERE id=?',
+                                             (new_cap, new_used, g['pause_budget_id']))
                             else:
-                                conn.execute('UPDATE pause_budgets SET used_count=0, updated_at=? WHERE id=?',
-                                             (now, g['pause_budget_id']))
+                                conn.execute('UPDATE pause_budgets SET used_count=0 WHERE id=?',
+                                             (g['pause_budget_id'],))
                     except (ValueError, TypeError):
                         pass
                 elif data.get('pauses_used') is not None:
@@ -435,7 +435,7 @@ class TimePortal(object):
                         b = engine.one(conn, 'SELECT pause_count_max FROM pause_budgets WHERE id=?', (g['pause_budget_id'],))
                         if b and b['pause_count_max'] is not None and pauses > b['pause_count_max']:
                             pauses = b['pause_count_max']
-                        conn.execute('UPDATE pause_budgets SET used_count=?, updated_at=? WHERE id=?', (pauses, now, g['pause_budget_id']))
+                        conn.execute('UPDATE pause_budgets SET used_count=? WHERE id=?', (pauses, g['pause_budget_id']))
                     except (ValueError, TypeError):
                         pass
                 engine.refresh_desired(conn,cd['id'],now,mono,True)
