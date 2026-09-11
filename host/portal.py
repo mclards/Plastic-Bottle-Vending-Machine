@@ -2087,8 +2087,8 @@ def admin_api_bandwidth_qos_save():
     
     if 'default_dl_kbps' in data and int(data['default_dl_kbps']) <= 0:
         return jsonify({'error': 'Invalid default_dl_kbps'}), 400
-    if str(data.get('dynamic_bandwidth_enabled', '0')) == '1' or str(data.get('qos_gaming_enabled', '0')) == '1':
-        return jsonify({'error': 'Not Implemented'}), 501
+    if 'default_ul_kbps' in data and int(data['default_ul_kbps']) <= 0:
+        return jsonify({'error': 'Invalid default_ul_kbps'}), 400
 
     keys = [
         'default_dl_kbps', 'default_ul_kbps', 'dynamic_bandwidth_enabled',

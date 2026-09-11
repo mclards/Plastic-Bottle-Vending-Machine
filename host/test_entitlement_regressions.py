@@ -348,10 +348,14 @@ class PortalRegression(unittest.TestCase):
     def test_bandwidth_rejects_unsupported_or_invalid_settings_before_writes(self):
         with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
         before=self.p.get_config('default_dl_kbps')
-        for data,code in [({'default_dl_kbps':0},400),({'default_dl_kbps':4096,'dynamic_bandwidth_enabled':'1'},501),({'qos_gaming_enabled':'1'},501)]:
+        for data,code in [({'default_dl_kbps':0},400),({'default_ul_kbps':0},400)]:
             result=self.request('/admin/api/bandwidth/qos/save',data)
             self.assertEqual(result.status_code,code,result.get_json())
             self.assertEqual(self.p.get_config('default_dl_kbps'),before)
+        result=self.request('/admin/api/bandwidth/qos/save',{'qos_gaming_enabled':'1','qos_gaming_percent':25})
+        self.assertEqual(result.status_code,200,result.get_json())
+        self.assertEqual(self.p.get_config('qos_gaming_enabled'),'1')
+        self.assertEqual(self.p.get_config('qos_gaming_percent'),'25')
         result=self.request('/admin/api/bandwidth/qos/save',{'default_dl_kbps':4096,'default_ul_kbps':1024})
         self.assertEqual(result.status_code,200,result.get_json())
         self.assertEqual(self.p.get_config('default_dl_kbps'),'4096')
