@@ -412,7 +412,8 @@ print("ARM Python runtime imports passed")
 '
 PYTHONHOME="$MOUNT_DIR/usr" PYTHONPATH="$MOUNT_DIR/usr/local/lib/python3.5/dist-packages" qemu-arm-static -L "$MOUNT_DIR" "$MOUNT_DIR/usr/bin/python3.5" -B "$ROOT_DIR/tools/verify_arm_runtime.py" "$MOUNT_DIR/opt/ecofi"
 qemu-arm-static -L "$MOUNT_DIR" "$MOUNT_DIR/usr/sbin/dnsmasq" --test --conf-file="$MOUNT_DIR/etc/dnsmasq.conf"
-(cd "$MOUNT_DIR/opt/ecofi" && find . -type f ! -path "./__pycache__/*" ! -name release-sha256.txt -print0 | sort -z | xargs -0 sha256sum > release-sha256.txt)
+(cd "$MOUNT_DIR/opt/ecofi" && find . -type f ! -path "./__pycache__/*" ! -name "release-*.txt" -print0 | sort -z | xargs -0 sha256sum > release-sha256.txt)
+(cd "$MOUNT_DIR/opt/ecofi" && find . -type f ! -path "./__pycache__/*" ! -name "release-*.txt" -print0 | sort -z | xargs -0 md5sum > release-md5.txt)
 
 # Finalize and unmount
 echo "Syncing filesystem buffers..."
@@ -423,6 +424,7 @@ losetup -d "$LOOP_DEVICE"
 LOOP_DEVICE=""
 mv -- "$WORK_IMG" "$TARGET_IMG"
 (cd "$ROOT_DIR/resources" && sha256sum "$(basename "$TARGET_IMG")" > "$(basename "$TARGET_IMG").sha256")
+(cd "$ROOT_DIR/resources" && md5sum "$(basename "$TARGET_IMG")" > "$(basename "$TARGET_IMG").md5")
 
 echo "======================================================================"
 echo " SUCCESS: Cleaned, Hardened Eco-Fi OS Image Ready at:"
