@@ -342,6 +342,10 @@ def init_time_schema(conn):
         conn.execute('CREATE INDEX IF NOT EXISTS idx_pending_intents ON network_intents(status,id)')
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_one_open_pause ON grant_pauses(grant_id) WHERE status='OPEN'")
         conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_one_grant_binding ON connections(selected_grant_id) WHERE selected_grant_id IS NOT NULL')
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_time_ledger_journal ON time_ledger (journal_id) WHERE journal_id IS NOT NULL")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_time_ledger_created ON time_ledger (created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_network_intents_created ON network_intents (created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_network_intents_status ON network_intents (status)")
         conn.execute('''CREATE TRIGGER IF NOT EXISTS immutable_grant_policy BEFORE UPDATE OF
             pause_count_max,pause_duration_sec,pause_timeout_action,min_balance_sec,max_balance_sec,
             global_validity_min,brackets_json,pause_allowed ON time_policy_versions
