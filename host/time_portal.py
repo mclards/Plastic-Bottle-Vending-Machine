@@ -423,7 +423,7 @@ class TimePortal(object):
                                 new_cap = max(cap, target_left)
                                 new_used = max(0, new_cap - target_left)
                                 conn.execute('UPDATE pause_budgets SET pause_count_max=?, used_count=?, updated_at=? WHERE id=?',
-                                             (new_cap, new_used, now))
+                                             (new_cap, new_used, now, g['pause_budget_id']))
                             else:
                                 conn.execute('UPDATE pause_budgets SET used_count=0, updated_at=? WHERE id=?',
                                              (now, g['pause_budget_id']))
