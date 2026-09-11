@@ -159,13 +159,13 @@ def init_db():
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('announcement', '')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_bg', '/static/audio/eco_loop.wav')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_insert', '/static/audio/bottle_success.wav')")
-        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_success', '/static/audio/eco_success.wav')")
+        c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_success', '/static/audio/bottle_success.wav')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_preset', '/static/audio/eco_chime.wav')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_custom_url', '')")
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('audio_volume', '80')")
         c.execute("UPDATE config SET value = '/static/audio/eco_loop.wav' WHERE key = 'audio_bg' AND (value = '/static/audio/b1.wav' OR value = '')")
         c.execute("UPDATE config SET value = '/static/audio/eco_chime.wav' WHERE key = 'audio_insert' AND (value = '/static/audio/coin.wav' OR value = '')")
-        c.execute("UPDATE config SET value = '/static/audio/eco_success.wav' WHERE key = 'audio_success' AND (value = '/static/audio/success_ding.wav' OR value = '')")
+        c.execute("UPDATE config SET value = '/static/audio/bottle_success.wav' WHERE key = 'audio_success' AND (value = '/static/audio/success_ding.wav' OR value = '/static/audio/eco_success.wav' OR value = '')")
         c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (1, 10, '1 Bottle = 10 mins')")
         c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (3, 40, '3 Bottles = 40 mins')")
         c.execute("INSERT OR IGNORE INTO promo_rates (bottles, minutes, label) VALUES (5, 75, '5 Bottles = 1h 15m')")
@@ -601,7 +601,7 @@ def index():
         announcement = ann_row[0] if ann_row else ''
         c.execute('SELECT domain, note FROM walled_garden ORDER BY domain ASC')
         walled_sites = [{'domain': r[0], 'note': r[1]} for r in c.fetchall()]
-    return render_template_string(PORTAL_HTML, has_time=has_time, session_remaining_seconds=session_data.get('remaining_seconds', 0), license_valid=license_valid(), client_ip=client_ip, client_mac=session_data.get('mac', '00:00:00:00:00:00'), vendo_name=get_config('vendo_name', 'Eco-Fi Vendo'), vendo_subtitle=get_config('vendo_subtitle', 'Recycle Bottles for Fast WiFi'), promo_rates=promos, announcement=announcement, walled_sites=walled_sites, audio_bg=get_config('audio_bg', '/static/audio/eco_loop.wav'), audio_insert=get_config('audio_insert', '/static/audio/eco_chime.wav'), audio_success=get_config('audio_success', '/static/audio/eco_success.wav'), audio_volume=get_config('audio_volume', '80'))
+    return render_template_string(PORTAL_HTML, has_time=has_time, session_remaining_seconds=session_data.get('remaining_seconds', 0), license_valid=license_valid(), client_ip=client_ip, client_mac=session_data.get('mac', '00:00:00:00:00:00'), vendo_name=get_config('vendo_name', 'Eco-Fi Vendo'), vendo_subtitle=get_config('vendo_subtitle', 'Recycle Bottles for Fast WiFi'), promo_rates=promos, announcement=announcement, walled_sites=walled_sites, audio_bg=get_config('audio_bg', '/static/audio/eco_loop.wav'), audio_insert=get_config('audio_insert', '/static/audio/eco_chime.wav'), audio_success=get_config('audio_success', '/static/audio/bottle_success.wav'), audio_volume=get_config('audio_volume', '80'))
 
 
 
@@ -1358,7 +1358,7 @@ def admin_api_audio_settings():
     data = request.get_json() or {}
     bg = data.get('audio_bg', '/static/audio/b1.wav')
     insert = data.get('audio_insert', '/static/audio/coin.wav')
-    success = data.get('audio_success', '/static/audio/eco_success.wav')
+    success = data.get('audio_success', '/static/audio/bottle_success.wav')
     vol = data.get('volume', '80')
     set_config('audio_bg', bg)
     set_config('audio_insert', insert)
