@@ -22,8 +22,8 @@ try:
 except OSError:
     BOOT_ID = str(uuid.uuid4())
 
-LIVE = ('ACTIVE','PAUSED','UNUSED','WALLET','ESCROW','HELD')
-TERMINAL = ('DEPLETED','EXPIRED','MOVED')
+LIVE = ('ACTIVE','PAUSED','UNUSED','ESCROW','HELD')
+TERMINAL = ('DEPLETED','EXPIRED','MOVED','ARCHIVED')
 LEASE_SECONDS = 15
 
 
@@ -87,7 +87,7 @@ def get_or_create_device(conn, mac, owner_id, ip, now_utc):
     row = one(conn,'SELECT * FROM devices WHERE mac=?',(mac,))
     if row:
         if row['owner_id'] != owner_id:
-            raise ValueError('explicit_member_binding_required')
+            raise ValueError('explicit_owner_binding_required')
         conn.execute('UPDATE devices SET last_ip=?,last_seen_at=? WHERE mac=?',(ip,now_utc,mac))
     else:
         conn.execute('INSERT INTO devices VALUES (?,?,?,?)',(mac,owner_id,ip,now_utc))
@@ -127,7 +127,7 @@ def get_or_create_connection(conn, ip, mac, owner_id, now_utc, mono_now):
     ip = str(ipaddress.ip_address(ip))
     cd = one(conn,'SELECT * FROM connections WHERE mac=?',(mac,))
     if cd and cd['owner_id']!=owner_id:
-        raise ValueError('explicit_member_binding_required')
+        raise ValueError('explicit_owner_binding_required')
     occupied = one(conn,'SELECT * FROM connections WHERE ip=? AND mac<>?',(ip,mac))
     if occupied:
         _settle(conn,occupied,now_utc,mono_now)
@@ -227,11 +227,7 @@ def _terminal(conn,g,now,reason,op=None):
         return
     if g['remaining_us']:
         _move(conn,'grant:'+g['id'],'sink:expired',g['remaining_us'],reason,now,op)
-    if g['state']=='WALLET':
-        conn.execute("UPDATE time_grants SET state='EXPIRED',updated_at=? WHERE id=?",(now,g['id']))
-        _wallet_projection(conn,g['owner_id'],now)
-    else:
-        conn.execute("UPDATE time_grants SET state='EXPIRED',updated_at=? WHERE id=?",(now,g['id']))
+    conn.execute("UPDATE time_grants SET state='EXPIRED',updated_at=? WHERE id=?",(now,g['id']))
     _close_pauses(conn,g['id'],now,'EXPIRED')
 
 
@@ -315,7 +311,7 @@ def _due(conn,now,mono):
     before_expired = conn.execute("SELECT COUNT(*) FROM time_grants WHERE state='EXPIRED'").fetchone()[0]
     for cd in all_rows(conn,'SELECT * FROM connections'):
         _settle(conn,cd,now,mono)
-    for g in all_rows(conn,"SELECT * FROM time_grants WHERE state NOT IN ('EXPIRED','DEPLETED','MOVED') AND valid_until_utc IS NOT NULL AND valid_until_utc<=?",(now,)):
+    for g in all_rows(conn,"SELECT * FROM time_grants WHERE state NOT IN ('EXPIRED','DEPLETED','MOVED','ARCHIVED') AND valid_until_utc IS NOT NULL AND valid_until_utc<=?",(now,)):
         _terminal(conn,g,now,'validity_expired'); events['expired']+=1
     for p in all_rows(conn,"SELECT * FROM grant_pauses WHERE status='OPEN' AND effective_deadline_utc IS NOT NULL AND effective_deadline_utc<=?",(now,)):
         g = grant(conn,p['grant_id'])
@@ -411,62 +407,12 @@ def snapshot(conn,cid,now):
         'desired_state':cd['desired_state'],'applied_state':cd['applied_state'],'access_error':cd['access_error'],
         'dl_kbps':g['dl_kbps'] if g else 3072,'ul_kbps':g['ul_kbps'] if g else 1536,
         'grants':[{'id':v['id'],'state':v['state'],'remaining_seconds':(v['remaining_us'] or 0)/float(SCALE),
-                   'valid_until_utc':v['valid_until_utc'],'policy_version_id':v['policy_version_id']}
-                  for v in all_rows(conn,"SELECT * FROM time_grants WHERE owner_id=? AND state IN ('ACTIVE','PAUSED','UNUSED','HELD') ORDER BY created_at,rowid",(cd['owner_id'],))]}
-
-
-def wallet_us(conn,owner,now):
-    return conn.execute("SELECT COALESCE(SUM(remaining_us),0) FROM time_grants WHERE owner_id=? AND state='WALLET' AND (valid_until_utc IS NULL OR valid_until_utc>?)",(owner,now)).fetchone()[0]
-
-
-def _wallet_projection(conn,owner,now):
-    row = one(conn,"SELECT owner_key FROM credit_owners WHERE id=? AND owner_type='member'",(owner,))
-    if row and conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='members'").fetchone():
-        conn.execute('UPDATE members SET wallet_minutes=? WHERE username=?',(wallet_us(conn,owner,now)//(SCALE*60),row['owner_key'][7:]))
-
-
-def bind_member(conn,cid,member_owner,now,mono):
-    """Called only after credential verification, inside the adapter transaction."""
-    with transaction(conn):
-        cd = connection(conn,cid)
-        owner = one(conn,"SELECT * FROM credit_owners WHERE id=? AND owner_type='member'",(member_owner,))
-        if not owner:
-            raise ValueError('member_not_found')
-        _due(conn,now,mono)
-        choices = []
-        for old in all_rows(conn,'SELECT * FROM connections WHERE owner_id=? OR id=?',(member_owner,cid)):
-            if old['selected_grant_id']:
-                choices.append(old['selected_grant_id'])
-                conn.execute("UPDATE time_grants SET state='UNUSED' WHERE id=? AND state='ACTIVE'",(old['selected_grant_id'],))
-            _intent(conn,old,'DISCONNECTED',now)
-            conn.execute("UPDATE connections SET selected_grant_id=NULL,desired_state='DISCONNECTED',applied_state='DISCONNECTED',authorized_until_us=NULL,binding_version=binding_version+1 WHERE id=?",(old['id'],))
-            if old['id']!=cid:
-                detached_owner=get_or_create_owner(conn,'device','mac:'+old['mac'],now)
-                conn.execute('UPDATE devices SET owner_id=? WHERE mac=?',(detached_owner,old['mac']))
-                conn.execute('UPDATE connections SET owner_id=? WHERE id=?',(detached_owner,old['id']))
-        # Anonymous device credit becomes member credit once, preserving each grant.
-        old_owner = one(conn,'SELECT * FROM credit_owners WHERE id=?',(cd['owner_id'],))
-        if old_owner['owner_type']=='device':
-            conn.execute('UPDATE time_grants SET owner_id=? WHERE owner_id=?',(member_owner,cd['owner_id']))
-            conn.execute('UPDATE ledger_accounts SET owner_id=? WHERE owner_id=?',(member_owner,cd['owner_id']))
-            conn.execute("UPDATE deposit_sessions SET owner_id=? WHERE owner_id=? AND status<>'FINALIZED'",(member_owner,cd['owner_id']))
-        elif cd['owner_id']!=member_owner:
-            # Logging another member in never transfers the previous member's property.
-            choices = [gid for gid in choices if grant(conn,gid)['owner_id']==member_owner]
-        conn.execute('UPDATE devices SET owner_id=? WHERE mac=?',(member_owner,cd['mac']))
-        conn.execute('UPDATE connections SET owner_id=? WHERE id=?',(member_owner,cid))
-        conn.execute('DELETE FROM owner_bindings WHERE connection_id=?',(cid,))
-        conn.execute('INSERT OR REPLACE INTO owner_bindings VALUES (?,?)',(member_owner,cid))
-        for gid in choices:
-            g = grant(conn,gid)
-            if g['state']=='ACTIVE':
-                conn.execute("UPDATE time_grants SET state='UNUSED' WHERE id=?",(gid,))
-        eligible = [grant(conn,gid) for gid in choices if grant(conn,gid)['owner_id']==member_owner and grant(conn,gid)['state'] not in TERMINAL]
-        if eligible:
-            _select(conn,cid,eligible[0],now,mono)
-        else:
-            _activate_next(conn,cid,now,mono)
-        return connection(conn,cid)
+                   'valid_until_utc':v['valid_until_utc'],'policy_version_id':v['policy_version_id'],
+                   'pause_count_max':v['pause_count_max'],'pause_count_used':v['used_count'],
+                   'pauses_left':None if v['pause_count_max'] is None else max(0,v['pause_count_max']-v['used_count'])}
+                  for v in all_rows(conn,"""SELECT g.*,b.pause_count_max,b.used_count FROM time_grants g
+                    JOIN pause_budgets b ON b.id=g.pause_budget_id WHERE g.owner_id=?
+                    AND g.state IN ('ACTIVE','PAUSED','UNUSED','HELD') ORDER BY g.created_at,g.rowid""",(cd['owner_id'],))]}
 
 
 def _action(conn,cd,action,payload,op,now,mono):
@@ -494,28 +440,25 @@ def _action(conn,cd,action,payload,op,now,mono):
         _close_pauses(conn,g['id'],now)
         conn.execute("UPDATE time_grants SET state='ACTIVE',updated_at=? WHERE id=?",(now,g['id']))
         conn.execute('UPDATE connections SET disconnect_paused=0 WHERE id=?',(cd['id'],))
-    elif action=='SWITCH':
-        target = grant(conn,payload.get('grant_id'))
-        if not target or target['owner_id']!=owner or target['state'] not in ('UNUSED','PAUSED','HELD','ACTIVE') or not target['remaining_us']:
-            raise ValueError('invalid_switch_target')
-        if conn.execute('SELECT 1 FROM connections WHERE selected_grant_id=? AND id<>?',(target['id'],cd['id'])).fetchone():
-            raise ValueError('grant_bound_elsewhere')
-        if g and g['id']!=target['id'] and g['state']=='ACTIVE':
-            _pause(conn,cd,g,now)
-        if cd['admin_suspended']:
-            raise ValueError('admin_suspended')
-        if target['state'] in ('PAUSED','HELD'):
-            _close_pauses(conn,target['id'],now)
-            conn.execute("UPDATE time_grants SET state='UNUSED' WHERE id=?",(target['id'],))
-            target = grant(conn,target['id'])
-        _select(conn,cd['id'],target,now,mono)
-    elif action in ('ADMIN_PAUSE','ADMIN_RESUME','DISCONNECT_PAUSE','DISCONNECT_RESUME'):
+    elif action=='ADMIN_RESUME':
+        conn.execute('UPDATE connections SET admin_suspended=0,disconnect_paused=0 WHERE id=?',(cd['id'],))
+        if g and g['state'] in ('PAUSED','HELD'):
+            _close_pauses(conn,g['id'],now)
+            conn.execute("UPDATE time_grants SET state='ACTIVE',updated_at=? WHERE id=?",(now,g['id']))
+    elif action in ('ADMIN_PAUSE','DISCONNECT_PAUSE','DISCONNECT_RESUME'):
         column = 'admin_suspended' if action.startswith('ADMIN') else 'disconnect_paused'
         conn.execute('UPDATE connections SET '+column+'=? WHERE id=?',(int(action.endswith('PAUSE')),cd['id']))
     elif action=='ADMIN_DISCONNECT':
-        if g and g['state']=='ACTIVE':
-            conn.execute("UPDATE time_grants SET state='HELD' WHERE id=?",(g['id'],))
-        conn.execute('UPDATE connections SET disconnect_paused=1 WHERE id=?',(cd['id'],))
+        if g and g['state'] in ('ACTIVE','PAUSED'):
+            _close_pauses(conn,g['id'],now)
+            conn.execute("UPDATE time_grants SET state='HELD',updated_at=? WHERE id=?",(now,g['id']))
+        conn.execute('UPDATE connections SET admin_suspended=1,disconnect_paused=1 WHERE id=?',(cd['id'],))
+    elif action=='ADMIN_ADD_TIME':
+        amount=to_us(payload.get('seconds',0))
+        if amount<=0:raise ValueError('invalid_seconds')
+        if not g or g['state'] in TERMINAL or not g['remaining_us']:
+            return _action(conn,cd,'TOP_UP_GRANT',{'seconds':amount/float(SCALE),'origin':'admin'},op,now,mono)
+        _move(conn,'external:correction','grant:'+g['id'],amount,'admin_add_time',now,op)
     elif action=='ADMIN_SET_BALANCE':
         amount = to_us(payload.get('seconds',0))
         if amount<0:
@@ -531,30 +474,6 @@ def _action(conn,cd,action,payload,op,now,mono):
                 _move(conn,'grant:'+g['id'],'external:correction',-difference,'admin_adjustment',now,op)
             if amount==0:
                 conn.execute("UPDATE time_grants SET state='DEPLETED' WHERE id=?",(g['id'],));_close_pauses(conn,g['id'],now)
-    elif action=='WALLET_SAVE':
-        if not g or not g['remaining_us']:
-            raise ValueError('no_active_grant')
-        wallet_owner = payload['wallet_owner_id']
-        if not conn.execute("SELECT 1 FROM credit_owners WHERE id=? AND owner_type='member'",(wallet_owner,)).fetchone():
-            raise ValueError('member_not_found')
-        if g['state']=='ACTIVE':
-            _pause(conn,cd,g,now)
-        amount = to_us(payload['seconds']) if 'seconds' in payload else g['remaining_us']
-        child = _fragment(conn,grant(conn,g['id']),wallet_owner,amount,'WALLET',now,op,'wallet_save')
-        conn.execute('UPDATE time_grants SET valid_until_utc=NULL, activated_at_utc=NULL WHERE id=?',(child['id'],))
-        _wallet_projection(conn,wallet_owner,now)
-    elif action=='WALLET_WITHDRAW':
-        amount = to_us(payload.get('seconds',0))
-        if amount<=0 or amount>wallet_us(conn,owner,now):
-            raise ValueError('insufficient_wallet_balance')
-        left = amount
-        for source in all_rows(conn,"SELECT * FROM time_grants WHERE owner_id=? AND state='WALLET' AND remaining_us>0 ORDER BY (valid_until_utc IS NULL),valid_until_utc,created_at,rowid",(owner,)):
-            part = min(left,source['remaining_us'])
-            _fragment(conn,source,owner,part,'UNUSED',now,op,'wallet_withdraw')
-            left-=part
-            if left==0:
-                break
-        _wallet_projection(conn,owner,now)
     elif action=='TRANSFER_CREATE':
         if not g:
             raise ValueError('no_active_grant')

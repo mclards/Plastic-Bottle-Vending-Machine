@@ -27,6 +27,10 @@ with tempfile.TemporaryDirectory(prefix='ecofi-arm-smoke-') as folder:
     atexit.unregister(portal.save_sessions_to_db)
     with open(version_path) as stream:assert portal.RELEASE_VERSION==stream.read().strip()
     portal.esp32.running=False;portal.app.testing=True
+    if '--live-clock' in sys.argv:
+        with patch.dict(os.environ,{'ECOFI_TRUST_CLOCK':'0'}):
+            assert portal.time_service.clock_trusted(), 'Actual OPi synchronization check failed'
+        print('PASS: actual OPi clock synchronization detected without trust override')
     portal.platform.system=lambda:'Windows'
     portal.time_service.clock_trusted=lambda:True
     portal.license_valid=lambda:True
@@ -58,4 +62,23 @@ with tempfile.TemporaryDirectory(prefix='ecofi-arm-smoke-') as folder:
     for path in ('/admin','/admin/api/time/diagnostics','/admin/api/clients','/admin/api/system/backup/download'):
         response=client.get(path,environ_overrides={'REMOTE_ADDR':'10.0.0.2'})
         assert response.status_code==200,(path,response.status_code)
-    print('PASS: ARM Python runtime, Flask pages/auth, vouchers, pause, network acknowledgement, duplicate receipts, finalization, diagnostics and backup')
+    for path in ('/api/client/switch','/api/member/register','/api/member/login','/api/member/save_time','/api/member/use_wallet',
+                 '/admin/api/members/add','/admin/api/members/topup','/admin/api/members/delete'):
+        assert request(path).status_code==404,path
+    assert client.get('/admin/api/members/list').status_code==404
+    for action in ('add15','kick','resume'):
+        result=request('/admin/api/client/action',{'ip':'10.0.0.2','action':action}).get_json()
+        assert result['success'] and not result['network_pending'],result
+        if action=='kick':
+            assert request('/api/client/pause',{'action':'resume'}).get_json()['error']=='admin_suspended'
+    with open(os.path.join(source,'static','time_controls.js')) as stream:controls=stream.read()
+    for token in ('Use Credit','OTHER CREDITS','/api/client/switch'):
+        assert token not in controls,token
+    for path in ('/','/admin'):
+        html=client.get(path).get_data(as_text=True)
+        for token in ('tab-member','sec-members','Member Wallet','/api/member/','/admin/api/members/'):
+            assert token not in html,(path,token)
+    with portal.db_connection() as conn:
+        assert conn.execute("SELECT count(*) FROM sqlite_master WHERE name='members'").fetchone()[0]==0
+    assert client.get('/admin/api/export_xlsx').status_code in (200,302)
+    print('PASS: ARM runtime, portal/admin pages, vouchers, pause, bottle receipts, network, diagnostics, backup, exports, and complete Member route/UI removal')

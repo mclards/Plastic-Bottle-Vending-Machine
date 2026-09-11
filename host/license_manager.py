@@ -83,13 +83,16 @@ def get_machine_hwid() -> str:
     sha = hashlib.sha256(raw_signature.encode('utf-8')).hexdigest().upper()
     return '{}-{}-{}-{}'.format(sha[:4], sha[4:8], sha[8:12], sha[12:16])
 
-def compute_activation_pin(hwid: str, tier: str='COMMERCIAL', expiry_date: str='PERPETUAL') -> str:
+def compute_activation_pin(hwid: str, tier: str='COMMERCIAL', expiry_date: str='PERPETUAL', legacy_prefix: bool=False) -> str:
     """
     Computes the mathematical activation PIN for a specific HWID.
     Used by both the vendor key generator and the on-device validator.
     Normalizes the HWID so any copied format is guaranteed to match.
     """
     clean_hwid = normalize_hwid(hwid)
+    # Branding changed the displayed HWID. Preserve previously issued signatures.
+    if legacy_prefix:
+        clean_hwid = 'ECOFI-' + clean_hwid
     clean_tier = tier.strip().upper()
     payload = '{}::{}::{}'.format(clean_hwid, clean_tier, VENDOR_SECRET_SALT)
     # Existing perpetual PINs remain compatible. Dated certificates bind expiry
@@ -116,10 +119,11 @@ def verify_license() -> dict:
         stored_key = data.get('activation_key', '')
         licensee = data.get('licensee', 'Standard Client')
         expiry = data.get('expiry_date', 'PERPETUAL')
-        if stored_hwid != current_hwid:
+        if normalize_hwid(stored_hwid) != normalize_hwid(current_hwid):
             return {'valid': False, 'status': 'CLONED_HARDWARE_MISMATCH', 'hwid': current_hwid, 'tier': stored_tier, 'licensee': licensee, 'message': 'Hardware mismatch! License issued for {}, but running on {}.'.format(stored_hwid, current_hwid)}
         expected_key = compute_activation_pin(stored_hwid, stored_tier, expiry)
-        if stored_key != expected_key:
+        legacy_key = compute_activation_pin(stored_hwid, stored_tier, expiry, legacy_prefix=True)
+        if stored_key not in (expected_key, legacy_key):
             return {'valid': False, 'status': 'CORRUPTED_SIGNATURE', 'hwid': current_hwid, 'tier': stored_tier, 'licensee': licensee, 'message': 'Invalid cryptographic license signature.'}
         if expiry != 'PERPETUAL':
             try:
@@ -141,6 +145,10 @@ def activate_machine(activation_pin: str, licensee_name: str='Store Owner', tier
     expected_pin = compute_activation_pin(current_hwid, tier)
     clean_pin = re.sub(r'[^0-9A-F]', '', str(activation_pin).strip().upper())
     expected_clean = re.sub(r'[^0-9A-F]', '', expected_pin.strip().upper())
+    legacy_pin = compute_activation_pin(current_hwid, tier, legacy_prefix=True)
+    if clean_pin == re.sub(r'[^0-9A-F]', '', legacy_pin):
+        expected_pin = legacy_pin
+        expected_clean = clean_pin
     if clean_pin != expected_clean:
         return {'success': False, 'message': 'Invalid Activation PIN. Please check your Hardware ID and try again.'}
     license_data = {'vendor': 'Eco-Fi Technologies', 'licensee': licensee_name, 'machine_hwid': current_hwid, 'tier': tier, 'activation_key': expected_pin, 'activated_at': time.strftime('%Y-%m-%d %H:%M:%S'), 'expiry_date': 'PERPETUAL'}

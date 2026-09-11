@@ -62,7 +62,7 @@ def run_migration(db_path,dry_run=False,now_utc=None,memory_snapshot=None,resolu
             for g in engine.all_rows(conn,'SELECT * FROM time_grants WHERE remaining_us IS NULL'):
                 cd=engine.one(conn,'SELECT * FROM connections WHERE selected_grant_id=?',(g['id'],))
                 matching=[r for r in legacy if cd and str(r.get('mac','')).lower()==cd['mac']]
-                amount=storage.to_us(g['remaining_seconds']) if g['state'] in engine.LIVE else 0
+                amount=storage.to_us(g['remaining_seconds']) if g['state'] in engine.LIVE+('ARCHIVED',) else 0
                 resolution=resolutions.get('grant:'+g['id'])
                 if matching and storage.to_us(matching[0].get('remaining_seconds',0))!=amount and not resolution:
                     report['unresolved'].append({'source':'grant:'+g['id'],'grant_seconds':g['remaining_seconds'],
@@ -169,8 +169,8 @@ def run_migration(db_path,dry_run=False,now_utc=None,memory_snapshot=None,resolu
                 amount=storage.to_us(float(member.get('wallet_minutes') or 0)*60)
                 owner=engine.get_or_create_owner(conn,'member',member['username'],now)
                 if amount<0:raise ValueError('negative_legacy_wallet')
-                g=engine._create_grant(conn,owner,amount,'legacy_wallet',now,'legacy_ecofi_pause_v1',source_ref=key,state='WALLET',op='import:'+key) if amount else None
-                mapped(key,g['id'] if g else None,amount,'wallet',member)
+                g=engine._create_grant(conn,owner,amount,'legacy_wallet',now,'legacy_ecofi_pause_v1',source_ref=key,state='ARCHIVED',op='import:'+key) if amount else None
+                mapped(key,g['id'] if g else None,amount,'archived_wallet',member)
                 report['total_legacy_seconds']+=amount/float(storage.SCALE);report['imported_seconds']+=amount/float(storage.SCALE)
             for transfer in transfers:
                 key='time_transfers:'+transfer['code']

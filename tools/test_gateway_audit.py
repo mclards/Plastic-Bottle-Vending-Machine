@@ -235,12 +235,6 @@ class GatewayAudit(unittest.TestCase):
         self.assertEqual(sum(x['remaining_seconds'] for x in self.p.active_clients.values()),600)
         self.assertFalse(self.post(self.b,'/api/transfer/claim',{'code':r['code']},ip='10.0.7.118').json['success'])
 
-    def test_member_wallet_round_trip(self):
-        self.sess(seconds=600)
-        self.assertTrue(self.post(self.a,'/api/member/register',{'username':'auditmember','pin':'1234'}).json['success'])
-        self.assertTrue(self.post(self.a,'/api/member/save_time',{'username':'auditmember','pin':'1234'}).json['success'])
-        self.assertTrue(self.post(self.a,'/api/member/use_wallet',{'username':'auditmember','pin':'1234','minutes':10}).json['success'])
-        self.assertEqual(self.p.active_clients['10.0.7.117']['remaining_seconds'],600)
 
     def concurrent_claims(self,query,path,data):
         barrier=threading.Barrier(2);results=[]
@@ -266,12 +260,6 @@ class GatewayAudit(unittest.TestCase):
         results=self.concurrent_claims('', '/api/transfer/claim',{'code':code})
         self.assertEqual(sum(x.get('success',False) for x in results),1,results)
 
-    def test_wallet_concurrent_withdrawal_cannot_overspend(self):
-        self.login_admin()
-        self.post(self.a,'/admin/api/members/add',{'username':'auditmember','pin':'1234','wallet_minutes':10})
-        results=self.concurrent_claims('SELECT pin_hash, wallet_minutes FROM members','/api/member/use_wallet',
-                                      {'username':'auditmember','pin':'1234','minutes':10})
-        self.assertEqual(sum(x.get('success',False) for x in results),1,results)
 
 
 class LicenseAudit(unittest.TestCase):
@@ -299,6 +287,22 @@ class LicenseAudit(unittest.TestCase):
         self.assertEqual(self.l.verify_license()['status'],'UNLICENSED')
     def test_valid_perpetual_license_accepted(self):
         self.assertTrue(self.status()['valid'])
+    def legacy_pin(self,expiry='PERPETUAL'):
+        import hashlib
+        payload='ECOFI-1111-2222-3333-4444::COMMERCIAL::'+self.l.VENDOR_SECRET_SALT
+        if expiry!='PERPETUAL':payload+='::EXPIRY::'+expiry
+        digest=hashlib.sha256(payload.encode('utf8')).hexdigest().upper()[:16]
+        return '-'.join(digest[i:i+4] for i in range(0,16,4))
+    def test_pre_branding_license_and_unused_pin_remain_valid(self):
+        pin=self.legacy_pin()
+        self.assertTrue(self.status(machine_hwid='ECOFI-1111-2222-3333-4444',activation_key=pin)['valid'])
+        self.assertTrue(self.l.activate_machine(pin)['success'])
+        self.assertTrue(self.l.verify_license()['valid'])
+    def test_pre_branding_dated_license_keeps_expiry_binding(self):
+        pin=self.legacy_pin('2099-01-01')
+        self.assertTrue(self.status(expiry_date='2099-01-01',activation_key=pin)['valid'])
+        self.assertFalse(self.status(expiry_date='2099-01-02',activation_key=pin)['valid'])
+        self.assertFalse(self.status(activation_key=pin)['valid'])
     def test_wrong_board_rejected(self):
         self.assertEqual(self.status(machine_hwid='OTHER')['status'],'CLONED_HARDWARE_MISMATCH')
     def test_wrong_signature_rejected(self):

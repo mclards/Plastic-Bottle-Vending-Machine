@@ -10,6 +10,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import sqlite3
 import sys
@@ -108,6 +109,25 @@ class EngineRegression(unittest.TestCase):
         self.c.execute('UPDATE time_policy_versions SET pause_count_max=0 WHERE id=?',('pisofi_time_v1',))
         self.mint();self.assertEqual(self.op('PAUSE')['error'],'pause_limit_reached')
 
+    def test_exhausted_pause_budget_does_not_block_automatic_queued_credit(self):
+        current=self.mint(600);queued=self.mint(1200)
+        for count in range(3):
+            self.assertTrue(self.op('PAUSE')['success'])
+            self.assertTrue(self.op('RESUME')['success'])
+        self.assertEqual(self.op('SWITCH',{'grant_id':queued})['error'],'unknown_action')
+        self.assertEqual(e.connection(self.c,self.cd['id'])['selected_grant_id'],current)
+        self.assertEqual(e.grant(self.c,queued)['remaining_us'],1200000000)
+        # Keep the network lease acknowledged while consuming the current credit.
+        for tick in range(40):
+            self.allow();self.advance(15);e.check_due_events(self.c,self.now,self.mono)
+        self.assertEqual(e.grant(self.c,current)['remaining_us'],0)
+        self.assertEqual(e.connection(self.c,self.cd['id'])['selected_grant_id'],queued)
+        status=e.snapshot(self.c,self.cd['id'],self.now)
+        self.assertEqual(status['state'],'ACTIVE')
+        self.assertEqual(status['pauses_left'],3)
+        self.assertEqual(status['remaining_seconds'],1200)
+        self.conserved()
+
     def test_policy_snapshot_is_immutable(self):
         self.mint()
         with self.assertRaises(sqlite3.IntegrityError):self.c.execute('UPDATE time_policy_versions SET pause_count_max=9 WHERE id=?',('pisofi_time_v1',))
@@ -138,16 +158,23 @@ class EngineRegression(unittest.TestCase):
         self.assertGreater(moved['binding_version'],intent['version'])
         self.assertFalse(e.acknowledge_network(self.c,intent,self.now,self.mono,True))
 
-    def test_wallet_preserves_fraction_policy_and_shared_budget(self):
-        gid=self.mint(125.5);member=e.get_or_create_owner(self.c,'member','alice',self.now)
-        self.assertTrue(self.op('WALLET_SAVE',{'wallet_owner_id':member})['success'])
-        self.assertEqual(e.wallet_us(self.c,member,self.now),125500000)
-        cd=e.bind_member(self.c,self.cd['id'],member,self.now,self.mono)
-        self.assertTrue(self.op('WALLET_WITHDRAW',{'seconds':120},cd=cd,owner=member)['success'])
-        self.assertEqual(e.wallet_us(self.c,member,self.now),5500000)
-        new=e.grant(self.c,e.connection(self.c,cd['id'])['selected_grant_id'])
-        self.assertEqual(new['pause_budget_id'],e.grant(self.c,gid)['pause_budget_id'])
-        self.assertEqual(new['valid_until_utc'],e.grant(self.c,gid)['valid_until_utc']);self.conserved()
+
+    def test_old_wallet_balances_are_archived_and_never_activated(self):
+        current=self.mint(600);queued=self.mint(1200)
+        old=e._create_grant(self.c,self.owner,125500000,'legacy_wallet',self.now,state='WALLET')
+        self.c.execute('UPDATE time_grants SET valid_until_utc=? WHERE id=?',(self.now-1,old['id']))
+        for attempt in range(2):s.init_time_schema(self.c)
+        self.assertEqual(e.grant(self.c,old['id'])['state'],'ARCHIVED')
+        self.assertEqual(e.grant(self.c,old['id'])['remaining_us'],125500000)
+        self.assertEqual(self.op('SWITCH',{'grant_id':old['id']})['error'],'unknown_action')
+        e.check_due_events(self.c,self.now,self.mono)
+        self.assertEqual(e.grant(self.c,old['id'])['remaining_us'],125500000)
+        self.assertEqual(e.connection(self.c,self.cd['id'])['selected_grant_id'],current)
+        self.op('ADMIN_SET_BALANCE',{'seconds':0})
+        self.assertEqual(e.connection(self.c,self.cd['id'])['selected_grant_id'],queued)
+        self.op('ADMIN_SET_BALANCE',{'seconds':0})
+        self.assertIsNone(e.connection(self.c,self.cd['id'])['selected_grant_id'])
+        self.conserved()
 
     def test_transfer_conserves_and_claims_once(self):
         self.mint(125.5);transfer=self.op('TRANSFER_CREATE',{'seconds':120},'send')
@@ -178,6 +205,15 @@ class MigrationRegression(unittest.TestCase):
             self.assertEqual(c.execute('SELECT SUM(remaining_us) FROM time_grants').fetchone()[0],109200000000)
             self.assertEqual(c.execute('SELECT COUNT(*) FROM time_grants WHERE valid_until_utc IS NOT NULL').fetchone()[0],0)
             self.assertEqual(c.execute('SELECT COUNT(*) FROM connections WHERE selected_grant_id IS NOT NULL').fetchone()[0],1)
+
+    def test_legacy_wallet_import_is_archival_only(self):
+        with database(self.path) as c:c.execute("INSERT INTO members VALUES ('retired',12.5)")
+        for attempt in range(2):
+            result=migration.run_migration(self.path,now_utc=100000)
+            self.assertTrue(result['success'],result)
+        with database(self.path) as c:
+            self.assertEqual(c.execute("SELECT state,remaining_us FROM time_grants WHERE origin='legacy_wallet'").fetchall(),[('ARCHIVED',750000000)])
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM connections WHERE selected_grant_id IS NOT NULL').fetchone()[0],0)
 
     def test_overdue_legacy_expires_and_rerun_does_not_reimport(self):
         self.put('10.0.0.2','02:00:00:00:00:01',1800,1,99999)
@@ -265,7 +301,7 @@ class PortalRegression(unittest.TestCase):
         for name in ('set_license','grant','revoke','policies'):
             network_patch=patch.object(p.gateway_network,name,return_value=True);network_patch.start();self.addCleanup(network_patch.stop)
         p.time_service.clock_trusted=lambda:True;p.time_service.last_success_mono=None;p.time_service.last_utc=None
-        p.time_service.login_attempts.clear();self.client=p.app.test_client()
+        self.client=p.app.test_client()
 
     def request(self,path,data=None,ip='10.0.0.2',get=False):
         self.seq+=1;data=dict(data or {});data.setdefault('operation_id','request:'+str(self.seq))
@@ -278,18 +314,203 @@ class PortalRegression(unittest.TestCase):
     def scalar(self,sql):
         with self.p.db_connection() as c:return c.execute(sql).fetchone()[0]
 
+    def test_manual_credit_switch_route_is_removed(self):
+        initial=self.voucher(600)
+        response=self.request('/api/client/switch',{'grant_id':initial['grant_id']})
+        self.assertEqual(response.status_code,404)
+        self.assertNotIn('/api/client/switch',[r.rule for r in self.p.app.url_map.iter_rules()])
+        self.assertEqual(self.request('/api/vendo/status',get=True).get_json()['remaining_seconds'],600)
+
+    def test_kick_persists_through_worker_and_restore_until_admin_resume(self):
+        self.voucher(125.5)
+        self.request('/api/client/pause',{'action':'pause'})
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        kicked=self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':'kick'}).get_json()
+        self.assertTrue(kicked['success']);self.assertFalse(kicked['network_pending'])
+        self.p.time_service.restore()
+        self.utc+=10;self.mono+=10;self.p.time_service.worker_pass()
+        blocked=self.request('/api/client/pause',{'action':'resume'}).get_json()
+        self.assertEqual(blocked['error'],'admin_suspended')
+        current=self.request('/api/vendo/status',get=True).get_json()
+        self.assertEqual(current['state'],'HELD');self.assertEqual(current['remaining_seconds'],125.5)
+        self.assertEqual(current['pauses_left'],2)
+        self.assertEqual(self.scalar("SELECT COUNT(*) FROM grant_pauses WHERE status='OPEN'"),0)
+        resumed=self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':'resume'}).get_json()
+        self.assertTrue(resumed['success'])
+        self.assertEqual(self.request('/api/vendo/status',get=True).get_json()['state'],'ACTIVE')
+
+    def test_failed_kick_revoke_is_pending_and_retried(self):
+        self.voucher()
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        with patch.object(self.p,'update_firewall',return_value=False):
+            result=self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':'kick'}).get_json()
+        self.assertTrue(result['success']);self.assertTrue(result['network_pending'])
+        self.assertGreater(self.scalar("SELECT COUNT(*) FROM network_intents WHERE status='PENDING'"),0)
+        with patch.object(self.p,'update_firewall',return_value=True) as firewall:self.p.time_service.reconcile()
+        self.assertTrue(any(call[0][1]=='del' for call in firewall.call_args_list))
+        self.assertEqual(self.scalar("SELECT COUNT(*) FROM network_intents WHERE status='PENDING'"),0)
+
+    def test_whitelist_does_not_bypass_kick(self):
+        self.voucher()
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':'kick'})
+        with self.p.db_connection() as c:c.execute("INSERT INTO mac_control(mac,type) VALUES ('02:00:00:00:00:01','whitelist')")
+        with patch.object(self.p.platform,'system',return_value='Linux'),patch.object(self.p.gateway_network,'grant') as grant,patch.object(self.p.gateway_network,'revoke') as revoke:
+            self.p.time_service.worker_pass()
+        grant.assert_not_called();revoke.assert_called_with('10.0.0.2')
+        self.assertEqual(self.scalar('SELECT remaining_us FROM time_grants'),600000000)
+
+    def test_admin_targets_required_and_missing_disconnect_rejected(self):
+        self.voucher()
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        for path,data in [('/admin/api/client/action',{'action':'kick'}),('/admin/api/client/edit',{'minutes':0}),('/admin/api/client/action',{'ip':'10.0.0.99','action':'kick'})]:
+            response=self.request(path,data);self.assertEqual(response.status_code,400,response.get_json())
+        self.assertEqual(self.request('/admin/api/clients/disconnect',{'ip':'10.0.0.99'}).status_code,404)
+        self.assertEqual(self.scalar('SELECT remaining_us FROM time_grants'),600000000)
+
+    def test_speed_only_edit_preserves_fractional_time_and_invalid_edit_rolls_back(self):
+        self.voucher(125.567)
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        result=self.request('/admin/api/client/edit',{'ip':'10.0.0.2','dl_kbps':4096,'ul_kbps':1024})
+        self.assertEqual(result.status_code,200,result.get_json())
+        self.assertEqual(self.scalar('SELECT remaining_us FROM time_grants'),125567000)
+        result=self.request('/admin/api/client/edit',{'ip':'10.0.0.2','minutes':1,'dl_kbps':5000,'ul_kbps':0})
+        self.assertEqual(result.status_code,400,result.get_json())
+        self.assertEqual(self.scalar('SELECT remaining_us FROM time_grants'),125567000)
+        self.assertEqual(self.scalar('SELECT dl_kbps FROM time_grants'),4096)
+
+    def test_mac_rename_conflict_preserves_original_and_success_keeps_limits(self):
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        with self.p.db_connection() as c:
+            c.execute("INSERT INTO mac_control(mac,type,dl_kbps,ul_kbps) VALUES ('02:00:00:00:00:11','whitelist',4096,1024)")
+            c.execute("INSERT INTO mac_control(mac,type) VALUES ('02:00:00:00:00:12','block')")
+        with patch.object(self.p,'apply_walled_garden_and_macs'):
+            conflict=self.request('/admin/api/mac_control/add',{'original_mac':'02:00:00:00:00:11','mac':'02:00:00:00:00:12','type':'whitelist'})
+            self.assertEqual(conflict.status_code,409)
+            self.assertEqual(self.scalar('SELECT COUNT(*) FROM mac_control'),2)
+            moved=self.request('/admin/api/mac_control/add',{'original_mac':'02:00:00:00:00:11','mac':'02:00:00:00:00:13','type':'whitelist'})
+            self.assertEqual(moved.status_code,200,moved.get_json())
+        self.assertEqual(self.scalar("SELECT dl_kbps FROM mac_control WHERE mac='02:00:00:00:00:13'"),4096)
+        self.assertEqual(self.scalar("SELECT COUNT(*) FROM mac_control WHERE mac='02:00:00:00:00:11'"),0)
+
+    def test_bandwidth_rejects_unsupported_or_invalid_settings_before_writes(self):
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        before=self.p.get_config('default_dl_kbps')
+        for data,code in [({'default_dl_kbps':0},400),({'default_dl_kbps':4096,'dynamic_bandwidth_enabled':'1'},501),({'qos_gaming_enabled':'1'},501)]:
+            result=self.request('/admin/api/bandwidth/qos/save',data)
+            self.assertEqual(result.status_code,code,result.get_json())
+            self.assertEqual(self.p.get_config('default_dl_kbps'),before)
+        result=self.request('/admin/api/bandwidth/qos/save',{'default_dl_kbps':4096,'default_ul_kbps':1024})
+        self.assertEqual(result.status_code,200,result.get_json())
+        self.assertEqual(self.p.get_config('default_dl_kbps'),'4096')
+
+    def test_admin_add15_extends_selected_credit_once_without_queue(self):
+        initial=self.voucher(125.5)
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        for attempt in range(2):
+            result=self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':'add15','operation_id':'same-add'}).get_json()
+            self.assertTrue(result['success'],result)
+        current=self.request('/api/vendo/status',get=True).get_json()
+        self.assertEqual(current['grant_id'],initial['grant_id'])
+        self.assertEqual(current['remaining_seconds'],1025.5)
+        self.assertEqual(self.scalar('SELECT COUNT(*) FROM time_grants'),1)
+        self.assertEqual(current['pauses_left'],3)
+
+    def test_admin_resume_releases_customer_pause_without_resetting_budget(self):
+        self.voucher()
+        paused=self.request('/api/client/pause',{'action':'pause'}).get_json()
+        self.assertTrue(paused['success']);self.assertFalse(paused['network_pending'])
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        result=self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':'resume'}).get_json()
+        self.assertTrue(result['success'],result)
+        current=self.request('/api/vendo/status',get=True).get_json()
+        self.assertEqual(current['state'],'ACTIVE');self.assertFalse(current['is_paused'])
+        self.assertEqual(current['pauses_left'],2)
+        self.assertEqual(self.scalar("SELECT COUNT(*) FROM grant_pauses WHERE status='OPEN'"),0)
+
+    def test_admin_client_status_includes_actual_network_state(self):
+        self.voucher()
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        with patch.object(self.p,'update_firewall',return_value=False):
+            self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':'pause'})
+        rows=self.request('/admin/api/clients',get=True).get_json()
+        self.assertIn('applied_state',rows[0]);self.assertIn('admin_paused',rows[0])
+        self.assertEqual(rows[0]['desired_state'],'DISCONNECTED')
+
     def test_admin_routes_restored_and_guarded(self):
         for path in ('/admin/api/clients','/admin/api/rates/list','/admin/api/time/diagnostics','/simulator/api/state'):
             self.assertEqual(self.request(path,get=True).status_code,401,path)
         self.assertEqual(self.request('/admin/login',get=True).status_code,200)
 
-    def test_member_hash_compatibility_and_plaintext_upgrade(self):
-        result=self.request('/api/member/register',{'username':'alice','pin':'1234'});self.assertTrue(result.get_json()['success'])
-        self.assertNotEqual(self.scalar("SELECT pin_hash FROM members WHERE username='alice'"),'1234')
-        self.assertTrue(self.request('/api/member/login',{'username':'alice','pin':'1234'}).get_json()['success'])
-        with self.p.db_connection() as c:c.execute("UPDATE members SET pin_hash='1234' WHERE username='alice'")
-        self.assertTrue(self.request('/api/member/login',{'username':'alice','pin':'1234'}).get_json()['success'])
-        self.assertNotEqual(self.scalar("SELECT pin_hash FROM members WHERE username='alice'"),'1234')
+    def test_admin_button_api_targets_resolve(self):
+        adapter=self.p.app.url_map.bind('localhost')
+        calls=re.findall(r"(?:adminFetch|fetch)\(\s*['\"](/admin/api/[^'\"]+)['\"]\s*(,\s*\{\s*method\s*:\s*['\"]POST['\"])?",self.p.ADMIN_HTML)
+        self.assertGreater(len(calls),40)
+        for path,post in calls:
+            endpoint,args=adapter.match(path.split('?')[0],method='POST' if post else 'GET')
+            self.assertIn(endpoint,self.p.app.view_functions,path)
+
+
+    def test_member_routes_are_removed_and_do_not_change_credit(self):
+        initial=self.voucher(600)
+        public=['/api/member/register','/api/member/login','/api/member/save_time','/api/member/use_wallet']
+        admin=['/admin/api/members/add','/admin/api/members/topup','/admin/api/members/delete']
+        for path in public:
+            self.assertEqual(self.request(path,{'username':'retired','pin':'1234','minutes':50}).status_code,404,path)
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        for path in public+admin:
+            self.assertEqual(self.request(path,{'username':'retired','pin':'1234','minutes':50}).status_code,404,path)
+        self.assertEqual(self.request('/admin/api/members/list',get=True).status_code,404)
+        self.assertFalse(any('/member' in rule.rule for rule in self.p.app.url_map.iter_rules()))
+        current=self.request('/api/vendo/status',get=True).get_json()
+        self.assertEqual(current['grant_id'],initial['grant_id'])
+        self.assertEqual(current['remaining_seconds'],600)
+        self.assertEqual(current['pauses_left'],3)
+        self.assertEqual(self.scalar("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='members'"),0)
+
+    def test_member_ui_and_wallet_export_are_removed(self):
+        public=self.request('/',get=True).get_data(as_text=True)
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        admin=self.request('/admin',get=True).get_data(as_text=True)
+        for text in [public,admin]:
+            for token in ['tab-member','sec-members','Member Wallet','/api/member/','/admin/api/members/','saveMemberWallet']:
+                self.assertNotIn(token,text)
+        for token in ['tab-rates','tab-voucher','tab-transfer']:
+            self.assertIn(token,public)
+        self.assertEqual(self.request('/admin/api/export_csv',get=True).status_code,200)
+        if self.p.openpyxl:
+            wb=self.p.generate_ecofi_excel_report(self.p.DB_PATH)
+            self.assertNotIn('Member Wallets',wb.sheetnames)
+            self.assertEqual(len(wb.sheetnames),3)
+            wb.close()
+
+    def test_legacy_member_credit_survives_without_wallet_operations(self):
+        initial=self.voucher(600)
+        with self.p.db_connection() as c:
+            # Represent a previously linked account without restoring its login feature.
+            owner=c.execute('SELECT owner_id FROM time_grants WHERE id=?',(initial['grant_id'],)).fetchone()[0]
+            c.execute("UPDATE credit_owners SET owner_type='member',owner_key='member:retired' WHERE id=?",(owner,))
+            archived=e._create_grant(c,owner,125500000,'legacy_wallet',self.utc,state='WALLET')
+            cd=e.one(c,'SELECT * FROM connections WHERE selected_grant_id=?',(initial['grant_id'],))
+            for action in ['WALLET_SAVE','WALLET_WITHDRAW']:
+                result=e.apply_operation(c,owner,cd,action,{'seconds':60,'wallet_owner_id':owner},'retired:'+action,self.utc,self.mono)
+                self.assertEqual(result['error'],'unknown_action')
+            self.assertEqual(e.grant(c,archived['id'])['remaining_us'],125500000)
+        self.p.time_service.restore()
+        current=self.request('/api/vendo/status',get=True).get_json()
+        self.assertEqual(current['grant_id'],initial['grant_id'])
+        self.assertEqual(current['remaining_seconds'],600)
+        self.assertEqual(current['pauses_left'],3)
+        self.assertTrue(self.request('/api/client/pause',{'action':'pause'}).get_json()['success'])
+        self.assertTrue(self.request('/api/client/pause',{'action':'resume'}).get_json()['success'])
+
+    def test_removed_member_setting_cannot_be_reenabled(self):
+        self.assertEqual(self.request('/admin/api/settings/save',{'member_wallet_enabled':'0'}).status_code,401)
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        for value in [True,False,'1','0',2,None,[],{},1.0]:
+            self.assertEqual(self.request('/admin/api/settings/save',{'member_wallet_enabled':value}).status_code,400)
+        self.assertNotIn('member_wallet_enabled',self.request('/api/vendo/status',get=True).get_json())
+
 
     def test_finalized_bottle_restart_is_not_credited_twice(self):
         opened=self.request('/api/vendo/open_gate').get_json();self.assertTrue(opened['success'],opened)
@@ -329,13 +550,20 @@ class PortalRegression(unittest.TestCase):
         state=self.request('/api/vendo/status',get=True).get_json()
         self.assertEqual(state['pause_count_used'],3);self.assertEqual(state['pauses_left'],0);self.assertFalse(state['can_pause'])
 
-    def test_wallet_exact_seconds_are_conserved_across_real_routes(self):
-        self.voucher(125.5);self.request('/api/member/register',{'username':'alice','pin':'1234'})
-        saved=self.request('/api/member/save_time',{'username':'alice','pin':'1234'}).get_json()
-        self.assertTrue(saved['success'],saved);self.assertEqual(saved['wallet_seconds'],125.5)
-        used=self.request('/api/member/use_wallet',{'username':'alice','pin':'1234','minutes':2}).get_json()
-        self.assertTrue(used['success'],used);self.assertEqual(used['wallet_seconds'],5.5)
-        self.assertEqual(self.scalar('SELECT SUM(remaining_us) FROM time_grants'),125500000)
+    def test_dashboard_counts_only_confirmed_live_access(self):
+        self.voucher();self.p.time_service.worker_pass()
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        def count():return self.request('/admin/api/stats',get=True).get_json()['active_clients']
+        self.assertEqual(count(),1)
+        for action in ('pause','kick'):
+            self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':action})
+            self.assertEqual(count(),0)
+            self.assertGreater(self.scalar('SELECT remaining_us FROM time_grants'),0)
+            self.request('/admin/api/client/action',{'ip':'10.0.0.2','action':'resume'})
+            self.assertEqual(count(),1)
+        self.utc+=16;self.mono+=16
+        self.assertEqual(count(),0)
+
 
     def test_worker_death_stops_renewal_during_status_polling(self):
         self.voucher();self.p.time_service.worker_pass()
@@ -345,20 +573,6 @@ class PortalRegression(unittest.TestCase):
         self.assertFalse(any(args[1]=='add' for args in calls),calls)
         self.assertEqual(self.scalar('SELECT remaining_us FROM time_grants'),585000000)
 
-    def test_member_rebind_revokes_old_device_and_cannot_cross_save(self):
-        self.voucher();self.request('/api/member/register',{'username':'alice','pin':'1234'})
-        self.request('/api/member/login',{'username':'alice','pin':'1234'})
-        self.request('/api/member/register',{'username':'bobby','pin':'4321'})
-        denied=self.request('/api/member/save_time',{'username':'bobby','pin':'4321'}).get_json()
-        self.assertFalse(denied['success'])
-        moved=self.request('/api/member/login',{'username':'alice','pin':'1234'},ip='10.0.0.3').get_json();self.assertTrue(moved['success'],moved)
-        old=self.request('/api/vendo/status',get=True).get_json()
-        new=self.request('/api/vendo/status',get=True,ip='10.0.0.3').get_json()
-        self.assertEqual(old['remaining_seconds'],0);self.assertEqual(new['remaining_seconds'],600)
-        self.voucher(60,'SECOND')
-        old=self.request('/api/vendo/status',get=True).get_json()
-        self.assertEqual(old['remaining_seconds'],60)
-        self.assertEqual(self.request('/api/vendo/status',get=True,ip='10.0.0.3').get_json()['remaining_seconds'],600)
 
     def test_voucher_retry_retains_policy_after_admin_change(self):
         first=self.voucher()
@@ -413,29 +627,6 @@ class PortalRegression(unittest.TestCase):
         self.p.set_config('simulator_enabled','1')
         self.assertEqual(self.request('/simulator/api/state',get=True).status_code,200)
 
-    def test_wallet_deduction_is_atomic_and_idempotent(self):
-        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
-        self.assertTrue(self.request('/admin/api/members/add',{'username':'audit','pin':'1234','wallet_minutes':10}).get_json()['success'])
-        data={'username':'audit','minutes':-3,'operation_id':'deduct-once'}
-        for _ in range(2):self.assertTrue(self.request('/admin/api/members/topup',data).get_json()['success'])
-        self.assertEqual(self.scalar("SELECT SUM(remaining_us) FROM time_grants WHERE state='WALLET'"),420000000)
-        self.assertEqual(self.request('/admin/api/members/topup',dict(data,minutes=-4)).status_code,400)
-        self.assertEqual(self.request('/admin/api/members/topup',{'username':'audit','minutes':-8}).status_code,400)
-        self.assertEqual(self.scalar('SELECT SUM(remaining_us) FROM time_grants'),420000000)
-
-    def test_member_delete_preserves_ledger_and_revokes_access(self):
-        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
-        self.request('/admin/api/members/add',{'username':'audit','pin':'1234','wallet_minutes':10})
-        self.request('/api/member/login',{'username':'audit','pin':'1234'})
-        self.assertTrue(self.request('/api/member/use_wallet',{'username':'audit','pin':'1234','minutes':5}).get_json()['success'])
-        self.p.time_service.worker_pass()
-        with patch.object(self.p,'update_firewall',return_value=True) as network:
-            self.assertTrue(self.request('/admin/api/members/delete',{'username':'audit'}).get_json()['success'])
-        self.assertTrue(any(call.args[:2]==('10.0.0.2','del') for call in network.call_args_list))
-        self.assertEqual(self.scalar('SELECT SUM(remaining_us) FROM time_grants'),0)
-        self.assertEqual(self.scalar('SELECT COUNT(*) FROM ledger_accounts a JOIN time_grants g ON a.grant_id=g.id WHERE a.balance_us<>g.remaining_us'),0)
-        self.assertEqual(self.scalar('SELECT COALESCE(SUM(delta_us),0) FROM time_ledger'),0)
-
 
     def test_physical_finish_retries_finalize_once(self):
         opened=self.request('/api/vendo/open_gate').get_json();sent=[];self.p.transmit_to_esp32=sent.append
@@ -447,15 +638,34 @@ class PortalRegression(unittest.TestCase):
 
     def test_unsynchronized_modern_date_does_not_become_trusted(self):
         service=self.p.time_service;service.clock_checked=None;service.clock_ok=False
-        result=type('Result',(),{'returncode':0,'stdout':b'NTPSynchronized=no'})()
+        result=type('Result',(),{'returncode':0,'stdout':b'NTP synchronized: no'})()
         with patch.dict(os.environ,{'ECOFI_TRUST_CLOCK':'0'}),patch.object(self.p.platform,'system',return_value='Linux'),patch.object(self.p.subprocess,'run',return_value=result) as run:
             self.utc=1800000000.
             self.assertFalse(type(service).clock_trusted(service))
             self.assertFalse(type(service).clock_trusted(service))
             self.assertEqual(run.call_count,1)
-            self.mono+=11;result.stdout=b'NTPSynchronized=yes'
+            self.mono+=2;result.stdout=b'NTP synchronized: yes'
             self.assertTrue(type(service).clock_trusted(service))
             self.assertTrue(all(call.args[0][0]=='timedatectl' for call in run.call_args_list))
+
+    def test_clock_status_compatibility_and_failed_probe(self):
+        service=self.p.time_service
+        with patch.dict(os.environ,{'ECOFI_TRUST_CLOCK':'0'}),patch.object(self.p.platform,'system',return_value='Linux'):
+            for output,code,expected in [(b' NTP synchronized: yes\n',0,True),
+                    (b'System clock synchronized: yes\n',0,True),
+                    (b'NTP service: active\nSystem clock synchronized: no\n',0,False),
+                    (b'NTP synchronized: yes\n',1,False)]:
+                service.clock_checked=None;service.clock_ok=False
+                result=type('Result',(),{'returncode':code,'stdout':output})()
+                with patch.object(self.p.subprocess,'run',return_value=result) as run:
+                    self.assertEqual(type(service).clock_trusted(service),expected)
+                    self.assertEqual(run.call_args[0][0],['timedatectl','status'])
+                    self.assertEqual(run.call_args[1]['env']['LC_ALL'],'C')
+                    self.assertEqual(run.call_args[1]['timeout'],2)
+            service.clock_checked=None;service.clock_ok=False
+            with patch.object(self.p.subprocess,'run',side_effect=OSError('not available')) as run:
+                self.assertFalse(type(service).clock_trusted(service))
+                self.assertEqual(run.call_count,1)
 
     def test_default_garden_does_not_bypass_captive_probes(self):
         self.assertEqual(self.scalar('SELECT COUNT(*) FROM walled_garden'),0)
@@ -591,7 +801,6 @@ class PortalRegression(unittest.TestCase):
         with patch.object(self.p.platform,'system',return_value='Linux'),patch.object(self.p.socket,'getaddrinfo',return_value=answers),patch.object(self.p.gateway_network,'policies') as policies,patch.object(self.p.time_service,'worker_pass'):
             self.p.apply_walled_garden_and_macs()
         self.assertEqual(policies.call_args[0],(set(),{'93.184.216.34'}))
-
 
 
 def uuid_token():

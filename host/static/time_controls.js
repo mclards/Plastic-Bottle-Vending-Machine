@@ -47,7 +47,7 @@
         hours = hours % 12;
         if (hours === 0) hours = 12;
         var minsStr = mins < 10 ? '0' + mins : mins;
-        return m + ' ' + day + ', ' + year + ' · ' + hours + ':' + minsStr + ' ' + ampm;
+        return m + ' ' + day + ', ' + year + ' \u00b7 ' + hours + ':' + minsStr + ' ' + ampm;
     }
     function nonce() {
         var bytes = new Uint32Array(4);
@@ -92,16 +92,6 @@
                 if (key && response.status < 500 && !data.retryable) setPending(key, null);
                 if (path === '/api/vendo/status') {
                     latest = data; setTimeout(function () { renderStatus(data); }, 0);
-                }
-                if (/^\/api\/member\//.test(path) && data.wallet_seconds != null) {
-                    setTimeout(function () {
-                        if (typeof updateWalletCard === 'function') {
-                            updateWalletCard(data.wallet_seconds, data.wallet_minutes);
-                        } else {
-                            var wallet = document.getElementById('mem-wallet-mins');
-                            if (wallet) wallet.textContent = typeof formatTime === 'function' ? formatTime(data.wallet_seconds) : duration(data.wallet_seconds);
-                        }
-                    }, 0);
                 }
                 return response;
             }, function () { return response; });
@@ -181,34 +171,6 @@
         var badge = document.getElementById('status-badge');
         if (badge && data.applied_state !== 'ACTIVE' && !data.is_paused) badge.textContent = data.remaining_seconds > 0 ? 'WAITING FOR ACCESS' : 'DISCONNECTED';
 
-        var otherGrants = (data.grants || []).filter(function(g) { return g.id !== data.grant_id && g.remaining_seconds > 0; });
-        if (otherGrants.length > 0) {
-            var grantsSection = element('div', undefined, panel);
-            grantsSection.style.cssText = 'margin-top:8px;padding-top:7px;border-top:1px solid rgba(255,255,255,0.06);';
-            var grantTitle = element('div', 'Other Available Credits:', grantsSection);
-            grantTitle.style.cssText = 'font-size:10px;text-transform:uppercase;color:#94a3b8;font-weight:600;margin-bottom:5px;';
-
-            otherGrants.forEach(function(grant) {
-                var row = element('div', undefined, grantsSection);
-                row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:6px;padding:5px 8px;margin-bottom:4px;font-size:11px;color:#cbd5e1;';
-                element('span', duration(grant.remaining_seconds) + ' (' + grant.state.toLowerCase() + ')', row);
-                if (grant.state !== 'HELD') {
-                    var button = element('button', 'Use Credit', row);
-                    button.type = 'button';
-                    button.className = 'btn-tactile btn-tactile-green';
-                    button.style.cssText = 'height:24px;font-size:10.5px;padding:0 8px;';
-                    button.onclick = function () {
-                        button.disabled = true;
-                        window.fetch('/api/client/switch', {method:'POST',body:JSON.stringify({grant_id:grant.id})})
-                            .then(function (r) { return r.json(); }).then(function (result) {
-                                if (!result.success) element('div', result.message || result.error || 'Unable to switch credit.', panel);
-                                if (window.syncPortal) window.syncPortal();
-                            }).catch(function () { element('div', 'Connection interrupted. Retry this action.', panel); })
-                            .then(function () { button.disabled = false; });
-                    };
-                }
-            });
-        }
     }
     function policyEditor() {
         if (!/^\/admin\/?$/.test(location.pathname)) return;

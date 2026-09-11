@@ -335,6 +335,9 @@ def init_time_schema(conn):
             columns={r[1] for r in conn.execute('PRAGMA table_info(vouchers)')}
             if 'policy_version_id' not in columns:
                 conn.execute('ALTER TABLE vouchers ADD COLUMN policy_version_id TEXT')
+        # Retire former wallet custody without deleting its ledger value. Run on
+        # every initialization so restoring an older database cannot revive it.
+        conn.execute("UPDATE time_grants SET state='ARCHIVED' WHERE state='WALLET'")
         set_metadata(conn,'schema_version',SCHEMA_VERSION)
         conn.execute('CREATE INDEX IF NOT EXISTS idx_pending_intents ON network_intents(status,id)')
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_one_open_pause ON grant_pauses(grant_id) WHERE status='OPEN'")

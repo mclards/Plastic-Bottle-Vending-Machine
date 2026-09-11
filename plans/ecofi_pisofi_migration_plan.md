@@ -1,3 +1,5 @@
+> September 9, 2026: Member wallets were removed in v2.3.0 at the user's request. Wallet/account UI and API sections below are historical; retain legacy ledger compatibility, and do not reintroduce this feature. See [release report](../audits/2026-09-09-member-removal/REPORT.md).
+
 # Eco-Fi migration to PisoFi-style time and pause behavior
 
 **Status:** Detailed implementation specification; documentation only. No implementation, database migration, firmware change, or deployment has been performed.

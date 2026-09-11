@@ -239,10 +239,13 @@ class LicenseGeneratorApp:
     def generate_key(self):
         raw_hwid = self.hwid_entry.get().strip()
         tier = self.tier_var.get()
+        self.pin_display.config(state="normal")
+        self.pin_display.delete(0, tk.END)
+        self.pin_display.config(state="readonly")
 
         if not raw_hwid or raw_hwid == "Eco-Fi-":
             messagebox.showerror("Validation Error", "Please enter the Target Machine Hardware ID (HWID).")
-            return
+            return False
 
         hwid = normalize_hwid(raw_hwid)
         # Update entry with cleanly formatted HWID
@@ -250,12 +253,13 @@ class LicenseGeneratorApp:
         self.hwid_entry.insert(0, hwid)
 
         import re
-        if not re.match(r'^Eco-Fi-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$', hwid):
+        if not re.fullmatch(r'[0-9A-F]{4}(?:-[0-9A-F]{4}){3}', hwid):
             messagebox.showwarning(
                 "HWID Format Warning",
                 f"The entered HWID [{hwid}] does not appear to contain 16 hex characters.\n\n"
                 "Please ensure you copied the entire HWID (e.g. AADD-284E-E7A4-309C)."
             )
+            return False
 
         pin = compute_activation_pin(hwid, tier)
 
@@ -263,6 +267,7 @@ class LicenseGeneratorApp:
         self.pin_display.delete(0, tk.END)
         self.pin_display.insert(0, pin)
         self.pin_display.config(state="readonly")
+        return True
 
     def copy_pin(self):
         pin = self.pin_display.get()
@@ -273,17 +278,13 @@ class LicenseGeneratorApp:
         messagebox.showinfo("Copied", f"Activation PIN [{pin}] copied to clipboard!")
 
     def export_license_file(self):
-        hwid = self.hwid_entry.get().strip().upper()
+        # Regenerate from current fields; a displayed PIN may belong to an old HWID/tier.
+        if not self.generate_key():
+            return
+        hwid = normalize_hwid(self.hwid_entry.get())
         pin = self.pin_display.get()
         client = self.client_entry.get().strip()
         tier = self.tier_var.get()
-
-        if not pin:
-            self.generate_key()
-            pin = self.pin_display.get()
-
-        if not pin:
-            return
 
         lic_data = {
             "vendor": "Eco-Fi Technologies",

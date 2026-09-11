@@ -1,3 +1,15 @@
+Current release: **v2.3.2** — [client controls and complete manual-credit removal](2026-09-10-controls/REPORT.md). Live OPi updated; final image and matching ESP32 package verified. Earlier notices below are historical.
+
+Current release: **v2.3.1** — [encoding fix and wallet pipeline cleanup](2026-09-09-wallet-cleanup/REPORT.md). Live OPi updated; final image and matching ESP32 package verified. Earlier notices below are historical.
+
+Current release: **v2.3.0**, live OPi updated and final image/ESP32 package rebuilt. [Member removal and verification report](2026-09-09-member-removal/REPORT.md). Earlier notices below are historical.
+
+Latest live application: **v2.2.3** — [credit queue display correction](2026-09-09-credit-queue/REPORT.md). Saved image remains v2.2.1.
+
+> **Latest live application update — September 9, 2026: v2.2.2.** Added the entire Member feature enable/disable switch and corrected login credit selection using original PisoFi source evidence. 131 host/gateway tests and 10 wallet smoke cases on the real OPi passed. See [the wallet study and live update report](2026-09-09-wallet/REPORT.md). The saved OS image remains v2.2.1.
+
+> **Latest release verification — September 8, 2026: v2.2.1.** Reviewed Gemini changes, corrected reproduced regressions, and verified the candidate on the live OPi using disposable storage. 121 automated tests and final image checks passed. Wallet balances display two decimal places. Production was not upgraded; physical acceptance remains open. See [the v2.2.1 report](2026-09-08-v2.2.1/REPORT.md).
+
 > **Latest release verification — September 8, 2026: v2.2.0.** 118 isolated tests pass after remediation. The full Orange Pi image and ESP32 package were rebuilt and verified, including ARM runtime, filesystem, configuration, checksum and packaged-content checks. Physical acceptance remains open. See [the release verification report](2026-09-08-release/REPORT.md).
 
 > **Latest local verification — September 8, 2026:** 110 isolated tests pass after remediation; firmware builds successfully. Physical acceptance remains open. See [the local verification report](2026-09-08-local/REPORT.md) for fixes, compatibility notes and evidence.

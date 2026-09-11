@@ -183,11 +183,10 @@ $$\text{Validity}(T) = \min\left(720\text{h},\ \max\left(24\text{h},\ 12\text{h}
 * **Access:** Navigate to `http://10.0.0.1/admin` (or `http://localhost:5000/admin`).
 * **Authentication Guard:** Global session-based authentication blocks unauthenticated direct access to all API routes and data exports.
 * **Operations & Accounting Excel Export (`/admin/api/export_xlsx`):**
-  * Downloads professional `.xlsx` workbook formatted with 4 dedicated sheets:
+  * Downloads professional `.xlsx` workbook formatted with 3 dedicated sheets:
     1. *Daily Collections & Environmental Impact* (Bottles recycled, plastics diverted, estimated weight).
     2. *Voucher Inventory* (Codes, duration, status, creation date, redemption user).
-    3. *Member Wallets* (Registered usernames, current minute balances, registration timestamps).
-    4. *Promo Rate Curves* (Active packages, efficiency rates, and bonus yields).
+    3. *Promo Rate Curves* (Active packages, efficiency rates, and bonus yields).
 * **ESP32 Hardware Calibration:** Configure servo travel angles (Entrance, Success, Reject), NIR spectral window, and ultrasonic bin distance with live UART push to hardware NVS.
 
 ---
