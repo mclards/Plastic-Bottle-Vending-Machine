@@ -1,0 +1,100 @@
+test_admin_pause_survives_user_timeout (test_entitlement_regressions.EngineRegression.test_admin_pause_survives_user_timeout) ... ok
+test_commit_failure_rolls_back_grant_and_retry (test_entitlement_regressions.EngineRegression.test_commit_failure_rolls_back_grant_and_retry) ... ok
+test_cross_boot_checkpoint_does_not_consume_uptime (test_entitlement_regressions.EngineRegression.test_cross_boot_checkpoint_does_not_consume_uptime) ... ok
+test_exhausted_pause_budget_blocks_switch_but_not_queued_credit (test_entitlement_regressions.EngineRegression.test_exhausted_pause_budget_blocks_switch_but_not_queued_credit) ... ok
+test_expiry_wins_tie_and_advances_queue (test_entitlement_regressions.EngineRegression.test_expiry_wins_tie_and_advances_queue) ... ok
+test_no_billing_without_network_ack_and_bounded_lease (test_entitlement_regressions.EngineRegression.test_no_billing_without_network_ack_and_bounded_lease) ... ok
+test_outer_transaction_can_rollback_successful_operation (test_entitlement_regressions.EngineRegression.test_outer_transaction_can_rollback_successful_operation) ... ok
+test_policy_snapshot_is_immutable (test_entitlement_regressions.EngineRegression.test_policy_snapshot_is_immutable) ... ok
+test_rebind_versions_and_stale_ack (test_entitlement_regressions.EngineRegression.test_rebind_versions_and_stale_ack) ... ok
+test_replay_conflict_and_foreign_owner_do_not_mutate (test_entitlement_regressions.EngineRegression.test_replay_conflict_and_foreign_owner_do_not_mutate) ... ok
+test_stale_dictionary_cannot_double_bill (test_entitlement_regressions.EngineRegression.test_stale_dictionary_cannot_double_bill) ... ok
+test_three_pauses_duplicate_timeout_and_new_purchase_budget (test_entitlement_regressions.EngineRegression.test_three_pauses_duplicate_timeout_and_new_purchase_budget) ... ok
+test_transfer_conserves_and_claims_once (test_entitlement_regressions.EngineRegression.test_transfer_conserves_and_claims_once) ... ok
+test_zero_and_fractional_elapsed_exact (test_entitlement_regressions.EngineRegression.test_zero_and_fractional_elapsed_exact) ... ok
+test_zero_cap_and_budget_cap_are_authoritative (test_entitlement_regressions.EngineRegression.test_zero_cap_and_budget_cap_are_authoritative) ... ok
+test_active_legacy_has_no_new_expiry_and_all_member_rows_import (test_entitlement_regressions.MigrationRegression.test_active_legacy_has_no_new_expiry_and_all_member_rows_import) ... ok
+test_concurrent_duplicate_operation_has_one_issuance (test_entitlement_regressions.MigrationRegression.test_concurrent_duplicate_operation_has_one_issuance) ... ok
+test_dry_run_is_byte_identical_and_migration_checkpoint_is_current (test_entitlement_regressions.MigrationRegression.test_dry_run_is_byte_identical_and_migration_checkpoint_is_current) ... ok
+test_overdue_legacy_expires_and_rerun_does_not_reimport (test_entitlement_regressions.MigrationRegression.test_overdue_legacy_expires_and_rerun_does_not_reimport) ... ok
+test_partial_engine_import_removes_invented_legacy_expiry (test_entitlement_regressions.MigrationRegression.test_partial_engine_import_removes_invented_legacy_expiry) ... ok
+test_admin_held_credit_resolution_moves_existing_value (test_entitlement_regressions.PortalRegression.test_admin_held_credit_resolution_moves_existing_value) ... ok
+test_admin_routes_restored_and_guarded (test_entitlement_regressions.PortalRegression.test_admin_routes_restored_and_guarded) ... ok
+test_backup_zip_round_trip_includes_wal_and_restores_ledger (test_entitlement_regressions.PortalRegression.test_backup_zip_round_trip_includes_wal_and_restores_ledger) ... ok
+test_captive_probe_requires_confirmed_licensed_access (test_entitlement_regressions.PortalRegression.test_captive_probe_requires_confirmed_licensed_access) ... ok
+test_clock_status_compatibility_and_failed_probe (test_entitlement_regressions.PortalRegression.test_clock_status_compatibility_and_failed_probe) ... ok
+test_configured_walled_garden_resolves_public_addresses (test_entitlement_regressions.PortalRegression.test_configured_walled_garden_resolves_public_addresses) ... ok
+test_default_garden_does_not_bypass_captive_probes (test_entitlement_regressions.PortalRegression.test_default_garden_does_not_bypass_captive_probes) ... ok
+test_disabled_backend_cannot_inject_receipt (test_entitlement_regressions.PortalRegression.test_disabled_backend_cannot_inject_receipt) ... ok
+test_disabled_simulator_requires_login_then_returns_404 (test_entitlement_regressions.PortalRegression.test_disabled_simulator_requires_login_then_returns_404) ... ok
+test_disconnect_routes_revoke_authoritative_grants (test_entitlement_regressions.PortalRegression.test_disconnect_routes_revoke_authoritative_grants) ... ok
+test_empty_walled_garden_installs_no_builtin_bypasses (test_entitlement_regressions.PortalRegression.test_empty_walled_garden_installs_no_builtin_bypasses) ... ok
+test_finalized_bottle_restart_is_not_credited_twice (test_entitlement_regressions.PortalRegression.test_finalized_bottle_restart_is_not_credited_twice) ... ok
+test_hardware_settings_validate_before_persistence_or_transmission (test_entitlement_regressions.PortalRegression.test_hardware_settings_validate_before_persistence_or_transmission) ... ok
+test_hardware_unavailable_does_not_report_open_gate_success (test_entitlement_regressions.PortalRegression.test_hardware_unavailable_does_not_report_open_gate_success) ... ok
+test_invalid_backup_cannot_replace_existing_credit (test_entitlement_regressions.PortalRegression.test_invalid_backup_cannot_replace_existing_credit) ... ok
+test_legacy_member_credit_survives_without_wallet_operations (test_entitlement_regressions.PortalRegression.test_legacy_member_credit_survives_without_wallet_operations) ... ok
+test_license_loss_preserves_receipt_without_reopening_intake (test_entitlement_regressions.PortalRegression.test_license_loss_preserves_receipt_without_reopening_intake) ... ok
+test_member_routes_are_removed_and_do_not_change_credit (test_entitlement_regressions.PortalRegression.test_member_routes_are_removed_and_do_not_change_credit) ... ok
+test_member_ui_and_wallet_export_are_removed (test_entitlement_regressions.PortalRegression.test_member_ui_and_wallet_export_are_removed) ... ok
+test_pause_timeout_and_old_replay_do_not_erase_or_repause (test_entitlement_regressions.PortalRegression.test_pause_timeout_and_old_replay_do_not_erase_or_repause) ... ok
+test_physical_finish_retries_finalize_once (test_entitlement_regressions.PortalRegression.test_physical_finish_retries_finalize_once) ... ok
+test_portal_admin_simulator_render_and_inline_javascript_parse (test_entitlement_regressions.PortalRegression.test_portal_admin_simulator_render_and_inline_javascript_parse) ... ok
+test_removed_member_setting_cannot_be_reenabled (test_entitlement_regressions.PortalRegression.test_removed_member_setting_cannot_be_reenabled) ... ok
+test_simulator_receipt_ack_restart_and_completion (test_entitlement_regressions.PortalRegression.test_simulator_receipt_ack_restart_and_completion) ... ok
+test_simulator_transport_routes_only_to_selected_backend (test_entitlement_regressions.PortalRegression.test_simulator_transport_routes_only_to_selected_backend) ... ok
+test_status_counts_and_zero_balance_gate (test_entitlement_regressions.PortalRegression.test_status_counts_and_zero_balance_gate) ... ok
+test_test_environment_does_not_bypass_admin_login (test_entitlement_regressions.PortalRegression.test_test_environment_does_not_bypass_admin_login) ... ok
+test_uncertain_drop_is_held_and_acknowledged (test_entitlement_regressions.PortalRegression.test_uncertain_drop_is_held_and_acknowledged) ... ok
+test_unidentified_device_event_is_held_not_minted (test_entitlement_regressions.PortalRegression.test_unidentified_device_event_is_held_not_minted) ... ok
+test_unsynchronized_modern_date_does_not_become_trusted (test_entitlement_regressions.PortalRegression.test_unsynchronized_modern_date_does_not_become_trusted) ... ok
+test_usb_lan_name_matches_gateway_and_neighbor_lookup (test_entitlement_regressions.PortalRegression.test_usb_lan_name_matches_gateway_and_neighbor_lookup) ... ok
+test_voucher_failure_rolls_back_source (test_entitlement_regressions.PortalRegression.test_voucher_failure_rolls_back_source) ... Entitlement transaction failed
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Temp\ecofi-portal-tests-jm9877w2\time_portal.py", line 76, in route
+    return fn(*args,**kwargs)
+  File "C:\Users\User\AppData\Local\Temp\ecofi-portal-tests-jm9877w2\time_portal.py", line 338, in voucher
+    result=engine.apply_operation(conn,cd['owner_id'],cd,'TOP_UP_GRANT',
+        {'seconds':voucher['minutes']*60,'origin':'voucher','source_ref':code,
+         'policy_version_id':voucher.get('policy_version_id') or storage.metadata(conn,'active_policy')},op,now,mono)
+  File "C:\Python313\Lib\unittest\mock.py", line 1169, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\unittest\mock.py", line 1173, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\unittest\mock.py", line 1228, in _execute_mock_call
+    raise effect
+sqlite3.OperationalError: injected
+ok
+test_voucher_retry_retains_policy_after_admin_change (test_entitlement_regressions.PortalRegression.test_voucher_retry_retains_policy_after_admin_change) ... ok
+test_worker_death_stops_renewal_during_status_polling (test_entitlement_regressions.PortalRegression.test_worker_death_stops_renewal_during_status_polling) ... ok
+test_broadcast_is_rejected (test_network_regressions.NetworkRegression.test_broadcast_is_rejected) ... ok
+test_failed_auth_install_removes_partial_pair (test_network_regressions.NetworkRegression.test_failed_auth_install_removes_partial_pair) ... ok
+test_failed_shaper_never_grants_and_retry_cleans_partial_filters (test_network_regressions.NetworkRegression.test_failed_shaper_never_grants_and_retry_cleans_partial_filters) ... ok
+test_lease_cannot_exceed_kernel_cap (test_network_regressions.NetworkRegression.test_lease_cannot_exceed_kernel_cap) ... ok
+test_license_flush_failure_is_retried (test_network_regressions.NetworkRegression.test_license_flush_failure_is_retried) ... ok
+test_zero_credit_never_installs_authorization (test_network_regressions.NetworkRegression.test_zero_credit_never_installs_authorization) ... ok
+test_run_migration (test_time_system.TestMigration.test_run_migration) ... ok
+test_bracket_validity_selection (test_time_system.TestTimePolicy.test_bracket_validity_selection) ... ok
+test_can_pause_grant_balance_window (test_time_system.TestTimePolicy.test_can_pause_grant_balance_window) ... ok
+test_can_pause_grant_count_gate (test_time_system.TestTimePolicy.test_can_pause_grant_count_gate) ... ok
+test_can_pause_grant_state_and_calendar_checks (test_time_system.TestTimePolicy.test_can_pause_grant_state_and_calendar_checks) ... ok
+test_fractional_purchase_crosses_bracket_ceiling (test_time_system.TestTimePolicy.test_fractional_purchase_crosses_bracket_ceiling) ... ok
+test_full_use_slack (test_time_system.TestTimePolicy.test_full_use_slack) ... ok
+test_global_fallback_floor (test_time_system.TestTimePolicy.test_global_fallback_floor) ... ok
+test_nominal_future_pause_allowance (test_time_system.TestTimePolicy.test_nominal_future_pause_allowance) ... ok
+test_pause_deadlines_and_precedence (test_time_system.TestTimePolicy.test_pause_deadlines_and_precedence) ... ok
+test_seconds_until_pausable_by_max (test_time_system.TestTimePolicy.test_seconds_until_pausable_by_max) ... ok
+test_default_policies_seeded (test_time_system.TestTimeSchema.test_default_policies_seeded) ... ok
+test_schema_tables_exist (test_time_system.TestTimeSchema.test_schema_tables_exist) ... ok
+test_calendar_expiry_overrides_pause (test_time_system.TestTransitionEngine.test_calendar_expiry_overrides_pause) ... ok
+test_pause_and_resume_flow (test_time_system.TestTransitionEngine.test_pause_and_resume_flow) ... ok
+test_pause_count_limit_rejection (test_time_system.TestTransitionEngine.test_pause_count_limit_rejection) ... ok
+test_pause_timeout_triggers_auto_resume (test_time_system.TestTransitionEngine.test_pause_timeout_triggers_auto_resume) ... ok
+test_top_up_and_immediate_activation (test_time_system.TestTransitionEngine.test_top_up_and_immediate_activation) ... ok
+
+----------------------------------------------------------------------
+Ran 78 tests in 15.390s
+
+OK

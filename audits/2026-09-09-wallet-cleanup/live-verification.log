@@ -1,0 +1,2 @@
+{"ledger_mismatches": 0, "lost_grants": 0, "wallet_rows": 0, "archived_rows": 2, "archive_mismatches": 0, "integrity": "ok"}
+PASS served JS escapes, removed routes/UI and source hashes

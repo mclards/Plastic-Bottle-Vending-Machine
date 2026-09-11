@@ -1,0 +1,136 @@
+Entitlement transaction failed
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Temp\ecofi-portal-tests-03dus1wz\time_portal.py", line 87, in route
+    return fn(*args,**kwargs)
+  File "C:\Users\User\AppData\Local\Temp\ecofi-portal-tests-03dus1wz\time_portal.py", line 420, in voucher
+    result=engine.apply_operation(conn,cd['owner_id'],cd,'TOP_UP_GRANT',
+        {'seconds':voucher['minutes']*60,'origin':'voucher','source_ref':code,
+         'policy_version_id':voucher.get('policy_version_id') or storage.metadata(conn,'active_policy')},op,now,mono)
+  File "C:\Python313\Lib\unittest\mock.py", line 1169, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\unittest\mock.py", line 1173, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\unittest\mock.py", line 1228, in _execute_mock_call
+    raise effect
+sqlite3.OperationalError: injected
+======================================================================
+ERROR: test_disabled_backend_cannot_inject_receipt (test_entitlement_regressions.PortalRegression.test_disabled_backend_cannot_inject_receipt)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\host\test_entitlement_regressions.py", line 559, in test_disabled_backend_cannot_inject_receipt
+    self.p.time_service.on_event(event,source='simulator')
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: TimePortal.on_event() got an unexpected keyword argument 'source'
+
+======================================================================
+ERROR: test_disconnect_routes_revoke_authoritative_grants (test_entitlement_regressions.PortalRegression.test_disconnect_routes_revoke_authoritative_grants)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\host\test_entitlement_regressions.py", line 467, in test_disconnect_routes_revoke_authoritative_grants
+    result=self.request('/admin/api/clients/disconnect',{'ip':'10.0.0.2'})
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\host\test_entitlement_regressions.py", line 272, in request
+    return self.client.get(path,environ_overrides={'REMOTE_ADDR':ip}) if get else self.client.post(path,json=data,environ_overrides={'REMOTE_ADDR':ip})
+                                                                                  ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\werkzeug\test.py", line 1167, in post
+    return self.open(*args, **kw)
+           ~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\flask\testing.py", line 235, in open
+    response = super().open(
+        request,
+        buffered=buffered,
+        follow_redirects=follow_redirects,
+    )
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\werkzeug\test.py", line 1116, in open
+    response_parts = self.run_wsgi_app(request.environ, buffered=buffered)
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\werkzeug\test.py", line 988, in run_wsgi_app
+    rv = run_wsgi_app(self.application, environ, buffered=buffered)
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\werkzeug\test.py", line 1264, in run_wsgi_app
+    app_rv = app(environ, start_response)
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\flask\app.py", line 1536, in __call__
+    return self.wsgi_app(environ, start_response)
+           ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Temp\ecofi-portal-tests-03dus1wz\portal.py", line 54, in __call__
+    return application(environ, start_response)
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\flask\app.py", line 1514, in wsgi_app
+    response = self.handle_exception(e)
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\flask\app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\flask\app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "C:\Users\User\AppData\Roaming\Python\Python313\site-packages\flask\app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Temp\ecofi-portal-tests-03dus1wz\portal.py", line 2285, in admin_api_clients_disconnect
+    return time_service.disconnect_clients([ip])
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'TimePortal' object has no attribute 'disconnect_clients'
+
+======================================================================
+FAIL: test_hardware_unavailable_does_not_report_open_gate_success (test_entitlement_regressions.PortalRegression.test_hardware_unavailable_does_not_report_open_gate_success)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\host\test_entitlement_regressions.py", line 544, in test_hardware_unavailable_does_not_report_open_gate_success
+    self.assertEqual(response.status_code,400)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 200 != 400
+
+======================================================================
+FAIL: test_license_loss_preserves_receipt_without_reopening_intake (test_entitlement_regressions.PortalRegression.test_license_loss_preserves_receipt_without_reopening_intake)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\host\test_entitlement_regressions.py", line 585, in test_license_loss_preserves_receipt_without_reopening_intake
+    self.assertEqual([packet['cmd'] for packet in sent],['CREDIT_ACK'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: ['CREDIT_ACK', 'OPEN_GATE'] != ['CREDIT_ACK']
+
+First list contains 1 additional elements.
+First extra element 1:
+'OPEN_GATE'
+
+- ['CREDIT_ACK', 'OPEN_GATE']
++ ['CREDIT_ACK']
+
+======================================================================
+FAIL: test_member_delete_preserves_ledger_and_revokes_access (test_entitlement_regressions.PortalRegression.test_member_delete_preserves_ledger_and_revokes_access)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\host\test_entitlement_regressions.py", line 434, in test_member_delete_preserves_ledger_and_revokes_access
+    self.assertTrue(any(call.args[:2]==('10.0.0.2','del') for call in network.call_args_list))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_physical_finish_retries_finalize_once (test_entitlement_regressions.PortalRegression.test_physical_finish_retries_finalize_once)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\host\test_entitlement_regressions.py", line 445, in test_physical_finish_retries_finalize_once
+    self.assertEqual(self.scalar('SELECT SUM(issued_us) FROM time_grants'),600000000)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: None != 600000000
+
+======================================================================
+FAIL: test_unsynchronized_modern_date_does_not_become_trusted (test_entitlement_regressions.PortalRegression.test_unsynchronized_modern_date_does_not_become_trusted)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\host\test_entitlement_regressions.py", line 453, in test_unsynchronized_modern_date_does_not_become_trusted
+    self.assertFalse(type(service).clock_trusted(service))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_wallet_deduction_is_atomic_and_idempotent (test_entitlement_regressions.PortalRegression.test_wallet_deduction_is_atomic_and_idempotent)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\host\test_entitlement_regressions.py", line 421, in test_wallet_deduction_is_atomic_and_idempotent
+    self.assertEqual(self.scalar("SELECT SUM(remaining_us) FROM time_grants WHERE state='WALLET'"),420000000)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 240000000 != 420000000
+
+----------------------------------------------------------------------
+Ran 78 tests in 34.402s
+
+FAILED (failures=6, errors=2)

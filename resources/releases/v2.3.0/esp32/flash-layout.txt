@@ -1,0 +1,9 @@
+ESP32 DOIT DevKit V1; 4 MB flash; DIO; 40 MHz; release 2.3.0
+
+0x1000  bootloader.bin
+0x8000  partitions.bin
+0xe000  boot_app0.bin
+0x10000 firmware.bin
+
+Use firmware.bin at 0x10000 for an application-only update with the existing layout.
+Do not erase flash: the NVS journal may contain unacknowledged bottle receipts.

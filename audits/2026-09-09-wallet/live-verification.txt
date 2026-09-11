@@ -1,0 +1,7 @@
+PASS: deployed application hashes match v2.2.2 candidate
+PASS: portal worker and synchronized clock healthy
+PASS: license activated and ledger balanced
+PASS: Member Wallet Availability switch served in live admin
+PASS: Member feature remains enabled until administrator changes it
+PASS: latest portal JavaScript served
+Backup: /var/backups/ecofi/20260908T230457Z-before-v2.2.2

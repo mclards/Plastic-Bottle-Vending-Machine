@@ -1,0 +1,5 @@
+PASS: actual OPi clock synchronization detected without trust override
+PASS: ARM Python runtime, Flask pages/auth, vouchers, pause, network acknowledgement, duplicate receipts, finalization, diagnostics and backup
+Production DB integrity: ok
+Unbalanced ledger entries: 0
+Grant/account differences: 0

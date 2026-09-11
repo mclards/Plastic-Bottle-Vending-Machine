@@ -1,0 +1,15 @@
+test_member_login_keeps_phone_bottle_credit_and_its_pauses (test_entitlement_regressions.PortalRegression) ... ok
+test_repeated_login_keeps_selected_credit_without_new_allowances (test_entitlement_regressions.PortalRegression) ... ok
+test_login_preserves_paused_phone_credit_and_deadline (test_entitlement_regressions.PortalRegression) ... ok
+test_failed_wallet_withdrawal_does_not_take_over_device (test_entitlement_regressions.PortalRegression) ... ok
+test_wallet_withdrawal_queues_credit_without_replacing_phone_credit (test_entitlement_regressions.PortalRegression) ... ok
+test_member_login_expired_phone_credit_falls_back_to_valid_account (test_entitlement_regressions.PortalRegression) ... ok
+test_login_credit_and_pause_budget_survive_service_restore (test_entitlement_regressions.PortalRegression) ... ok
+test_member_feature_toggle_blocks_routes_without_changing_balances (test_entitlement_regressions.PortalRegression) ... ok
+test_member_feature_setting_requires_admin_and_strict_value (test_entitlement_regressions.PortalRegression) ... ok
+test_disabled_members_are_hidden_but_vouchers_still_work (test_entitlement_regressions.PortalRegression) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 90.610s
+
+OK

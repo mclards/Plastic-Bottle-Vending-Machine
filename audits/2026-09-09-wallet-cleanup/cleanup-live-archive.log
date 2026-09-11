@@ -1,0 +1,7 @@
+test_old_wallet_balances_are_archived_and_never_activated (test_entitlement_regressions.EngineRegression) ... ok
+test_legacy_wallet_import_is_archival_only (test_entitlement_regressions.MigrationRegression) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.336s
+
+OK

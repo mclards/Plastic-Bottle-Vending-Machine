@@ -1,0 +1,31 @@
+======================================================================
+ERROR: test_forwarded_header_cannot_impersonate_another_client (test_gateway_audit.GatewayAudit.test_forwarded_header_cannot_impersonate_another_client)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 105, in test_forwarded_header_cannot_impersonate_another_client
+    self.assertEqual(r.json['remaining_seconds'],0)
+                     ~~~~~~^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'NoneType' object is not subscriptable
+
+======================================================================
+ERROR: test_per_client_credit_isolation (test_gateway_audit.GatewayAudit.test_per_client_credit_isolation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 99, in test_per_client_credit_isolation
+    self.assertEqual(r.json['remaining_seconds'],0)
+                     ~~~~~~^^^^^^^^^^^^^^^^^^^^^
+TypeError: 'NoneType' object is not subscriptable
+
+======================================================================
+FAIL: test_missing_license_blocks_existing_client_grant (test_gateway_audit.GatewayAudit.test_missing_license_blocks_existing_client_grant)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\tools\test_gateway_audit.py", line 111, in test_missing_license_blocks_existing_client_grant
+    self.assertFalse(any(x.args[1]=='add' for x in self.fw.call_args_list))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+----------------------------------------------------------------------
+Ran 40 tests in 28.118s
+
+FAILED (failures=1, errors=2)

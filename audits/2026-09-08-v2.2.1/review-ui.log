@@ -1,0 +1,2 @@
+PASS: wallet displays exactly two decimals, including login and zero balances
+PASS: rendered portal, login and admin JavaScript syntax

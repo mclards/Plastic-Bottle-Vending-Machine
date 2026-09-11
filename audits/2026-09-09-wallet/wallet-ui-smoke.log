@@ -1,0 +1,1 @@
+PASS: enabled/disabled portal and admin scripts parse; an open Member tab hides on disable and returns on re-enable

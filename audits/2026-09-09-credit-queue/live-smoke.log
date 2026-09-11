@@ -1,0 +1,8 @@
+test_exhausted_pause_budget_blocks_switch_but_not_queued_credit (test_entitlement_regressions.EngineRegression) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.681s
+
+OK
+
+PASS served script and cache version

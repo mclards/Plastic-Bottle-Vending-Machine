@@ -1,0 +1,6 @@
+EcoFi_Opi_v2.3.2.img: OK
+PASS: release version, nine runtime modules, 50 static assets, service units and private-state exclusion
+nginx: [alert] could not open error log file: open() "/var/log/nginx/error.log" failed (30: Read-only file system)
+nginx: the configuration file /tmp/ecofi-nginx.1xZs4J syntax is ok
+nginx: configuration file /tmp/ecofi-nginx.1xZs4J test is successful
+PASS: embedded file manifest and target ARM nginx site syntax

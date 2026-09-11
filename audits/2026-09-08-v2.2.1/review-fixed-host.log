@@ -1,0 +1,21 @@
+Entitlement transaction failed
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Temp\ecofi-portal-tests-niiclpdj\time_portal.py", line 88, in route
+    return fn(*args,**kwargs)
+  File "C:\Users\User\AppData\Local\Temp\ecofi-portal-tests-niiclpdj\time_portal.py", line 351, in voucher
+    result=engine.apply_operation(conn,cd['owner_id'],cd,'TOP_UP_GRANT',
+        {'seconds':voucher['minutes']*60,'origin':'voucher','source_ref':code,
+         'policy_version_id':voucher.get('policy_version_id') or storage.metadata(conn,'active_policy')},op,now,mono)
+  File "C:\Python313\Lib\unittest\mock.py", line 1169, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\unittest\mock.py", line 1173, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Python313\Lib\unittest\mock.py", line 1228, in _execute_mock_call
+    raise effect
+sqlite3.OperationalError: injected
+----------------------------------------------------------------------
+Ran 79 tests in 26.475s
+
+OK

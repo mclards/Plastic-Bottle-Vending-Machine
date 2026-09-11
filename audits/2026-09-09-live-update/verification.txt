@@ -1,0 +1,27 @@
+PASS: authenticated diagnostics ready, healthy, synchronized and ledger balanced
+PASS: both public status APIs respond correctly
+PASS: unauthenticated admin API remains blocked
+PASS: live wallet page formats two decimals and serves matching v2.2.1 JavaScript
+PASS: all deployed files match the verified release
+PASS: production service has no unconditional clock trust override
+
+active
+active
+active
+active
+Environment=PORT=5000
+-- Logs begin at Tue 2026-09-08 16:29:51 PST, end at Wed 2026-09-09 00:29:52 PST. --
+Sep 09 00:28:11 ecofi-vendo systemd[1]: Stopping Eco-Fi Reverse Vending Machine Captive Portal & Web Engine...
+Sep 09 00:28:11 ecofi-vendo systemd[1]: Stopped Eco-Fi Reverse Vending Machine Captive Portal & Web Engine.
+Sep 09 00:28:13 ecofi-vendo systemd[1]: Started Eco-Fi Reverse Vending Machine Captive Portal & Web Engine.
+Sep 09 00:28:21 ecofi-vendo python3[30343]: ==================================================
+Sep 09 00:28:21 ecofi-vendo python3[30343]:   SMART Eco-Fi REVERSE VENDING MACHINE v2.2.1
+Sep 09 00:28:21 ecofi-vendo python3[30343]:   Captive Portal : http://localhost:5000/
+Sep 09 00:28:21 ecofi-vendo python3[30343]:   Simulator UI   : http://localhost:5000/simulator
+Sep 09 00:28:21 ecofi-vendo python3[30343]:   Admin Panel    : http://localhost:5000/admin
+Sep 09 00:28:21 ecofi-vendo python3[30343]: ==================================================
+Sep 09 00:28:21 ecofi-vendo python3[30343]:  * Serving Flask app "portal" (lazy loading)
+Sep 09 00:28:21 ecofi-vendo python3[30343]:  * Environment: production
+Sep 09 00:28:21 ecofi-vendo python3[30343]:    WARNING: This is a development server. Do not use it in a production deployment.
+Sep 09 00:28:21 ecofi-vendo python3[30343]:    Use a production WSGI server instead.
+Sep 09 00:28:21 ecofi-vendo python3[30343]:  * Debug mode: off

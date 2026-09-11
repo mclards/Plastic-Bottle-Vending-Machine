@@ -1,0 +1,45 @@
+test_admin_api_requires_authentication (test_gateway_audit.GatewayAudit.test_admin_api_requires_authentication) ... ok
+test_admin_bandwidth_edit_updates_enforcement (test_gateway_audit.GatewayAudit.test_admin_bandwidth_edit_updates_enforcement) ... ok
+test_admin_pause_cannot_be_undone_by_client (test_gateway_audit.GatewayAudit.test_admin_pause_cannot_be_undone_by_client) ... ok
+test_auto_pause_when_last_client_disconnects (test_gateway_audit.GatewayAudit.test_auto_pause_when_last_client_disconnects) ... ok
+test_bin_full_blocks_gate (test_gateway_audit.GatewayAudit.test_bin_full_blocks_gate) ... ok
+test_custom_bandwidth_survives_restart (test_gateway_audit.GatewayAudit.test_custom_bandwidth_survives_restart) ... ok
+test_default_admin_requires_password_change (test_gateway_audit.GatewayAudit.test_default_admin_requires_password_change) ... ok
+test_duplicate_uart_event_not_counted_twice (test_gateway_audit.GatewayAudit.test_duplicate_uart_event_not_counted_twice) ... ok
+test_expired_paused_credit_cannot_be_resumed_before_next_tick (test_gateway_audit.GatewayAudit.test_expired_paused_credit_cannot_be_resumed_before_next_tick) ... ok
+test_forwarded_header_cannot_impersonate_another_client (test_gateway_audit.GatewayAudit.test_forwarded_header_cannot_impersonate_another_client) ... ok
+test_mac_block_change_applied_immediately (test_gateway_audit.GatewayAudit.test_mac_block_change_applied_immediately) ... ok
+test_mac_reassignment_does_not_inherit_credit (test_gateway_audit.GatewayAudit.test_mac_reassignment_does_not_inherit_credit) ... ok
+test_manual_pause_revokes_and_preserves_balance (test_gateway_audit.GatewayAudit.test_manual_pause_revokes_and_preserves_balance) ... ok
+test_missing_license_blocks_existing_client_grant (test_gateway_audit.GatewayAudit.test_missing_license_blocks_existing_client_grant) ... ok
+test_missing_license_blocks_gate_open (test_gateway_audit.GatewayAudit.test_missing_license_blocks_gate_open) ... ok
+test_missing_license_blocks_voucher_redemption (test_gateway_audit.GatewayAudit.test_missing_license_blocks_voucher_redemption) ... ok
+test_pause_reason_survives_restart (test_gateway_audit.GatewayAudit.test_pause_reason_survives_restart) ... ok
+test_per_client_credit_isolation (test_gateway_audit.GatewayAudit.test_per_client_credit_isolation) ... ok
+test_promo_rates (test_gateway_audit.GatewayAudit.test_promo_rates) ... ok
+test_real_uart_bottle_awards_time (test_gateway_audit.GatewayAudit.test_real_uart_bottle_awards_time) ... ok
+test_redeemed_voucher_credit_is_durable_immediately (test_gateway_audit.GatewayAudit.test_redeemed_voucher_credit_is_durable_immediately) ... ok
+test_restore_retains_durable_record (test_gateway_audit.GatewayAudit.test_restore_retains_durable_record) ... ok
+test_roaming_revokes_old_ip (test_gateway_audit.GatewayAudit.test_roaming_revokes_old_ip) ... ok
+test_simulator_requires_authentication (test_gateway_audit.GatewayAudit.test_simulator_requires_authentication) ... ok
+test_timer_accounts_for_elapsed_time_when_loop_is_delayed (test_gateway_audit.GatewayAudit.test_timer_accounts_for_elapsed_time_when_loop_is_delayed) ... ok
+test_transfer_concurrent_claim_only_one_wins (test_gateway_audit.GatewayAudit.test_transfer_concurrent_claim_only_one_wins) ... ok
+test_transfer_conserves_balance_and_is_single_use (test_gateway_audit.GatewayAudit.test_transfer_conserves_balance_and_is_single_use) ... ok
+test_two_depositors_cannot_own_gate_simultaneously (test_gateway_audit.GatewayAudit.test_two_depositors_cannot_own_gate_simultaneously) ... ok
+test_voucher_concurrent_redemption_only_one_wins (test_gateway_audit.GatewayAudit.test_voucher_concurrent_redemption_only_one_wins) ... ok
+test_voucher_is_single_use_sequentially (test_gateway_audit.GatewayAudit.test_voucher_is_single_use_sequentially) ... ok
+test_editing_signed_expiry_cannot_extend_or_remove_expiration (test_gateway_audit.LicenseAudit.test_editing_signed_expiry_cannot_extend_or_remove_expiration) ... ok
+test_expired_license_rejected (test_gateway_audit.LicenseAudit.test_expired_license_rejected) ... ok
+test_failed_activation_preserves_existing_certificate (test_gateway_audit.LicenseAudit.test_failed_activation_preserves_existing_certificate) ... ok
+test_invalid_expiry_fails_closed (test_gateway_audit.LicenseAudit.test_invalid_expiry_fails_closed) ... ok
+test_missing_license_reports_unlicensed (test_gateway_audit.LicenseAudit.test_missing_license_reports_unlicensed) ... ok
+test_pre_branding_dated_license_keeps_expiry_binding (test_gateway_audit.LicenseAudit.test_pre_branding_dated_license_keeps_expiry_binding) ... ok
+test_pre_branding_license_and_unused_pin_remain_valid (test_gateway_audit.LicenseAudit.test_pre_branding_license_and_unused_pin_remain_valid) ... ok
+test_valid_perpetual_license_accepted (test_gateway_audit.LicenseAudit.test_valid_perpetual_license_accepted) ... ok
+test_wrong_board_rejected (test_gateway_audit.LicenseAudit.test_wrong_board_rejected) ... ok
+test_wrong_signature_rejected (test_gateway_audit.LicenseAudit.test_wrong_signature_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 40 tests in 14.825s
+
+OK

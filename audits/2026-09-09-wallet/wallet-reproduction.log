@@ -1,0 +1,28 @@
+======================================================================
+FAIL: test_login_preserves_paused_phone_credit_and_deadline (test_entitlement_regressions.PortalRegression.test_login_preserves_paused_phone_credit_and_deadline)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\host\test_entitlement_regressions.py", line 335, in test_login_preserves_paused_phone_credit_and_deadline
+    self.assertEqual(after['grant_id'],fresh);self.assertTrue(after['is_paused'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'f9062574-7019-48d1-b6a2-6c6f49305c76' != '3cc9ffd6-0462-46e9-a741-d3f38451fc1e'
+- f9062574-7019-48d1-b6a2-6c6f49305c76
++ 3cc9ffd6-0462-46e9-a741-d3f38451fc1e
+
+
+======================================================================
+FAIL: test_member_login_keeps_phone_bottle_credit_and_its_pauses (test_entitlement_regressions.PortalRegression.test_member_login_keeps_phone_bottle_credit_and_its_pauses)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\PROJECTS_IO\Plastic-Bottle-Vending-Machine\host\test_entitlement_regressions.py", line 311, in test_member_login_keeps_phone_bottle_credit_and_its_pauses
+    self.assertEqual(after['grant_id'],fresh)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'c3bf1146-7849-4112-9805-4d58703e5e07' != 'cf414e85-0a29-4e05-ba3c-a8a72af4a862'
+- c3bf1146-7849-4112-9805-4d58703e5e07
++ cf414e85-0a29-4e05-ba3c-a8a72af4a862
+
+
+----------------------------------------------------------------------
+Ran 2 tests in 4.311s
+
+FAILED (failures=2)

@@ -1,0 +1,27 @@
+Tue Sep  8 12:30:12 UTC 2026
+ 20:30:12 up 17 min,  0 users,  load average: 0.28, 0.19, 0.13
+inactive
+active
+active
+active
+      Local time: Tue 2026-09-08 20:30:12 PST
+  Universal time: Tue 2026-09-08 12:30:12 UTC
+        RTC time: Tue 2026-09-08 12:29:54
+       Time zone: Asia/Manila (PST, +0800)
+ Network time on: yes
+NTP synchronized: yes
+ RTC in local TZ: no
+-- Logs begin at Tue 2026-09-08 16:29:51 PST, end at Tue 2026-09-08 20:30:12 PST. --
+Sep 08 16:29:51 ecofi-vendo systemd[1]: Starting Network Time Synchronization...
+Sep 08 16:29:51 ecofi-vendo systemd[1]: Started Network Time Synchronization.
+Sep 08 20:13:33 ecofi-vendo systemd-timesyncd[338]: Synchronized to time server 162.159.200.123:123 (0.ph.pool.ntp.org).
+2.2.0
+49016209be54cdc5299672bd800bc412cf0bc64d0fe6e5d1de07f2272a0604dd  /opt/ecofi/time_portal.py
+20474c23ad54ddaf80307c5e9be9e3ba0e22611fe0983a39c05f164e7b6173be  /opt/ecofi/license_manager.py
+default via 192.168.23.1 dev eth0 
+10.0.0.0/19 dev eth1 proto kernel scope link src 10.0.0.1 
+169.254.0.0/16 dev eth1 scope link metric 1000 
+192.168.23.0/24 dev eth0 proto kernel scope link src 192.168.23.69 
+
+STDERR:
+timedatectl: invalid option -- 'p'
