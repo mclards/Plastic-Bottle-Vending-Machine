@@ -46,3 +46,4 @@ for i, s in enumerate(scripts):
             os.remove(tmp_file)
 
 print('ALL JAVASCRIPT IN ADMIN_HTML VALID!')
+
