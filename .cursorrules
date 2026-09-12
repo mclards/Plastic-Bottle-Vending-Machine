@@ -1,0 +1,12 @@
+# Eco-Fi Project Rules for Cursor & GPT Models
+# Consult AGENTS.md for complete hardware, networking, and entitlement specifications.
+
+- Target Environment: Orange Pi One (ARMv7 32-bit), Debian Stretch, Python 3.5.3.
+- CRITICAL: Never use Python 3.6+ syntax (no f-strings, no typing annotations) in host/ files or deployment scripts. Always use .format().
+- The Live Orange Pi (10.0.0.1) is the ground truth. Test live using tools/opi_access.py.
+- Monolithic HTML in portal.py: Never inject unescaped single quotes into JavaScript strings inside PORTAL_HTML or ADMIN_HTML. Validate with node --check.
+- Captive Portal: When opening firewall, client TCP connections drop. JavaScript fetch catch blocks must handle success redirects.
+- SQLite: Table pause_budgets has columns (id, owner_id, pause_count_max, used_count, created_at). There is NO updated_at column.
+- Licensing: Uses developer code "mclards23" with 32-hex character HWID and Activation Key formatted as XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX.
+- Gaming QoS: Uses gateway_network.set_gaming_qos to mark game UDP packets in iptables mangle PREROUTING table.
+- Test Suite: Always verify with python -m unittest test_entitlement_regressions before committing.
