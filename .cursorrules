@@ -10,3 +10,4 @@
 - Licensing: Uses developer code "mclards23" with 32-hex character HWID and Activation Key formatted as XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX.
 - Gaming QoS: Uses gateway_network.set_gaming_qos to mark game UDP packets in iptables mangle PREROUTING table.
 - Test Suite: Always verify with python -m unittest test_entitlement_regressions before committing.
+
