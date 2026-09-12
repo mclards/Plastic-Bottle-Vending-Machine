@@ -7,3 +7,4 @@
 3. **Live OPi Alignment:** The Orange Pi at `10.0.0.1` is the ground truth. Always test live with `tools/opi_access.py` and ensure the release `.img` matches the live board.
 4. **Monolithic Strings in `portal.py`:** `PORTAL_HTML` and `ADMIN_HTML` are single-line strings. Never inject unescaped single quotes into JavaScript within them. Validate with `node --check`.
 5. **Testing:** Run `python -m unittest test_entitlement_regressions` locally before pushing or deploying changes.
+

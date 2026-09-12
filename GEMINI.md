@@ -11,3 +11,4 @@
    - Live OPi is the debugging ground truth.
    - When deploying to `/opt/ecofi/`, restart `ecofi_portal.service` and verify status.
    - Ensure the OS release image in `resources/` is rebuilt to match the live system.
+

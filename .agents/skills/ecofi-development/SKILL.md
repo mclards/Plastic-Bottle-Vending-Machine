@@ -19,3 +19,4 @@ This skill provides comprehensive instructions, pitfall warnings, and operationa
 6. **Licensing:** Uses developer code `mclards23` with 32-character enterprise hexadecimal keys (`XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`).
 7. **Regression Testing:** Run `python -m unittest test_entitlement_regressions` before deploying.
 8. **OS Image Rebuilding:** Run `wsl -d Ubuntu -u root -- bash build_ecofi_img.sh` and ensure matching MD5 and SHA-256 hashes are recorded in `resources/`.
+

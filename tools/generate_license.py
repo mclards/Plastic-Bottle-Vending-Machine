@@ -22,7 +22,7 @@ def main():
         raw_hwid = sys.argv[1].strip()
         tier = sys.argv[2].strip().upper() if len(sys.argv) >= 3 else "COMMERCIAL"
     else:
-        raw_hwid = input("Enter Client Machine Hardware ID (e.g. XXXX-XXXX-XXXX-XXXX): ").strip()
+        raw_hwid = input("Enter Client Machine Hardware ID (e.g. XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX): ").strip()
         if not raw_hwid:
             print("Error: Hardware ID is required.")
             return
@@ -48,9 +48,9 @@ def main():
     print(f" INPUT HWID:        {raw_hwid}")
     print(f" NORMALIZED HWID:   {hwid}")
     print(f" LICENSE TIER:      {tier}")
-    print(f" ACTIVATION PIN:    {pin}")
+    print(f" ACTIVATION KEY:    {pin}")
     print("----------------------------------------------------------------")
-    print(f" Send this 16-character PIN to your client to activate their machine.")
+    print(f" Send this 32-character key to your client to activate their machine.")
     print("================================================================")
 
 if __name__ == "__main__":

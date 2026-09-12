@@ -117,3 +117,4 @@ Implemented in [`host/gateway_network.py`](file:///d:/PROJECTS_IO/Plastic-Bottle
 - **Base Image:** `resources/EcoFi_Opi_v2.1.img`.
 - **Output Target:** `resources/EcoFi_Opi_v<VERSION>.img` (along with `.md5` and `.sha256` files).
 - **Validation:** Runs ARM QEMU static emulator tests (`verify_arm_runtime.py`, route imports, `dnsmasq --test`, `e2fsck`) inside the mounted rootfs before finalizing.
+

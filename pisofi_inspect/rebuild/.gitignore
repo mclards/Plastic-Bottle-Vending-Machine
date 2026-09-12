@@ -1,3 +1,4 @@
 private/
 logs/
+*.zip
 __pycache__/
