@@ -4,9 +4,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path('d:/PROJECTS_IO/Plastic-Bottle-Vending-Machine')
-IMG_PATH = ROOT / 'resources' / 'EcoFi_Opi_v2.3.4.img'
-SHA_FILE = ROOT / 'resources' / 'EcoFi_Opi_v2.3.4.img.sha256'
-MD5_FILE = ROOT / 'resources' / 'EcoFi_Opi_v2.3.4.img.md5'
+version = (ROOT / 'VERSION').read_text().strip()
+IMG_PATH = ROOT / 'resources' / ('EcoFi_Opi_v' + version + '.img')
+SHA_FILE = ROOT / 'resources' / ('EcoFi_Opi_v' + version + '.img.sha256')
+MD5_FILE = ROOT / 'resources' / ('EcoFi_Opi_v' + version + '.img.md5')
 
 print('=== 1. VERIFYING DISK IMAGE CHECKSUMS ===')
 print('Image Path:', IMG_PATH)
@@ -76,3 +77,4 @@ if mismatches == 0 and calc_sha256 == rec_sha256 and calc_md5 == rec_md5:
 else:
     print('\n>>> VERIFICATION FAILED <<<')
     sys.exit(1)
+
