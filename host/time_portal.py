@@ -43,6 +43,7 @@ class TimePortal(object):
             ('/api/vendo/done','api_vendo_done',self.done,['POST']),
             ('/api/client/pause','api_client_pause',self.pause,['POST']),
             ('/api/voucher/redeem','api_voucher_redeem',self.voucher,['POST']),
+            ('/api/vendo/client_time','api_vendo_client_time',self.sync_client_time,['POST']),
             ('/api/transfer/generate','api_transfer_generate',self.transfer_create,['POST']),
             ('/api/transfer/claim','api_transfer_claim',self.transfer_claim,['POST']),
             ('/api/transfer/cancel','api_transfer_cancel',self.transfer_cancel,['POST']),
@@ -67,6 +68,10 @@ class TimePortal(object):
         'storage_unavailable': 'System storage is temporarily unavailable.',
         'deposit_not_found': 'Deposit session expired or not found.',
         'device_not_registered': 'Your device is not registered.',
+        'timestamp_behind_system': 'Client time cannot be behind system record.',
+        'timestamp_out_of_range': 'Client time is out of realistic range.',
+        'client_time_required': 'Client time is required.',
+        'invalid_timestamp': 'Invalid client time format.',
     }
 
     def guarded(self,fn):
@@ -94,11 +99,13 @@ class TimePortal(object):
         now,mono=self.now()
         if self.p.platform.system()=='Windows' or os.environ.get('ECOFI_TRUST_CLOCK')=='1':
             return True
+        if getattr(self,'client_clock_trusted',False) and os.environ.get('ECOFI_TRUST_CLOCK')!='0':
+            return True
         # A saved date cannot measure time spent powered off. Check actual sync.
         # The image's older systemd has `status`, but no `show -p` interface.
         interval=10 if self.clock_ok else 2
         if self.clock_checked is None or not 0<=mono-self.clock_checked<interval:
-            self.clock_checked=mono;self.clock_ok=False
+            self.clock_checked=mono;self.clock_ok=False;self.client_clock_trusted=False
             try:
                 env=dict(os.environ,LC_ALL='C',SYSTEMD_PAGER='cat')
                 result=self.p.subprocess.run(['timedatectl','status'],stdout=self.p.subprocess.PIPE,
@@ -319,6 +326,38 @@ class TimePortal(object):
         # State-idempotent actions remain compatible with older captive browsers.
         data.setdefault('operation_id',str(uuid.uuid4()))
         return jsonify(self.operation(action.upper(),{},data))
+
+    def sync_client_time(self):
+        data=self.data()
+        client_ts=data.get('client_time_utc')
+        if client_ts is None:
+            raise ValueError('client_time_required')
+        try:
+            client_ts=float(client_ts)
+        except (ValueError,TypeError):
+            raise ValueError('invalid_timestamp')
+        if client_ts<1788220800 or client_ts>2051222400:
+            raise ValueError('timestamp_out_of_range')
+        if self.clock_trusted() and not getattr(self,'client_clock_trusted',False):
+            return jsonify(success=True,synced=False,reason='ntp_active')
+        with self.p.db_connection() as conn:
+            last_known=float(storage.metadata(conn,'last_known_utc','0'))
+            if client_ts<last_known-60:
+                raise ValueError('timestamp_behind_system')
+            if self.p.platform.system()!='Windows':
+                try:
+                    self.p.subprocess.run(['date','-s','@'+str(int(client_ts))],
+                        stdout=self.p.subprocess.DEVNULL,stderr=self.p.subprocess.DEVNULL,timeout=3)
+                    self.p.subprocess.run(['fake-hwclock','save'],
+                        stdout=self.p.subprocess.DEVNULL,stderr=self.p.subprocess.DEVNULL,timeout=3)
+                except Exception:
+                    pass
+            storage.set_metadata(conn,'last_known_utc',str(client_ts))
+            self.client_clock_trusted=True
+            self.clock_ok=True
+            now,mono=self.now()
+            engine.check_due_events(conn,now,mono)
+        return jsonify(success=True,synced=True,client_time=client_ts)
 
 
     def voucher(self):
@@ -653,8 +692,12 @@ class TimePortal(object):
             for cd in engine.all_rows(conn,'SELECT * FROM connections'):
                 control=engine.one(conn,'SELECT * FROM mac_control WHERE lower(mac)=?',(cd['mac'],))
                 service_block=not licensed or bool(control and control['type'] in ('block','whitelist'))
-                conn.execute('UPDATE connections SET service_suspended=? WHERE id=?',(int(service_block),cd['id']))
-                conn.execute('UPDATE connections SET disconnect_paused=? WHERE id=?',(int(auto and arp.get(cd['ip'])!=cd['mac']),cd['id']))
+                new_suspended=int(service_block)
+                new_disc=int(auto and arp.get(cd['ip'])!=cd['mac'])
+                if cd.get('service_suspended')!=new_suspended:
+                    conn.execute('UPDATE connections SET service_suspended=? WHERE id=?',(new_suspended,cd['id']))
+                if cd.get('disconnect_paused')!=new_disc:
+                    conn.execute('UPDATE connections SET disconnect_paused=? WHERE id=?',(new_disc,cd['id']))
                 selected=engine.grant(conn,cd['selected_grant_id'])
                 if selected and not selected['speed_override']:
                     dl=int((control or {}).get('dl_kbps') or self.config(conn,'default_dl_kbps','3072'))

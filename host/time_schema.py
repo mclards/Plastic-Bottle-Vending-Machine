@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Eco-Fi PisoFi-Style Time & Pause Schema Management
+VMC ECO-VENDO Time & Pause Schema Management
 Strictly compatible with Python 3.5.3 (NO f-strings, NO variable annotations).
 
 Provides additive table definitions and schema initialization without
@@ -340,6 +340,7 @@ def init_time_schema(conn):
         conn.execute("UPDATE time_grants SET state='ARCHIVED' WHERE state='WALLET'")
         set_metadata(conn,'schema_version',SCHEMA_VERSION)
         conn.execute('CREATE INDEX IF NOT EXISTS idx_pending_intents ON network_intents(status,id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_intents_lookup ON network_intents(status, connection_id, version, desired_state)')
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_one_open_pause ON grant_pauses(grant_id) WHERE status='OPEN'")
         conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_one_grant_binding ON connections(selected_grant_id) WHERE selected_grant_id IS NOT NULL')
         conn.execute("CREATE INDEX IF NOT EXISTS idx_time_ledger_journal ON time_ledger (journal_id) WHERE journal_id IS NOT NULL")
