@@ -7,7 +7,7 @@ const char* index_html PROGMEM = R"rawliteral(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Eco-Fi Hardware Configuration</title>
+    <title>VMC ECO-VENDO Hardware Configuration</title>
     <style>
         :root {
             --bg: #f8fafc;
@@ -217,8 +217,17 @@ const char* index_html PROGMEM = R"rawliteral(
 <body>
     <div class="container">
         <div class="header">
-            <h1>Eco-Fi Hardware Configuration</h1>
+            <h1>VMC ECO-VENDO Hardware Configuration</h1>
             <p>ESP32 Controller Parameters &amp; Servo Calibration</p>
+        </div>
+
+        <!-- Maintenance -->
+        <div class="section" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-size: 13px; font-weight: 600; color: var(--text-main);">Maintenance</div>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Restart ESP32 controller into normal vending mode</div>
+            </div>
+            <button type="button" class="btn-sm" onclick="rebootVendo()" style="background: transparent; color: var(--text-main); border-color: var(--border); cursor: pointer;">🔄 Reboot Vendo</button>
         </div>
 
         <!-- Sensors & Detection -->
@@ -359,6 +368,13 @@ const char* index_html PROGMEM = R"rawliteral(
                 });
             });
         });
+
+        function rebootVendo() {
+            if (!confirm('Reboot ESP32 controller into normal vending mode?')) return;
+            fetch('/reboot').then(() => {
+                alert('ESP32 rebooting. Reconnect to WiFi or refresh in a few seconds.');
+            }).catch(() => {});
+        }
     </script>
 </body>
 </html>
