@@ -236,3 +236,4 @@ const long  RAW_SUM_PAPER_MAX   = 14000; // Total optical sum cutoff for paper/c
 **Question 3: How does the system reject cardboard coffee cups or white paper?**  
 *Answer:*  
 > "Cellulose paper and cardboard produce massive diffuse scattering across all six channels, driving total raw optical sum above 15,000 counts and Visible Red ($R=610\text{ nm}$) above 8,000 counts. Our calibrated upper bound (`pet_nir_w_max = 220`) successfully rejects these diffuse paper contaminants."
+

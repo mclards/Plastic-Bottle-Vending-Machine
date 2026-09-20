@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdarg>
 #include <AS726X.h>
+#include <HX711.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <DNSServer.h>
@@ -67,7 +68,8 @@ void logError(const char* tag, const char* format, ...) {
 #define PIN_IR_TOP 32             // E18-D80NK Intake (Left Side Bus)
 #define PIN_IR_BOTTOM 33          // E18-D80NK Drop (Left Side Bus)
 #define PIN_PROX_METAL 25         // LJ12A3-4-Z/BX Metal (Left Side Bus)
-// GPIO 15 is free/spare (Capacitive sensor omitted)
+#define PIN_HX711_DOUT 15         // HX711 Load Cell Data Out (Left Side Bus)
+#define PIN_HX711_SCK 4           // HX711 Load Cell Serial Clock (Left Side Bus)
 #define PIN_ULTRASONIC_TRIG 23    // HC-SR04 Trig (Right Side Top)
 #define PIN_ULTRASONIC_ECHO 27    // HC-SR04 Echo (Left Side Bus)
 
@@ -94,6 +96,10 @@ bool pca9685Found = false;
 
 AS726X spectrometer;
 bool spectrometerFound = false;
+
+HX711 scale;
+bool hx711Found = false;
+float lastMeasuredWeightG = 0.0f;
 
 MachineConfig config;
 MachineConfig desiredConfig; // UART task owns this; sensor task owns runtime config.
@@ -314,8 +320,8 @@ int getBinDistanceCm() {
 void loadPreferences() {
     preferences.begin("ecovendo", false);
     config.bin_full_threshold_cm = preferences.getInt("bin_cm", 15);
-    config.pet_nir_w_min = preferences.getInt("nir_min", 200);
-    config.pet_nir_w_max = preferences.getInt("nir_max", 5000);
+    config.pet_nir_w_min = preferences.getInt("nir_min", 30);
+    config.pet_nir_w_max = preferences.getInt("nir_max", 220);
     config.entrance_gate_timeout = preferences.getInt("ent_tout", 60);
     config.settle_time_ms = preferences.getInt("stl_ms", 500);
     config.success_drop_tout_ms = preferences.getInt("suc_tout", 3000);
@@ -327,6 +333,10 @@ void loadPreferences() {
     config.rej_open_angle = preferences.getInt("rej_open", 90);
     config.rej_close_angle = preferences.getInt("rej_close", 0);
     config.require_nir_sensor = preferences.getInt("req_nir", 1);
+    config.require_weight_sensor = preferences.getInt("req_wt", 0);
+    config.min_bottle_weight_g = preferences.getInt("min_wt", 10);
+    config.max_bottle_weight_g = preferences.getInt("max_wt", 65);
+    config.weight_cal_factor = preferences.getInt("wt_cal", 420);
 
     logDebug("NVS", "Loaded Hardware Preferences:");
     logDebug("NVS", "  Bin Full Threshold: %d cm", config.bin_full_threshold_cm);
@@ -338,7 +348,9 @@ void loadPreferences() {
              config.ent_open_angle, config.ent_close_angle,
              config.suc_open_angle, config.suc_close_angle,
              config.rej_open_angle, config.rej_close_angle);
-    logDebug("NVS", "  Require NIR Sensor: %d (1=Strict, 0=Bench-Test)", config.require_nir_sensor);
+    logDebug("NVS", "  Intake Requirements: NIR=%d, Weight=%d (Range: [%d - %d] g, CalFactor: %d)",
+             config.require_nir_sensor, config.require_weight_sensor,
+             config.min_bottle_weight_g, config.max_bottle_weight_g, config.weight_cal_factor);
 }
 
 void savePreferences() {
@@ -356,6 +368,10 @@ void savePreferences() {
     preferences.putInt("rej_open", config.rej_open_angle);
     preferences.putInt("rej_close", config.rej_close_angle);
     preferences.putInt("req_nir", config.require_nir_sensor);
+    preferences.putInt("req_wt", config.require_weight_sensor);
+    preferences.putInt("min_wt", config.min_bottle_weight_g);
+    preferences.putInt("max_wt", config.max_bottle_weight_g);
+    preferences.putInt("wt_cal", config.weight_cal_factor);
     logDebug("NVS", "Persisted hardware parameters to Flash.");
 }
 
@@ -381,6 +397,10 @@ void handleRoot() {
     html.replace("%REJ_OPEN%", String(config.rej_open_angle));
     html.replace("%REJ_CLOSE%", String(config.rej_close_angle));
     html.replace("%REQ_NIR%", String(config.require_nir_sensor));
+    html.replace("%REQ_WT%", String(config.require_weight_sensor));
+    html.replace("%MIN_WT%", String(config.min_bottle_weight_g));
+    html.replace("%MAX_WT%", String(config.max_bottle_weight_g));
+    html.replace("%WT_CAL%", String(config.weight_cal_factor));
     server.send(200, "text/html", html);
 }
 
@@ -388,7 +408,8 @@ void handleSave() {
     lastActivityTime = millis();
     logDebug("HTTP", "POST /save received from %s", server.client().remoteIP().toString().c_str());
     const char* fields[] = {"bin_cm", "ent_tout", "stl_ms", "suc_tout", "rej_time", "nir_min", "nir_max",
-        "ent_open", "ent_close", "suc_open", "suc_close", "rej_open", "rej_close", "req_nir"};
+        "ent_open", "ent_close", "suc_open", "suc_close", "rej_open", "rej_close", "req_nir",
+        "req_wt", "min_wt", "max_wt", "wt_cal"};
     for (const char* field : fields) {
         if (!server.hasArg(field)) continue;
         String value = server.arg(field);
@@ -415,6 +436,10 @@ void handleSave() {
     if (server.hasArg("rej_open")) config.rej_open_angle = server.arg("rej_open").toInt();
     if (server.hasArg("rej_close")) config.rej_close_angle = server.arg("rej_close").toInt();
     if (server.hasArg("req_nir")) config.require_nir_sensor = server.arg("req_nir").toInt();
+    if (server.hasArg("req_wt")) config.require_weight_sensor = server.arg("req_wt").toInt();
+    if (server.hasArg("min_wt")) config.min_bottle_weight_g = server.arg("min_wt").toInt();
+    if (server.hasArg("max_wt")) config.max_bottle_weight_g = server.arg("max_wt").toInt();
+    if (server.hasArg("wt_cal")) config.weight_cal_factor = server.arg("wt_cal").toInt();
 
     if (!validMachineConfig(config)) {
         logWarn("HTTP", "Machine configuration validation failed. Reverting.");
@@ -690,36 +715,78 @@ void sensorTaskCode(void* parameter) {
                 rejectReasonDesc = "Metal/Tin Can Detected";
                 logWarn("DECISION", "REJECT: %s", rejectReasonDesc);
             } 
-            else if (!spectrometerFound) {
+            else if (!spectrometerFound && config.require_nir_sensor) {
                 isValid = false;
                 rejectReason = MSG_REJECT_NIR;
                 rejectReasonDesc = "Spectrometer Offline";
                 logWarn("DECISION", "REJECT: %s", rejectReasonDesc);
             }
             else {
-                logDebug("NIR", "Triggering AS7263 NIR spectrometer measurements...");
-                spectrometer.takeMeasurements();
-                float nirAbsorption = spectrometer.getCalibratedW();
-                int r = spectrometer.getR();
-                int s = spectrometer.getS();
-                int t = spectrometer.getT();
-                int u = spectrometer.getU();
-                int v = spectrometer.getV();
-                int w = spectrometer.getW();
-                int tempC = spectrometer.getTemperature();
+                if (spectrometerFound) {
+                    logDebug("NIR", "Triggering AS7263 NIR spectrometer measurements...");
+                    spectrometer.takeMeasurements();
+                    float nirAbsorption = spectrometer.getCalibratedW();
+                    int r = spectrometer.getR();
+                    int s = spectrometer.getS();
+                    int t = spectrometer.getT();
+                    int u = spectrometer.getU();
+                    int v = spectrometer.getV();
+                    int w = spectrometer.getW();
+                    int tempC = spectrometer.getTemperature();
 
-                logDebug("NIR", "Spectral Channels: R=%d, S=%d, T=%d, U=%d, V=%d, W=%d | Temp=%d C",
-                         r, s, t, u, v, w, tempC);
-                logDebug("NIR", "Calibrated W Channel: %.2f (PET Range: [%d - %d])",
-                         nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max);
+                    logDebug("NIR", "Spectral Channels: R=%d, S=%d, T=%d, U=%d, V=%d, W=%d | Temp=%d C",
+                             r, s, t, u, v, w, tempC);
+                    logDebug("NIR", "Calibrated W Channel: %.2f (PET Range: [%d - %d])",
+                             nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max);
 
-                if (nirAbsorption < config.pet_nir_w_min || nirAbsorption > config.pet_nir_w_max) {
-                    isValid = false;
-                    rejectReason = MSG_REJECT_NIR;
-                    rejectReasonDesc = "NIR Spectrum Out of Range for PET Plastic";
-                    logWarn("DECISION", "REJECT: %s (Val: %.2f)", rejectReasonDesc, nirAbsorption);
-                } else {
-                    logDebug("NIR", "NIR Spectrum MATCHES PET Plastic!");
+                    if (config.require_nir_sensor) {
+                        if (nirAbsorption < 22.0f) {
+                            isValid = false;
+                            rejectReason = MSG_REJECT_NIR;
+                            rejectReasonDesc = "Colored Glass Bottle Detected (High NIR Absorption)";
+                            logWarn("DECISION", "REJECT: %s (Val: %.2f uW/cm2 < 22.0)", rejectReasonDesc, nirAbsorption);
+                        } else if (nirAbsorption < config.pet_nir_w_min || nirAbsorption > config.pet_nir_w_max) {
+                            isValid = false;
+                            rejectReason = MSG_REJECT_NIR;
+                            rejectReasonDesc = "NIR Spectrum Out of Range for PET Plastic";
+                            logWarn("DECISION", "REJECT: %s (Val: %.2f)", rejectReasonDesc, nirAbsorption);
+                        } else {
+                            logDebug("NIR", "NIR Spectrum MATCHES PET Plastic!");
+                        }
+                    }
+                }
+
+                // HX711 Mass & Weight Discrimination
+                if (isValid) {
+                    if (hx711Found) {
+                        float weightG = scale.get_units(5);
+                        lastMeasuredWeightG = weightG;
+                        logDebug("WEIGHT", "Measured Bottle Weight: %.1f g (Valid Range: [%d - %d g])",
+                                 weightG, config.min_bottle_weight_g, config.max_bottle_weight_g);
+
+                        if (config.require_weight_sensor) {
+                            if (weightG < config.min_bottle_weight_g) {
+                                isValid = false;
+                                rejectReason = MSG_REJECT_NON_PLASTIC;
+                                rejectReasonDesc = "Underweight: Foreign Object / Paper / Trash";
+                                logWarn("DECISION", "REJECT: %s (Weight: %.1f g < %d g)",
+                                        rejectReasonDesc, weightG, config.min_bottle_weight_g);
+                            } else if (weightG > config.max_bottle_weight_g) {
+                                isValid = false;
+                                rejectReason = MSG_REJECT_NON_PLASTIC;
+                                rejectReasonDesc = "Overweight: Clear Glass Bottle or Liquid Detected";
+                                logWarn("DECISION", "REJECT: %s (Weight: %.1f g > %d g)",
+                                        rejectReasonDesc, weightG, config.max_bottle_weight_g);
+                            } else {
+                                logDebug("WEIGHT", "Bottle weight within authentic empty PET bounds!");
+                            }
+                        }
+                    } else if (config.require_weight_sensor) {
+                        isValid = false;
+                        rejectReason = MSG_REJECT_NON_PLASTIC;
+                        rejectReasonDesc = "HX711 Weight Sensor Offline";
+                        logWarn("DECISION", "REJECT: %s", rejectReasonDesc);
+                    }
                 }
             }
 
@@ -949,14 +1016,6 @@ void setup() {
         logDebug("I2C", "AS7263 NIR Spectrometer detected OK! Sensor Temp: %d C", spectrometer.getTemperature());
     }
 
-    char bootBuf[256];
-    snprintf(bootBuf, sizeof(bootBuf),
-             "{\"event\":\"BOOT\",\"protocol\":2,\"firmware_version\":\"%s\",\"pca9685_ready\":%s,\"spectrometer_ready\":%s}",
-             ECOVENDO_VERSION,
-             pca9685Found ? "true" : "false",
-             spectrometerFound ? "true" : "false");
-    emitSerialLine(bootBuf);
-
     loadPreferences();
     if (!validMachineConfig(config)) {
         logWarn("NVS", "Loaded configuration invalid; reverting to defaults.");
@@ -964,6 +1023,27 @@ void setup() {
     }
     desiredConfig = config;
     requestedGateTimeout = config.entrance_gate_timeout;
+
+    logDebug("SCALE", "Probing HX711 Load Cell on DOUT=GPIO %d, SCK=GPIO %d...", PIN_HX711_DOUT, PIN_HX711_SCK);
+    scale.begin(PIN_HX711_DOUT, PIN_HX711_SCK);
+    if (scale.wait_ready_timeout(200)) {
+        hx711Found = true;
+        scale.set_scale(config.weight_cal_factor > 0 ? (float)config.weight_cal_factor : 420.0f);
+        scale.tare();
+        logDebug("SCALE", "HX711 Load Cell detected and tared successfully!");
+    } else {
+        hx711Found = false;
+        logDebug("SCALE", "HX711 Load Cell not detected (running in NIR-only mode).");
+    }
+
+    char bootBuf[256];
+    snprintf(bootBuf, sizeof(bootBuf),
+             "{\"event\":\"BOOT\",\"protocol\":2,\"firmware_version\":\"%s\",\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s}",
+             ECOVENDO_VERSION,
+             pca9685Found ? "true" : "false",
+             spectrometerFound ? "true" : "false",
+             hx711Found ? "true" : "false");
+    emitSerialLine(bootBuf);
 
     logDebug("SERVO", "Aligning all servos to initial closed angles...");
     setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
@@ -1222,8 +1302,27 @@ void loop() {
                 if (!command["require_nir_sensor"].is<int>()) fieldsValid = false;
                 else next.require_nir_sensor = command["require_nir_sensor"];
             }
+            if (!command["require_weight_sensor"].isNull()) {
+                if (!command["require_weight_sensor"].is<int>()) fieldsValid = false;
+                else next.require_weight_sensor = command["require_weight_sensor"];
+            }
+            if (!command["min_bottle_weight_g"].isNull()) {
+                if (!command["min_bottle_weight_g"].is<int>()) fieldsValid = false;
+                else next.min_bottle_weight_g = command["min_bottle_weight_g"];
+            }
+            if (!command["max_bottle_weight_g"].isNull()) {
+                if (!command["max_bottle_weight_g"].is<int>()) fieldsValid = false;
+                else next.max_bottle_weight_g = command["max_bottle_weight_g"];
+            }
+            if (!command["weight_cal_factor"].isNull()) {
+                if (!command["weight_cal_factor"].is<int>()) fieldsValid = false;
+                else next.weight_cal_factor = command["weight_cal_factor"];
+            }
             if (fieldsValid && validMachineConfig(next)) {
                 desiredConfig = next;
+                if (hx711Found && next.weight_cal_factor > 0) {
+                    scale.set_scale((float)next.weight_cal_factor);
+                }
                 xQueueOverwrite(configQueue, &next);
                 logDebug("CMD", "SET_CONFIG accepted and queued to SensorTask.");
             } else {
@@ -1279,16 +1378,44 @@ void loop() {
                          !spectrometerFound ? "spectrometer_offline" : "machine_busy");
                 emitSerialLine(nirBuf);
             }
+        } else if (strcmp(cmd, "TEST_WEIGHT") == 0) {
+            if (hx711Found && !depositCycleBusy) {
+                float weightG = scale.get_units(5);
+                lastMeasuredWeightG = weightG;
+                logDebug("SCALE", "--- On-Demand HX711 Load Cell Scan: %.1f g ---", weightG);
+                char wtBuf[192];
+                snprintf(wtBuf, sizeof(wtBuf),
+                         "{\"event\":\"WEIGHT_TEST\",\"success\":true,\"weight_g\":%.1f,\"min_g\":%d,\"max_g\":%d,\"cal_factor\":%d}",
+                         weightG, config.min_bottle_weight_g, config.max_bottle_weight_g, config.weight_cal_factor);
+                emitSerialLine(wtBuf);
+            } else {
+                logWarn("CMD", "TEST_WEIGHT rejected: hx711Found=%d, busy=%d", hx711Found, depositCycleBusy.load());
+                char wtBuf[128];
+                snprintf(wtBuf, sizeof(wtBuf),
+                         "{\"event\":\"WEIGHT_TEST\",\"success\":false,\"error\":\"%s\"}",
+                         !hx711Found ? "hx711_offline" : "machine_busy");
+                emitSerialLine(wtBuf);
+            }
+        } else if (strcmp(cmd, "TARE_WEIGHT") == 0) {
+            if (hx711Found && !depositCycleBusy) {
+                scale.tare();
+                logDebug("SCALE", "--- HX711 Scale Tared (Zeroed) ---");
+                emitSerialLine("{\"event\":\"TARE_OK\",\"success\":true}");
+            } else {
+                emitSerialLine("{\"event\":\"TARE_REJECTED\",\"success\":false}");
+            }
         } else if (strcmp(cmd, "PING") == 0) {
             char pongBuf[256];
-            bool hwReady = pca9685Found && (!desiredConfig.require_nir_sensor || spectrometerFound);
+            bool hwReady = pca9685Found && (!desiredConfig.require_nir_sensor || spectrometerFound) && (!desiredConfig.require_weight_sensor || hx711Found);
             snprintf(pongBuf, sizeof(pongBuf),
-                     "{\"event\":\"PONG\",\"firmware_version\":\"%s\",\"protocol\":2,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d}",
+                     "{\"event\":\"PONG\",\"firmware_version\":\"%s\",\"protocol\":2,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d}",
                      ECOVENDO_VERSION,
                      pca9685Found ? "true" : "false",
                      spectrometerFound ? "true" : "false",
+                     hx711Found ? "true" : "false",
                      hwReady ? "true" : "false",
-                     desiredConfig.require_nir_sensor);
+                     desiredConfig.require_nir_sensor,
+                     desiredConfig.require_weight_sensor);
             emitSerialLine(pongBuf);
             logDebug("CMD", "Responded to PING with PONG.");
         } else if (strlen(cmd) > 0) {

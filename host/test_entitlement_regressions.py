@@ -668,15 +668,32 @@ class PortalRegression(unittest.TestCase):
     def test_hardware_settings_validate_before_persistence_or_transmission(self):
         with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
         sent=[];self.p.transmit_to_esp32=sent.append
-        for data in ({'settle_time_ms':-1},{'ent_open_angle':181},{'pet_nir_w_min':6000},{'entrance_gate_timeout':0},['invalid']):
+        for data in ({'settle_time_ms':-1},{'ent_open_angle':181},{'pet_nir_w_min':6000},{'entrance_gate_timeout':0},{'min_bottle_weight_g':-1},{'min_bottle_weight_g':100,'max_bottle_weight_g':50},['invalid']):
             response=self.client.post('/admin/api/esp32/save',json=data)
             self.assertEqual(response.status_code,400,response.get_json())
         self.assertFalse(sent)
         self.assertEqual(self.p.get_config('esp_settle_time_ms','unset'),'unset')
-        response=self.client.post('/admin/api/esp32/save',json={'settle_time_ms':750})
+        response=self.client.post('/admin/api/esp32/save',json={'settle_time_ms':750,'min_bottle_weight_g':12,'max_bottle_weight_g':60,'weight_cal_factor':430})
         self.assertEqual(response.status_code,200,response.get_json())
         self.assertEqual(self.p.get_config('esp_settle_time_ms'),'750')
+        self.assertEqual(self.p.get_config('esp_min_bottle_weight_g'),'12')
+        self.assertEqual(self.p.get_config('esp_max_bottle_weight_g'),'60')
+        self.assertEqual(self.p.get_config('esp_weight_cal_factor'),'430')
         self.assertEqual(sent[-1]['settle_time_ms'],750)
+        self.assertEqual(sent[-1]['min_bottle_weight_g'],12)
+
+    def test_admin_esp32_weight_routes(self):
+        self.assertEqual(self.client.post('/admin/api/esp32/test_weight').status_code,401)
+        self.assertEqual(self.client.post('/admin/api/esp32/tare_weight').status_code,401)
+        with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
+        self.p.set_config('simulator_enabled','1')
+        self.p.transmit_to_esp32=self.original_transmit
+        resp_test=self.client.post('/admin/api/esp32/test_weight')
+        self.assertEqual(resp_test.status_code,200,resp_test.get_json())
+        self.assertTrue(resp_test.get_json()['success'])
+        resp_tare=self.client.post('/admin/api/esp32/tare_weight')
+        self.assertEqual(resp_tare.status_code,200,resp_tare.get_json())
+        self.assertTrue(resp_tare.get_json()['success'])
 
     def test_portal_admin_simulator_render_and_inline_javascript_parse(self):
         import re,subprocess
