@@ -16,9 +16,10 @@ Latest live application: **v2.2.3** — [credit queue display correction](2026-0
 
 > **Current status ? September 5, 2026: LIVE VERIFICATION FAILED.** See the [live OPi report](2026-09-05-live/REPORT.md): 38 isolated checks found 21 failures, with live failures in licensing, DNS, client identity, MAC blocking, and access revocation. The August 17 closure below is historical and does not certify the current installation.
 
-# Eco-Fi Project Audit — FINAL CLOSURE REPORT
+# VMC ECO-VENDO (Formerly Eco-Fi) Project Audit — FINAL CLOSURE REPORT
+> **Thesis:** Eco-Vendo: An Empty Bottle-Initiated Internet Access Vending System
 
-**Project:** Eco-Fi Plastic Bottle Reverse Vending Machine WiFi Portal  
+**Project:** VMC ECO-VENDO Plastic Bottle Reverse Vending Machine WiFi Portal  
 **Base Image:** `PisoFi_Opi1&PC_v5.3.0-05-10-26_EXT.img`  
 **Target Image:** `EcoFi_Opi_v1.0.img`  
 **Audit Opened:** August 17, 2026  

@@ -1,4 +1,5 @@
 # Eco-Fi Project Rules for Cursor & GPT Models
+# VMC ECO-VENDO Project Rules for Cursor & GPT Models
 # Consult AGENTS.md for complete hardware, networking, and entitlement specifications.
 
 - Target Environment: Orange Pi One (ARMv7 32-bit), Debian Stretch, Python 3.5.3.

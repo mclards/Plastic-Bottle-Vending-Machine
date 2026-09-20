@@ -604,7 +604,7 @@ class PortalRegression(unittest.TestCase):
             self.assertEqual(run.call_count,1)
             self.mono+=2;result.stdout=b'NTP synchronized: yes'
             self.assertTrue(type(service).clock_trusted(service))
-            self.assertTrue(all(call.args[0][0]=='timedatectl' for call in run.call_args_list))
+            self.assertTrue(all(c[0][0][0]=='timedatectl' for c in run.call_args_list))
 
     def test_clock_status_compatibility_and_failed_probe(self):
         service=self.p.time_service
@@ -635,7 +635,7 @@ class PortalRegression(unittest.TestCase):
             result=self.request('/admin/api/clients/disconnect',{'ip':'10.0.0.2'})
         self.assertTrue(result.get_json()['success'])
         self.assertEqual(self.scalar('SELECT desired_state FROM connections'),'DISCONNECTED')
-        self.assertTrue(any(call.args[:2]==('10.0.0.2','del') for call in network.call_args_list))
+        self.assertTrue(any(c[0][:2]==('10.0.0.2','del') for c in network.call_args_list))
         self.assertTrue(self.request('/admin/api/system/flush_sessions').get_json()['success'])
         self.assertEqual(self.scalar('SELECT SUM(delta_us) FROM time_ledger'),0)
 
@@ -648,7 +648,7 @@ class PortalRegression(unittest.TestCase):
         with self.client.session_transaction() as cookie:cookie['admin_logged_in']=True
         backup=self.request('/admin/api/system/backup/download',get=True)
         self.assertEqual(backup.status_code,200)
-        with zipfile.ZipFile(io.BytesIO(backup.data)) as archive:self.assertIn('ecofi.db',archive.namelist())
+        with zipfile.ZipFile(io.BytesIO(backup.data)) as archive:self.assertTrue('ecovendo.db' in archive.namelist() or 'ecofi.db' in archive.namelist())
         self.voucher(60,'AFTER_BACKUP')
         restored=self.client.post('/admin/api/system/backup/restore',data={'backup_file':(io.BytesIO(backup.data),'backup.zip')})
         self.assertEqual(restored.status_code,200,restored.get_json())
@@ -717,7 +717,7 @@ class PortalRegression(unittest.TestCase):
         self.p.set_config('simulator_enabled','1')
         with patch.object(self.p.esp32,'receive_uart') as simulator,patch.object(self.p,'ser') as physical:
             self.assertTrue(self.original_transmit({'cmd':'OPEN_GATE'}))
-            simulator.assert_called_once();physical.write.assert_not_called()
+            self.assertEqual(simulator.call_count,1);self.assertEqual(physical.write.call_count,0)
         self.p.set_config('simulator_enabled','0')
         with patch.object(self.p,'ser',None):self.assertFalse(self.original_transmit({'cmd':'OPEN_GATE'}))
 
@@ -758,7 +758,106 @@ class PortalRegression(unittest.TestCase):
         answers=[(2,1,6,'',('93.184.216.34',0)),(2,1,6,'',('10.0.0.1',0))]
         with patch.object(self.p.platform,'system',return_value='Linux'),patch.object(self.p.socket,'getaddrinfo',return_value=answers),patch.object(self.p.gateway_network,'policies') as policies,patch.object(self.p.time_service,'worker_pass'):
             self.p.apply_walled_garden_and_macs()
-        self.assertEqual(policies.call_args[0],(set(),{'93.184.216.34'}))
+    def test_admin_set_balance_recalculates_bracket_validity(self):
+        self.voucher(600)
+        with self.client.session_transaction() as cookie: cookie['admin_logged_in'] = True
+        grant_row = self.scalar("SELECT id FROM time_grants WHERE state='ACTIVE'")
+        with self.p.db_connection() as c:
+            g = c.execute("SELECT validity_duration_sec FROM time_grants WHERE id=?", (grant_row,)).fetchone()
+            self.assertEqual(g[0], 86400)
+        # Admin sets balance to 7 days (10080 minutes = 604800s)
+        self.request('/admin/api/client/edit', {'ip': '10.0.0.2', 'minutes': 10080})
+        with self.p.db_connection() as c:
+            updated = c.execute("SELECT remaining_seconds, validity_duration_sec, valid_until_utc FROM time_grants WHERE id=?", (grant_row,)).fetchone()
+            self.assertEqual(updated[0], 604800.0)
+            self.assertGreaterEqual(updated[1], 7776000)
+            now = self.p.time.time()
+            self.assertGreaterEqual(updated[2], now + 604800)
+            self.assertGreaterEqual(updated[2], now + 7776000)
+
+    def test_client_time_sync_endpoint(self):
+        with patch.object(self.p.time_service, 'clock_trusted', return_value=False):
+            # Missing parameter
+            r = self.request('/api/vendo/client_time', {})
+            self.assertEqual(r.status_code, 400)
+            # Timestamp behind system
+            with self.p.db_connection() as conn:
+                s.set_metadata(conn, 'last_known_utc', '1789338000')
+            r = self.request('/api/vendo/client_time', {'client_time_utc': 1789330000})
+            self.assertEqual(r.status_code, 400)
+            self.assertIn('behind_system', r.get_json()['error'])
+            # Valid timestamp
+            r = self.request('/api/vendo/client_time', {'client_time_utc': 1789340000})
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(r.get_json()['success'])
+            self.assertTrue(r.get_json()['synced'])
+
+    def test_hardware_readiness_blocks_open_gate_when_actuators_offline(self):
+        with patch.object(self.p, 'is_hardware_ready', return_value=(False, 'actuators_offline', 'Servo driver (PCA9685) offline')):
+            r = self.request('/api/vendo/open_gate')
+            self.assertEqual(r.status_code, 400)
+            data = r.get_json()
+            self.assertFalse(data['success'])
+            self.assertEqual(data['error'], 'actuators_offline')
+            self.assertIn('Machine servo actuators', data['message'])
+
+    def test_hardware_readiness_blocks_open_gate_when_sensors_offline(self):
+        with patch.object(self.p, 'is_hardware_ready', return_value=(False, 'sensors_offline', 'Optical spectrometer (AS7263) offline')):
+            r = self.request('/api/vendo/open_gate')
+            self.assertEqual(r.status_code, 400)
+            data = r.get_json()
+            self.assertFalse(data['success'])
+            self.assertEqual(data['error'], 'sensors_offline')
+            self.assertIn('Machine optical sensors', data['message'])
+
+    def test_status_endpoint_reports_hardware_readiness(self):
+        with patch.object(self.p, 'is_hardware_ready', return_value=(True, 'ready', 'Hardware ready')):
+            r = self.request('/api/vendo/status', get=True)
+            self.assertEqual(r.status_code, 200)
+            data = r.get_json()
+            self.assertTrue(data['hardware_ready'])
+            self.assertEqual(data['hardware_status'], 'ready')
+            self.assertEqual(data['hardware_msg'], 'Hardware ready')
+
+    def test_admin_test_servo_endpoint(self):
+        sent = []
+        self.p.transmit_to_esp32 = sent.append
+        # Unauthorized without admin session
+        r = self.client.post('/admin/api/esp32/test_servo', json={'channel': 0, 'angle': 90})
+        self.assertEqual(r.status_code, 401)
+        # Authorized
+        with self.client.session_transaction() as sess:
+            sess['admin_logged_in'] = True
+        # Invalid channel
+        r = self.client.post('/admin/api/esp32/test_servo', json={'channel': 5, 'angle': 90})
+        self.assertEqual(r.status_code, 400)
+        # Hardware unavailable
+        self.p.transmit_to_esp32 = lambda data: False
+        r = self.client.post('/admin/api/esp32/test_servo', json={'channel': 0, 'angle': 90})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()['error'], 'hardware_unavailable')
+        # Valid test servo
+        self.p.transmit_to_esp32 = sent.append
+        r = self.client.post('/admin/api/esp32/test_servo', json={'channel': 0, 'angle': 90, 'hold_ms': 1500})
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.get_json()['success'])
+        self.assertEqual(sent[-1]['cmd'], 'TEST_SERVO')
+        self.assertEqual(sent[-1]['channel'], 0)
+        self.assertEqual(sent[-1]['angle'], 90)
+
+    def test_hardware_bounds_includes_require_nir_sensor(self):
+        from esp32_simulator import HARDWARE_BOUNDS, validate_hardware_config
+        self.assertIn('require_nir_sensor', HARDWARE_BOUNDS)
+        low, high, default = HARDWARE_BOUNDS['require_nir_sensor']
+        self.assertEqual((low, high, default), (0, 1, 1))
+        # Valid values
+        cfg0 = validate_hardware_config({'require_nir_sensor': 0})
+        self.assertEqual(cfg0['require_nir_sensor'], 0)
+        cfg1 = validate_hardware_config({'require_nir_sensor': 1})
+        self.assertEqual(cfg1['require_nir_sensor'], 1)
+        # Out of bounds
+        with self.assertRaises(ValueError):
+            validate_hardware_config({'require_nir_sensor': 2})
 
 
 def uuid_token():

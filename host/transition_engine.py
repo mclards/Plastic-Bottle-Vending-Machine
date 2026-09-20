@@ -222,6 +222,35 @@ def _close_pauses(conn,gid,now,status='CLOSED'):
     conn.execute("UPDATE grant_pauses SET status=?,closed_at_utc=? WHERE grant_id=? AND status='OPEN'",(status,now,gid))
 
 
+def _update_grant_validity(conn,gid,now):
+    g = grant(conn,gid)
+    if not g or g['state'] in TERMINAL:
+        return g
+    policy_id = g.get('policy_version_id') or metadata(conn,'active_policy','pisofi_time_v1')
+    policy = one(conn,'SELECT * FROM time_policy_versions WHERE id=?',(policy_id,))
+    if not policy:
+        return g
+    remaining_sec = g['remaining_us']/float(SCALE)
+    if remaining_sec<=0:
+        return g
+    brackets = json.loads(policy['brackets_json']) if policy['brackets_json'] else []
+    duration = time_policy.calculate_bracket_validity(remaining_sec,brackets,policy['global_validity_min'])
+    until = g['valid_until_utc']
+    if g['validity_mode']=='activation_relative':
+        base = g['activated_at_utc'] or now
+        calculated = (base+duration) if duration else None
+        candidates = [c for c in [until,calculated,now+remaining_sec] if c is not None]
+        if duration:
+            candidates.append(now+duration)
+        until = max(candidates) if candidates else None
+    elif g['validity_mode']=='legacy_pause_expiry':
+        duration = int(max(24,min(720,12+1.2*math.sqrt(remaining_sec/60.0)+0.025*(remaining_sec/60.0)))*3600)
+        until = None
+    conn.execute('UPDATE time_grants SET validity_duration_sec=?,valid_until_utc=?,updated_at=? WHERE id=?',
+                 (duration,until,now,gid))
+    return grant(conn,gid)
+
+
 def _terminal(conn,g,now,reason,op=None):
     if g['state'] in TERMINAL:
         return
@@ -239,6 +268,9 @@ def _select(conn,cid,g,now,mono):
         until = g['valid_until_utc']
         if g['activated_at_utc'] is None:
             until = time_policy.calculate_activation_validity(now,g['validity_duration_sec'])
+        rem_sec = g['remaining_us']/float(SCALE)
+        if until is not None and rem_sec>0:
+            until = max(until, now+rem_sec)
         conn.execute("UPDATE time_grants SET state='ACTIVE',activated_at_utc=?,valid_until_utc=?,updated_at=? WHERE id=?",(activated,until,now,g['id']))
     conn.execute('UPDATE connections SET selected_grant_id=? WHERE id=?',(g['id'],cid))
     refresh_desired(conn,cid,now,mono,True)
@@ -426,30 +458,14 @@ def _action(conn,cd,action,payload,op,now,mono):
         
         if g and g['state'] in ('ACTIVE', 'PAUSED', 'HELD'):
             _move(conn, 'external:issuance', 'grant:'+g['id'], amount, payload.get('origin','bottle')+'_reward', now, op)
-            policy_id = payload.get('policy_version_id') or metadata(conn,'active_policy','pisofi_time_v1')
-            policy = one(conn,'SELECT * FROM time_policy_versions WHERE id=?',(policy_id,))
-            if not policy: raise ValueError('policy_not_found')
-            
             if g['state'] in ('PAUSED', 'HELD'):
                 _close_pauses(conn, g['id'], now)
                 conn.execute("UPDATE time_grants SET state='ACTIVE' WHERE id=?", (g['id'],))
                 g['state'] = 'ACTIVE'
             
-            total_sec = (g['remaining_us'] + amount) / float(SCALE)
-            duration = time_policy.calculate_bracket_validity(total_sec, json.loads(policy['brackets_json']), policy['global_validity_min'])
-            
-            until = g['valid_until_utc']
-            if g['validity_mode'] == 'activation_relative' and g['activated_at_utc']:
-                until = g['activated_at_utc'] + duration
-            elif g['validity_mode'] == 'legacy_pause_expiry':
-                duration = int(max(24,min(720,12+1.2*math.sqrt(total_sec/60.0)+0.025*(total_sec/60.0)))*3600)
-                until = None
-                
-            conn.execute('UPDATE time_grants SET validity_duration_sec=?, valid_until_utc=?, updated_at=? WHERE id=?',
-                         (duration, until, now, g['id']))
+            updated = _update_grant_validity(conn, g['id'], now)
             conn.execute('UPDATE pause_budgets SET used_count=0 WHERE id=?', (g['pause_budget_id'],))
             _activate_next(conn,cd['id'],now,mono)
-            updated = grant(conn, g['id'])
             return {'grant_id':updated['id'],'issued_seconds':amount/float(SCALE),'state':updated['state'],'valid_until_utc':updated['valid_until_utc']}
         else:
             new = _create_grant(conn,owner,amount,payload.get('origin','bottle'),now,payload.get('policy_version_id'),payload.get('source_ref'),op=op)
@@ -495,6 +511,8 @@ def _action(conn,cd,action,payload,op,now,mono):
         if not g or g['state'] in TERMINAL or not g['remaining_us']:
             return _action(conn,cd,'TOP_UP_GRANT',{'seconds':amount/float(SCALE),'origin':'admin'},op,now,mono)
         _move(conn,'external:correction','grant:'+g['id'],amount,'admin_add_time',now,op)
+        _update_grant_validity(conn,g['id'],now)
+        _activate_next(conn,cd['id'],now,mono)
     elif action=='ADMIN_SET_BALANCE':
         amount = to_us(payload.get('seconds',0))
         if amount<0:
@@ -510,6 +528,12 @@ def _action(conn,cd,action,payload,op,now,mono):
                 _move(conn,'grant:'+g['id'],'external:correction',-difference,'admin_adjustment',now,op)
             if amount==0:
                 conn.execute("UPDATE time_grants SET state='DEPLETED' WHERE id=?",(g['id'],));_close_pauses(conn,g['id'],now)
+            else:
+                if g['state'] in TERMINAL:
+                    conn.execute("UPDATE time_grants SET state='ACTIVE' WHERE id=?",(g['id'],))
+                _update_grant_validity(conn,g['id'],now)
+                conn.execute('UPDATE pause_budgets SET used_count=0 WHERE id=?',(g['pause_budget_id'],))
+            _activate_next(conn,cd['id'],now,mono)
     elif action=='TRANSFER_CREATE':
         if not g:
             raise ValueError('no_active_grant')

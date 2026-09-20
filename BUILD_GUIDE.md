@@ -1,9 +1,10 @@
-# Eco-Fi OS Image Build Guide
+# VMC ECO-VENDO OS Image Build Guide
+> **Eco-Vendo: An Empty Bottle-Initiated Internet Access Vending System**
 
-This guide explains how to build, flash, and troubleshoot the custom Eco-Fi Orange Pi image.
+This guide explains how to build, flash, and troubleshoot the custom VMC ECO-VENDO Orange Pi image.
 
 ## Overview
-The Eco-Fi system operates on a custom, hardened version of the Orange Pi Linux distribution. We use a bash script to automatically mount a clean base image, strip out legacy dependencies, and inject our offline Python backend and captive portal software.
+The VMC ECO-VENDO system operates on a custom, hardened version of the Orange Pi Linux distribution. We use a bash script to automatically mount a clean base image, strip out legacy dependencies, and inject our offline Python backend and captive portal software.
 
 ## How to Build the Image
 

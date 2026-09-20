@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Eco-Fi Time & Pause Policy Evaluator (PisoFi-style)
+VMC ECO-VENDO Time & Pause Policy Evaluator (PisoFi-style)
 Strictly compatible with Python 3.5.3 (NO f-strings, NO variable annotations).
 
 Implements pure functions for:

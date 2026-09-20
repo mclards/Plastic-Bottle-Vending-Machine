@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Eco-Fi Master Vendor License Generator GUI
+VMC ECO-VENDO Master Vendor License Generator GUI
 Desktop App for Windows/Linux to generate machine-locked activation keys.
 """
 
@@ -18,7 +18,7 @@ from license_manager import compute_activation_pin, normalize_hwid
 class LicenseGeneratorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Eco-Fi Vendo - Master License Key Generator")
+        self.root.title("VMC ECO-VENDO - Master License Key Generator")
         self.root.geometry("640x600")
         self.root.resizable(False, False)
         self.root.configure(bg="#0F172A")
@@ -32,7 +32,7 @@ class LicenseGeneratorApp:
 
         title_lbl = tk.Label(
             header_frame,
-            text="Eco-Fi LICENSE GENERATOR",
+            text="VMC ECO-VENDO LICENSE GENERATOR",
             font=("Segoe UI", 16, "bold"),
             fg="#10B981",
             bg="#1E293B"
@@ -243,7 +243,7 @@ class LicenseGeneratorApp:
         self.pin_display.delete(0, tk.END)
         self.pin_display.config(state="readonly")
 
-        if not raw_hwid or raw_hwid == "Eco-Fi-":
+        if not raw_hwid or raw_hwid in ("Eco-Fi-", "VMC-", "VMC-ECO-VENDO-"):
             messagebox.showerror("Validation Error", "Please enter the Target Machine Hardware ID (HWID).")
             return False
 
@@ -287,7 +287,7 @@ class LicenseGeneratorApp:
         tier = self.tier_var.get()
 
         lic_data = {
-            "vendor": "Eco-Fi Technologies",
+            "vendor": "VMC ECO-VENDO Technologies",
             "licensee": client,
             "machine_hwid": hwid,
             "tier": tier,

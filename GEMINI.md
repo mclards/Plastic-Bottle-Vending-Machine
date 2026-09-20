@@ -1,4 +1,4 @@
-# Eco-Fi Project Rules for Gemini / Antigravity
+# VMC ECO-VENDO Project Rules for Gemini / Antigravity
 > This repository uses **`AGENTS.md`** as the authoritative source of truth.
 
 ### Primary Directives for Gemini / Antigravity

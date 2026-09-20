@@ -65,6 +65,10 @@ class TimePortal(object):
         'storage_bin_full': 'The machine is full. Please contact the administrator.',
         'unknown_deposit': 'Deposit session not found.',
         'hardware_unavailable': 'Hardware unavailable. Please check back later.',
+        'actuators_offline': 'Machine servo actuators are currently offline.',
+        'sensors_offline': 'Machine optical sensors are initializing or offline.',
+        'hardware_not_ready': 'The vending machine hardware is currently initializing or in maintenance mode.',
+        'hardware_offline': 'Hardware controller offline. Please notify the administrator.',
         'storage_unavailable': 'System storage is temporarily unavailable.',
         'deposit_not_found': 'Deposit session expired or not found.',
         'device_not_registered': 'Your device is not registered.',
@@ -314,8 +318,12 @@ class TimePortal(object):
         value['validity_hours']=max(0,(valid-now)/3600) if valid else None
         value['session_bottles']=value.get('pending_bottles',0)
         value['session_added_minutes']=self.p.calculate_minutes_for_bottles(value['session_bottles'])
-        value['bin_full']=self.p.get_config('hw_bin_full','0')=='1' or self.p.esp32.get_state().get('is_bin_full',False)
-        value['gate_open']=bool(value.get('deposit_session_id') and self.p.get_esp32_health_stats().get('esp32_gate_open',False))
+        hw_ready, hw_code, hw_msg = self.p.is_hardware_ready()
+        value['hardware_ready'] = hw_ready
+        value['hardware_status'] = hw_code
+        value['hardware_msg'] = hw_msg
+        value['bin_full'] = self.p.get_config('hw_bin_full','0')=='1' or self.p.esp32.get_state().get('is_bin_full',False) or (hw_code == 'storage_bin_full')
+        value['gate_open'] = bool(value.get('deposit_session_id') and self.p.get_esp32_health_stats().get('esp32_gate_open',False))
         self.reconcile()
         return jsonify(value)
 
@@ -511,6 +519,9 @@ class TimePortal(object):
 
     def open_gate(self):
         if not self.p.license_valid():raise ValueError('machine_unlicensed')
+        ready, code, msg = self.p.is_hardware_ready()
+        if not ready:
+            raise ValueError(code)
         data=self.data();ip,mac=self.identity();now,mono=self.now()
         with self.p.db_connection() as conn:
             self.require_ready(conn)

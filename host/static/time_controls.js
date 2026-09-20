@@ -80,7 +80,7 @@
                 var data = JSON.parse(options.body || '{}');
                 if (!data.operation_id) {
                     var identity = Object.assign({}, data); delete identity.pin;
-                    key = 'ecofi-pending:' + fingerprint(path + JSON.stringify(identity));
+                    key = 'ecovendo-pending:' + fingerprint(path + JSON.stringify(identity));
                     data.operation_id = getPending(key) || nonce(); setPending(key, data.operation_id);
                     options.headers = Object.assign({}, options.headers || {}, {'Content-Type':'application/json'});
                     options.body = JSON.stringify(data);
@@ -163,6 +163,23 @@
             warnBox.style.cssText = 'margin-top:6px;font-size:10.5px;color:#fde68a;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);border-radius:6px;padding:5px 8px;display:flex;align-items:center;gap:5px;';
             var warnIcon = element('i', undefined, warnBox); warnIcon.className = 'fas fa-sync-alt fa-spin';
             var warnSpan = element('span', 'Service is recovering. Your remaining credit is preserved.', warnBox);
+        }
+
+        if ((data.worker_healthy === false || data.clock_trusted === false) && !window._ecovendo_syncing_time) {
+            window._ecovendo_syncing_time = true;
+            try {
+                var clientNow = Math.floor(Date.now() / 1000);
+                nativeFetch('/api/vendo/client_time', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ client_time_utc: clientNow })
+                }).then(function (r) { return r.json(); }).then(function (res) {
+                    window._ecovendo_syncing_time = false;
+                    if (res && res.success && res.synced) {
+                        nativeFetch('/api/vendo/status').catch(function () {});
+                    }
+                }).catch(function () { window._ecovendo_syncing_time = false; });
+            } catch (_) { window._ecovendo_syncing_time = false; }
         }
 
         var pause = document.getElementById('btn-pause'), resume = document.getElementById('btn-resume');

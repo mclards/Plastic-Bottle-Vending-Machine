@@ -2,13 +2,13 @@
 name: ecofi-development
 description: >-
   Authoritative guidance, runbooks, and architectural reference for developing,
-  testing, and deploying software on the Eco-Fi Reverse Vending Machine Orange Pi One stack.
+  testing, and deploying software on the VMC ECO-VENDO Reverse Vending Machine Orange Pi One stack.
 ---
 
-# Eco-Fi Reverse Vending Machine Development Skill
+# VMC ECO-VENDO Reverse Vending Machine Development Skill
 
 ## Overview
-This skill provides comprehensive instructions, pitfall warnings, and operational runbooks for developing on the Eco-Fi Reverse Vending Machine platform.
+This skill provides comprehensive instructions, pitfall warnings, and operational runbooks for developing on the VMC ECO-VENDO Reverse Vending Machine platform (Student Thesis: *Eco-Vendo: An Empty Bottle-Initiated Internet Access Vending System*).
 
 ## Quick Reference
 1. **Target Hardware:** Orange Pi One (Allwinner H2+/H3, 32-bit ARMv7).

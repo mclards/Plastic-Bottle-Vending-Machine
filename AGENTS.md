@@ -1,4 +1,5 @@
-# Eco-Fi Smart Reverse Vending Machine — Agent Engineering Manual
+# VMC ECO-VENDO Smart Reverse Vending Machine — Agent Engineering Manual
+> **Student Thesis Project:** *Eco-Vendo: An Empty Bottle-Initiated Internet Access Vending System*  
 > **Authoritative Project Memory, Operational Rules & Architectural Skills**  
 > Applicable across all AI Agents: **Antigravity (Gemini), Claude, and GPT / Cursor / Copilot**.
 
@@ -23,7 +24,7 @@
   - Static IP: `10.0.0.1/19` (Netmask: `255.255.224.0`, Broadcast: `10.0.31.255`).
   - DHCP Range: `10.0.0.100` – `10.0.31.254` (managed authoritatively by `dnsmasq`).
   - DNS Hijacking & Captive Portal Wildcard: Resolves all detection probes (`captive.apple.com`, `connectivitycheck.gstatic.com`, `msftconnecttest.com`) to `10.0.0.1`.
-  - Reverse Proxy: **Nginx** listens on port `80`, proxying traffic to the Eco-Fi Python engine on port `5000`.
+  - Reverse Proxy: **Nginx** listens on port `80`, proxying traffic to the VMC ECO-VENDO Python engine on port `5000`.
 
 ---
 
@@ -75,7 +76,7 @@
   > `pause_budgets` **DOES NOT HAVE AN `updated_at` COLUMN!**
   > Attempting `UPDATE pause_budgets SET ..., updated_at=?` throws `sqlite3.OperationalError: no such column: updated_at`, triggering a backend 503 `storage_unavailable` error.
 - **PisoFi Alignment (Wallet Decommissioned):**
-  - The wallet/member system has been completely decommissioned from Eco-Fi.
+  - The wallet/member system has been completely decommissioned from VMC ECO-VENDO.
   - Depositing bottles directly adds time to the active timer, unpauses the client, and resets used pauses.
   - MAC binding is permanently authoritative.
 

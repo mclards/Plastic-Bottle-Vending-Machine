@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Eco-Fi PisoFi-Style Time & Pause Architecture Unit Tests
+VMC ECO-VENDO Time & Pause Architecture Unit Tests
 Strictly compatible with Python 3.5.3 (NO f-strings, NO variable annotations).
 """
 

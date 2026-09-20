@@ -273,6 +273,10 @@ const char* index_html PROGMEM = R"rawliteral(
         <!-- Optical Sensor -->
         <form action="/save" method="POST" class="section">
             <div class="section-title"><span>🔬</span> AS7263 NIR Spectrometer</div>
+            <div class="field" style="margin-bottom: 12px;">
+                <label for="req_nir">Require NIR Sensor for Intake (1=Enabled, 0=Bench Test / Bypass)</label>
+                <input type="number" id="req_nir" name="req_nir" value="%REQ_NIR%" min="0" max="1" required>
+            </div>
             <div class="field-row">
                 <div class="field">
                     <label for="nir_min">Min PET Threshold</label>

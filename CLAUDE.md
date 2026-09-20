@@ -1,4 +1,4 @@
-# Eco-Fi Project Rules for Claude (Anthropic)
+# VMC ECO-VENDO Project Rules for Claude (Anthropic)
 > This repository uses **`AGENTS.md`** as the single source of truth for architectural guidelines, deployment rules, hardware constraints, and testing procedures.
 
 ### Primary Instructions for Claude

@@ -9,7 +9,7 @@ def create_econnect_bom_workbook(filename):
     wb.remove(default_sheet)
 
     # -------------------------------------------------------------
-    # STYLES & COLOR PALETTE (Eco-Fi BRANDED PALETTE)
+    # STYLES & COLOR PALETTE (VMC ECO-VENDO BRANDED PALETTE)
     # -------------------------------------------------------------
     forest_green = "1B4D3E"
     emerald_mid = "2E7D32"
@@ -66,7 +66,7 @@ def create_econnect_bom_workbook(filename):
     # Title Block
     ws_summary.row_dimensions[1].height = 32
     ws_summary.merge_cells("A1:G1")
-    ws_summary["A1"] = "Eco-Fi PLASTIC BOTTLE-TO-WIFI VENDO SYSTEM"
+    ws_summary["A1"] = "VMC ECO-VENDO: An Empty Bottle-Initiated Internet Access Vending System"
     ws_summary["A1"].font = font_title
     ws_summary["A1"].fill = fill_title
     ws_summary["A1"].alignment = align_center
@@ -80,7 +80,7 @@ def create_econnect_bom_workbook(filename):
 
     # Metadata Block
     metadata = [
-        ("Project Standard:", "Eco-Fi Bottle-to-WiFi Reverse Vending System", "Builder Scope:", "Firmware, Electronics Assembly, AS7263 NIR, PCA9685, Chute & Portal"),
+        ("Project Standard:", "VMC ECO-VENDO: An Empty Bottle-Initiated Internet Access Vending System", "Builder Scope:", "Firmware, Electronics Assembly, AS7263 NIR, PCA9685, Chute & Portal"),
         ("Developer / Builder:", "Electrical Engineer & IoT Project Builder", "Professional Rate:", "₱500.00 / hour (Senior Electrical & IoT Engineering Rate)"),
         ("Date Prepared:", "August 2026", "Cabinet Scope:", "Client-Supplied / Excluded (Builder provides dimensional cutout guide)"),
         ("Sensing & Actuation:", "4\" PVC Drop Chute + AS7263 NIR Spectrometer + LJ12A3 + 2x Servos", "Core Gateway:", "Orange Pi One (Allwinner H3 512MB) + Armbian Server")
@@ -127,7 +127,7 @@ def create_econnect_bom_workbook(filename):
         ("Group C", "Power Supply, Regulation & Safety", "12V 5A (60W) SMPS, XL4015 5A Buck (5.1V logic rail), C14 Fused Inlet, 80mm Fan", "Builder Scope", "='Bill of Materials (BoM)'!K28", "='Bill of Materials (BoM)'!K28/$E$18", "Clean regulated power, master fuse switch & cooling"),
         ("Group D", "Cabinet, Enclosure & Woodwork", "Marine Plywood, Formica, Laser-cut Acrylic Hopper, Cam Locks, Hinges, Decals", "CLIENT SCOPE (EXCLUDED)", 0.00, "=0", "Client will build; Builder provides dimensions & fitment guide"),
         ("Group E", "Fasteners, Shield & Wiring Loom", "ESP32 screw terminal shield, silicone wiring, brass standoffs, heatshrink, Cat6 UTP", "Builder Scope", "='Bill of Materials (BoM)'!K42", "='Bill of Materials (BoM)'!K42/$E$18", "Vibration-proof terminal connections & cabling"),
-        ("Labor", "Professional Engineering & Assembly Labor", "46 Hours (Schematics, AS7263 I2C, PCA9685, 2-Servo Airlock, Linux Gateway, Eco-Fi Portal, QA)", "Builder Scope", "='Labor Breakdown (WBS)'!F10", "='Labor Breakdown (WBS)'!F10/$E$18", "Licensed Electrical Engineer rate @ ₱500.00/hour"),
+        ("Labor", "Professional Engineering & Assembly Labor", "46 Hours (Schematics, AS7263 I2C, PCA9685, 2-Servo Airlock, Linux Gateway, VMC ECO-VENDO Portal, QA)", "Builder Scope", "='Labor Breakdown (WBS)'!F10", "='Labor Breakdown (WBS)'!F10/$E$18", "Licensed Electrical Engineer rate @ ₱500.00/hour"),
         ("Contingency", "Electronics & Sourcing Contingency", "Extra solder, test calibration bottles, spare connectors, shipping buffer (approx 5%)", "Builder Scope", 450.00, "=E17/$E$18", "Safety buffer for electronic components & shipping variance")
     ]
 
@@ -197,7 +197,7 @@ def create_econnect_bom_workbook(filename):
         cell.border = border_cell
 
     pkg_rows = [
-        ("Tier 1", "Direct Build (At-Cost Electronics + Labor @ ₱500/hr)", f"=E{total_r}", "₱23,000.00 (Labor Only)", "Tested electronics chassis, AS7263 NIR sensor, 2-servo airlock chute, Eco-Fi portal, wiring loom", "Builds cabinet, supplies enclosure & mounts electronics", "Best for transparent / direct contract"),
+        ("Tier 1", "Direct Build (At-Cost Electronics + Labor @ ₱500/hr)", f"=E{total_r}", "₱23,000.00 (Labor Only)", "Tested electronics chassis, AS7263 NIR sensor, 2-servo airlock chute, VMC ECO-VENDO portal, wiring loom", "Builds cabinet, supplies enclosure & mounts electronics", "Best for transparent / direct contract"),
         ("Tier 2", "Standard Turnkey Contract (+15% Sourcing Buffer)", f"=ROUND(E{total_r}+('Bill of Materials (BoM)'!K43*0.15), -2)", "₱23,000.00 Labor + ₱1,274.00 Parts Buffer", "Pre-tested harness, AS7263 NIR sensor, 2x servos, PCA9685, PVC chute, dimensional drawings, 1-mo support", "Builds cabinet according to provided cutout drawing", "(Recommended) Standard Commercial Contract"),
         ("Tier 3", "Turnkey Package with On-site Setup & 3-Mo SLA", f"=ROUND(E{total_r}+5500, -2)", "₱23,000.00 Labor + ₱5,500.00 SLA & Setup Profit", "Full electronics package, AS7263 NIR, 2x servos, on-site setup assistance, staff training, 3-month SLA warranty", "Builds cabinet & handles physical installation", "Best for SK Councils, LGUs & Institutions")
     ]
@@ -237,7 +237,7 @@ def create_econnect_bom_workbook(filename):
     # Title Block
     ws_bom.row_dimensions[1].height = 32
     ws_bom.merge_cells("A1:K1")
-    ws_bom["A1"] = "Eco-Fi VENDO - ITEMIZED BILL OF MATERIALS (BOM)"
+    ws_bom["A1"] = "VMC ECO-VENDO - ITEMIZED BILL OF MATERIALS (BOM)"
     ws_bom["A1"].font = font_title
     ws_bom["A1"].fill = fill_title
     ws_bom["A1"].alignment = align_center
@@ -260,13 +260,13 @@ def create_econnect_bom_workbook(filename):
         cell.alignment = align_center
         cell.border = border_cell
 
-    # Grouped Items Data for Eco-Fi (Including AS7263 NIR Spectrometer, 4" PVC Chute & PCA9685 Driver)
+    # Grouped Items Data for VMC ECO-VENDO (Including AS7263 NIR Spectrometer, 4" PVC Chute & PCA9685 Driver)
     bom_groups = [
         ("GROUP A: COMPUTING, STORAGE & NETWORKING (BUILDER SCOPE)", [
-            ("A1", "Computing", "Orange Pi One (512MB RAM)", "Allwinner H3 Quad-Core Cortex-A7", 1, "pc", "Linux gateway, Eco-Fi Flask captive portal, SQLite, iptables", 1250.00, 80.00),
+            ("A1", "Computing", "Orange Pi One (512MB RAM)", "Allwinner H3 Quad-Core Cortex-A7", 1, "pc", "Linux gateway, VMC ECO-VENDO Flask captive portal, SQLite, iptables", 1250.00, 80.00),
             ("A2", "Microcontroller", "ESP32 DevKit V1", "Dual-Core Xtensa LX6 240MHz (30/38 Pin)", 1, "pc", "Real-time optical drop pulse counting, I2C master & LCD driver", 220.00, 40.00),
             ("A3", "Storage", "MicroSD Card 32GB Class 10", "SanDisk Ultra A1 98MB/s High Endurance", 1, "pc", "Armbian OS root filesystem, session database, log storage", 320.00, 40.00),
-            ("A4", "Networking", "Outdoor High-Power AP", "TP-Link CPE220 / EAP110-Outdoor 2.4GHz", 1, "unit", "Long-range Wi-Fi broadcasting for Eco-Fi hotspot clients", 2100.00, 120.00),
+            ("A4", "Networking", "Outdoor High-Power AP", "TP-Link CPE220 / EAP110-Outdoor 2.4GHz", 1, "unit", "Long-range Wi-Fi broadcasting for VMC ECO-VENDO hotspot clients", 2100.00, 120.00),
             ("A5", "Connectivity", "Short USB Data Cable", "USB-A to Type-C / Micro-B 0.3m shielded", 1, "pc", "Serial UART link between Orange Pi & ESP32 (115200 baud)", 80.00, 20.00),
         ]),
         ("GROUP B: SENSING, CHUTE & ACTUATION (BUILDER SCOPE)", [
@@ -280,7 +280,7 @@ def create_econnect_bom_workbook(filename):
             ("B8", "Audio/Visual", "5V Active Buzzer & LED Kit", "5V Beeper + 5mm Green/Red Status LEDs", 1, "set", "Beep feedback on valid drop & visual status lights", 75.00, 25.00),
         ]),
         ("GROUP C: POWER DISTRIBUTION, REGULATION & SAFETY (BUILDER SCOPE)", [
-            ("C1", "Main Power", "12V 5A (60W) Industrial SMPS", "Enclosed metal switching power supply", 1, "unit", "Main AC-DC power converter for entire Eco-Fi vendo", 320.00, 50.00),
+            ("C1", "Main Power", "12V 5A (60W) Industrial SMPS", "Enclosed metal switching power supply", 1, "unit", "Main AC-DC power converter for entire VMC ECO-VENDO", 320.00, 50.00),
             ("C2", "Buck Converter", "XL4015 5A Step-Down DC-DC", "Adjustable buck converter with heatsink", 1, "module", "Steps 12V down to 5.1V logic rail for Orange Pi, ESP32 & PCA9685 V+", 110.00, 25.00),
             ("C3", "AC Safety", "AC C14 Socket with Fuse & Switch", "IEC 320 C14 with 10A fuse & toggle switch", 1, "pc", "Main 220V power inlet with surge fuse and master switch", 120.00, 25.00),
             ("C4", "AC Cable", "Heavy-Duty 3-Prong AC Power Cord", "1.8m 3x0.75mm² grounded plug cord", 1, "pc", "Connects machine safely to building wall outlet", 110.00, 20.00),
@@ -291,7 +291,7 @@ def create_econnect_bom_workbook(filename):
             ("D2", "Faceplate", "Laser-Cut Acrylic Bezel & Hopper", "3mm-5mm clear & tinted acrylic panels", 1, "set", "[CLIENT-BUILT] Display viewing window and intake hopper", 950.00, 100.00),
             ("D3", "Locks", "Heavy-Duty Cam Locks with Keys", "Tubular cam locks with master keys", 2, "sets", "[CLIENT-BUILT] Secures maintenance door and bottle collection bin", 120.00, 30.00),
             ("D4", "Hardware", "Stainless Steel Piano Hinges", "Continuous corrosion-proof door hinges", 1, "set", "[CLIENT-BUILT] Heavy-duty door hinge mounting", 180.00, 30.00),
-            ("D5", "Branding", "Outdoor Vinyl Sticker Decal Wrap", "Laminated waterproof UV-resistant print", 1, "set", "[CLIENT-BUILT] Eco-Fi WiFi Vendo instructions & graphic branding", 450.00, 50.00),
+            ("D5", "Branding", "Outdoor Vinyl Sticker Decal Wrap", "Laminated waterproof UV-resistant print", 1, "set", "[CLIENT-BUILT] VMC ECO-VENDO instructions & graphic branding", 450.00, 50.00),
         ]),
         ("GROUP E: FASTENERS, SHIELD & WIRING LOOM (BUILDER SCOPE)", [
             ("E1", "PCB Shield", "ESP32 Terminal Shield Breakout", "Screw terminal breakout PCB for ESP32", 1, "pc", "Vibration-proof screw connections for all sensor wires", 180.00, 30.00),
@@ -406,7 +406,7 @@ def create_econnect_bom_workbook(filename):
 
     ws_labor.row_dimensions[2].height = 22
     ws_labor.merge_cells("A2:G2")
-    ws_labor["A2"] = "Electrical Engineering, Circuit Design, Firmware & Eco-Fi Portal Integration (Rate: ₱500.00 / hour)"
+    ws_labor["A2"] = "Electrical Engineering, Circuit Design, Firmware & VMC ECO-VENDO Portal Integration (Rate: ₱500.00 / hour)"
     ws_labor["A2"].font = font_subtitle
     ws_labor["A2"].fill = PatternFill(start_color=emerald_mid, end_color=emerald_mid, fill_type="solid")
     ws_labor["A2"].alignment = align_center
@@ -434,8 +434,8 @@ def create_econnect_bom_workbook(filename):
         ("Phase 3", "ESP32 FreeRTOS Embedded Firmware Development", 
          "• Implementing high-speed ISR optical beam-break drop detection\n• Developing I2C PCA9685 2-servo airlock state machine (Outer Gate & Internal Trapdoor)\n• AS7263 6-channel NIR spectral calibration (860nm PET peak) & tin lockout logic\n• Implementing JSON UART serialization protocol to stream telemetry to Orange Pi", 10.0, hourly_rate, "Firmware / Embedded C++"),
         
-        ("Phase 4", "Orange Pi Armbian & Eco-Fi Portal Engine", 
-         "• Flashing Armbian Linux on Orange Pi One & configuring systemd service daemons\n• Deploying branded Eco-Fi Flask captive portal with live bottle deposit modal\n• Setting up dynamic ipset & iptables firewall rules for time-based access\n• Implementing SQLite bottle statistics tracking and anti-tethering (TTL=64) rules", 12.0, hourly_rate, "Linux / Network Software"),
+        ("Phase 4", "Orange Pi Armbian & VMC ECO-VENDO Portal Engine", 
+         "• Flashing Armbian Linux on Orange Pi One & configuring systemd service daemons\n• Deploying branded VMC ECO-VENDO Flask captive portal with live bottle deposit modal\n• Setting up dynamic ipset & iptables firewall rules for time-based access\n• Implementing SQLite bottle statistics tracking and anti-tethering (TTL=64) rules", 12.0, hourly_rate, "Linux / Network Software"),
         
         ("Phase 5", "System Integration, Anti-Cheat Testing & QA", 
          "• Full bottle drop testing down the 4\" PVC chute and AS7263 NIR spectral validation\n• Anti-cheat testing (verifying rapid drops, metal can rejection & string pull defense)\n• 24-hour continuous burn-in load test and Wi-Fi throughput validation\n• Builder documentation, wiring diagram handoff, and client briefing", 8.0, hourly_rate, "QA & Systems Engineering")
@@ -541,7 +541,7 @@ def create_econnect_bom_workbook(filename):
         ws_labor.column_dimensions[get_column_letter(idx)].width = width
 
     # Save to target filenames
-    filenames = ["Smart_EcoFi_Vendo_BoM_and_Costing.xlsx", "Eco_Fi_Vendo_BoM_and_Costing.xlsx"]
+    filenames = ["VMC_ECO_VENDO_BoM_and_Costing.xlsx"]
     for fn in filenames:
         try:
             wb.save(fn)
@@ -550,4 +550,4 @@ def create_econnect_bom_workbook(filename):
             print(f"Notice: '{fn}' is currently open/locked in another application, skipped.")
 
 if __name__ == "__main__":
-    create_econnect_bom_workbook("Smart_EcoFi_Vendo_BoM_and_Costing.xlsx")
+    create_econnect_bom_workbook("VMC_ECO_VENDO_BoM_and_Costing.xlsx")

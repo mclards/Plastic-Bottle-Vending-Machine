@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
-# Eco-Fi OS Image Rebuilder & Customizer
-# Deep Cleaning, Hardening & Eco-Fi Integration for Orange Pi One
+# VMC ECO-VENDO OS Image Rebuilder & Customizer
+# Student Thesis: Eco-Vendo: An Empty Bottle-Initiated Internet Access Vending System
 # Base: resources/PisoFi_Opi1&PC_v5.3.0-05-10-26_EXT.img
 # Target: resources/EcoFi_Opi_v<VERSION>.img
 # ==============================================================================
@@ -27,7 +27,7 @@ cleanup() {
     if [ -f "$WORK_IMG" ]; then rm -f -- "$WORK_IMG"; fi
 }
 trap cleanup EXIT
-printf 'Building Eco-Fi v%s from %s\nOutput: %s\n' "$VERSION" "$PREV_IMG" "$TARGET_IMG"
+printf 'Building VMC ECO-VENDO v%s from %s\nOutput: %s\n' "$VERSION" "$PREV_IMG" "$TARGET_IMG"
 cp --reflink=auto "$PREV_IMG" "$WORK_IMG"
 LOOP_DEVICE=$(losetup --find --show --offset 4194304 "$WORK_IMG")
 mount "$LOOP_DEVICE" "$MOUNT_DIR"
@@ -78,8 +78,8 @@ rm -rf "$MOUNT_DIR/usr/local/bin/zerotier-one" "$MOUNT_DIR/var/lib/zerotier-one"
 rm -rf "$MOUNT_DIR/etc/pisofi" 2>/dev/null || true
 rm -rf "$MOUNT_DIR/var/lib/mysql" 2>/dev/null || true
 
-# Step 4: Configure Nginx as an ultra-fast Reverse Proxy to Eco-Fi Portal (port 5000)
-echo "[4/6] Configuring Nginx reverse proxy for Eco-Fi..."
+# Step 4: Configure Nginx as an ultra-fast Reverse Proxy to VMC ECO-VENDO Portal (port 5000)
+echo "[4/6] Configuring Nginx reverse proxy for VMC ECO-VENDO..."
 mkdir -p "$MOUNT_DIR/etc/nginx/sites-available"
 mkdir -p "$MOUNT_DIR/etc/nginx/sites-enabled"
 rm -f "$MOUNT_DIR/etc/nginx/sites-enabled/"* 2>/dev/null || true
@@ -103,7 +103,7 @@ server {
         add_header Cache-Control "public, no-transform";
     }
 
-    # Proxy all traffic to Eco-Fi Python Web Engine
+    # Proxy all traffic to VMC ECO-VENDO Python Web Engine
     location / {
         proxy_pass http://127.0.0.1:5000;
         proxy_set_header Host $host;
@@ -125,7 +125,7 @@ echo "[4/6.5] Enforcing eth0 as WAN (DHCP) and eth1 as LAN (10.0.0.1/19) with au
 # Permanent Hardened Kernel Network Stack in sysctl
 mkdir -p "$MOUNT_DIR/etc/sysctl.d"
 cat << 'EOF' > "$MOUNT_DIR/etc/sysctl.d/99-ecofi.conf"
-# Eco-Fi Hardened Kernel Network Stack
+# VMC ECO-VENDO Hardened Kernel Network Stack
 net.ipv4.ip_forward=1
 net.ipv4.tcp_syncookies=1
 net.ipv4.conf.all.rp_filter=1
@@ -263,6 +263,8 @@ EOF
 if [ -f "$MOUNT_DIR/boot/armbianEnv.txt" ]; then
     sed -i '/^extraargs=/d' "$MOUNT_DIR/boot/armbianEnv.txt"
     echo "extraargs=net.ifnames=0 biosdevname=0" >> "$MOUNT_DIR/boot/armbianEnv.txt"
+    sed -i '/^overlays=/d' "$MOUNT_DIR/boot/armbianEnv.txt"
+    echo "overlays=uart1 uart3" >> "$MOUNT_DIR/boot/armbianEnv.txt"
 fi
 
 mkdir -p "$MOUNT_DIR/opt/ecofi"
@@ -316,7 +318,7 @@ fi
 EOF
 chmod +x "$MOUNT_DIR/opt/ecofi/setup_network.sh"
 
-# Step 5: Inject Offline Python 3.5 Packages and Eco-Fi Software Stack
+# Step 5: Inject Offline Python 3.5 Packages and VMC ECO-VENDO Software Stack
 echo "[5/6] Injecting offline Python 3.5 dependencies into rootfs..."
 mkdir -p "$MOUNT_DIR/usr/local/lib/python3.5/dist-packages"
 if [ -d "/var/cache/ecofi_wheels_py35" ]; then
@@ -331,7 +333,7 @@ if [ -d "$DEBS_DIR" ]; then
     dpkg-deb -x "$DEBS_DIR/ipset_6.30-2_armhf.deb" "$MOUNT_DIR"
 fi
 
-echo "[5/6.5] Injecting Eco-Fi software stack into /opt/ecofi..."
+echo "[5/6.5] Injecting VMC ECO-VENDO software stack into /opt/ecofi..."
 mkdir -p "$MOUNT_DIR/opt/ecofi"
 for module in portal.py license_manager.py esp32_simulator.py gateway_network.py time_schema.py time_policy.py transition_engine.py time_portal.py migrate_legacy_sessions.py; do
     cp "$SOURCE_HOST/$module" "$MOUNT_DIR/opt/ecofi/"
@@ -352,13 +354,13 @@ chmod 755 "$MOUNT_DIR/opt/ecofi"
 chmod 644 "$MOUNT_DIR/opt/ecofi/"*.py 2>/dev/null || true
 chmod +x "$MOUNT_DIR/opt/ecofi/portal.py"
 
-# Step 6: Install Eco-Fi systemd service units
-echo "[6/6] Installing Eco-Fi systemd service units..."
+# Step 6: Install VMC ECO-VENDO systemd service units
+echo "[6/6] Installing VMC ECO-VENDO systemd service units..."
 
 # BUILD-08: Firewall Initialization Service
 cat << 'EOF' > "$MOUNT_DIR/etc/systemd/system/ecofi_firewall.service"
 [Unit]
-Description=Eco-Fi Firewall Initialization
+Description=VMC ECO-VENDO Firewall Initialization
 Before=ecofi_portal.service
 After=network.target
 
@@ -427,7 +429,7 @@ mv -- "$WORK_IMG" "$TARGET_IMG"
 (cd "$ROOT_DIR/resources" && md5sum "$(basename "$TARGET_IMG")" > "$(basename "$TARGET_IMG").md5")
 
 echo "======================================================================"
-echo " SUCCESS: Cleaned, Hardened Eco-Fi OS Image Ready at:"
+echo " SUCCESS: Cleaned, Hardened VMC ECO-VENDO OS Image Ready at:"
 echo " $TARGET_IMG"
-echo " All legacy PisoFi services purged. Pure Eco-Fi stack running!"
+echo " All legacy PisoFi services purged. Pure VMC ECO-VENDO stack running!"
 echo "======================================================================"

@@ -1,6 +1,6 @@
 @echo off
 echo ======================================================================
-echo    Eco-Fi MASTER VENDOR LICENSE GENERATOR
+echo    VMC ECO-VENDO MASTER VENDOR LICENSE GENERATOR
 echo ======================================================================
 echo.
 echo Launching License Key Generator Desktop App...

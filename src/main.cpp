@@ -119,6 +119,8 @@ std::atomic<bool> forceGateClose{false};
 
 QueueHandle_t eventQueue;
 SemaphoreHandle_t uiMutex;
+TaskHandle_t sensorTaskHandle = NULL;
+std::atomic<int> cachedBinDistanceCm{999};
 
 enum EventMsg {
     MSG_BIN_FULL,
@@ -324,6 +326,7 @@ void loadPreferences() {
     config.suc_close_angle = preferences.getInt("suc_close", 0);
     config.rej_open_angle = preferences.getInt("rej_open", 90);
     config.rej_close_angle = preferences.getInt("rej_close", 0);
+    config.require_nir_sensor = preferences.getInt("req_nir", 1);
 
     logDebug("NVS", "Loaded Hardware Preferences:");
     logDebug("NVS", "  Bin Full Threshold: %d cm", config.bin_full_threshold_cm);
@@ -335,6 +338,7 @@ void loadPreferences() {
              config.ent_open_angle, config.ent_close_angle,
              config.suc_open_angle, config.suc_close_angle,
              config.rej_open_angle, config.rej_close_angle);
+    logDebug("NVS", "  Require NIR Sensor: %d (1=Strict, 0=Bench-Test)", config.require_nir_sensor);
 }
 
 void savePreferences() {
@@ -351,6 +355,7 @@ void savePreferences() {
     preferences.putInt("suc_close", config.suc_close_angle);
     preferences.putInt("rej_open", config.rej_open_angle);
     preferences.putInt("rej_close", config.rej_close_angle);
+    preferences.putInt("req_nir", config.require_nir_sensor);
     logDebug("NVS", "Persisted hardware parameters to Flash.");
 }
 
@@ -375,6 +380,7 @@ void handleRoot() {
     html.replace("%SUC_CLOSE%", String(config.suc_close_angle));
     html.replace("%REJ_OPEN%", String(config.rej_open_angle));
     html.replace("%REJ_CLOSE%", String(config.rej_close_angle));
+    html.replace("%REQ_NIR%", String(config.require_nir_sensor));
     server.send(200, "text/html", html);
 }
 
@@ -382,7 +388,7 @@ void handleSave() {
     lastActivityTime = millis();
     logDebug("HTTP", "POST /save received from %s", server.client().remoteIP().toString().c_str());
     const char* fields[] = {"bin_cm", "ent_tout", "stl_ms", "suc_tout", "rej_time", "nir_min", "nir_max",
-        "ent_open", "ent_close", "suc_open", "suc_close", "rej_open", "rej_close"};
+        "ent_open", "ent_close", "suc_open", "suc_close", "rej_open", "rej_close", "req_nir"};
     for (const char* field : fields) {
         if (!server.hasArg(field)) continue;
         String value = server.arg(field);
@@ -408,6 +414,7 @@ void handleSave() {
     if (server.hasArg("suc_close")) config.suc_close_angle = server.arg("suc_close").toInt();
     if (server.hasArg("rej_open")) config.rej_open_angle = server.arg("rej_open").toInt();
     if (server.hasArg("rej_close")) config.rej_close_angle = server.arg("rej_close").toInt();
+    if (server.hasArg("req_nir")) config.require_nir_sensor = server.arg("req_nir").toInt();
 
     if (!validMachineConfig(config)) {
         logWarn("HTTP", "Machine configuration validation failed. Reverting.");
@@ -447,6 +454,8 @@ void handleStatus() {
     doc["is_bin_full"] = isBinFull.load();
     doc["pca9685"] = pca9685Found;
     doc["spectrometer"] = spectrometerFound;
+    doc["require_nir_sensor"] = config.require_nir_sensor;
+    doc["hardware_ready"] = pca9685Found && (!config.require_nir_sensor || spectrometerFound);
     doc["version"] = ECOVENDO_VERSION;
 
     String out;
@@ -544,9 +553,11 @@ void sensorTaskCode(void* parameter) {
             ESP.restart();
         }
 
-        // 1. Check Bin Status
-        if (xTaskGetTickCount() - lastUltrasonicCheck >= pdMS_TO_TICKS(1000)) {
+        // 1. Check Bin Status (isolated non-blocking slice every 1500 ms)
+        if (xTaskGetTickCount() - lastUltrasonicCheck >= pdMS_TO_TICKS(1500)) {
+            lastUltrasonicCheck = xTaskGetTickCount();
             int distance = getBinDistanceCm();
+            cachedBinDistanceCm.store(distance);
             bool currentlyFull = (distance < config.bin_full_threshold_cm && distance > 0);
             
             if (currentlyFull != lastBinState) {
@@ -557,18 +568,23 @@ void sensorTaskCode(void* parameter) {
                          currentlyFull ? "FULL" : "OK", distance, config.bin_full_threshold_cm);
                 postEvent(msg);
             }
-            lastUltrasonicCheck = xTaskGetTickCount();
         }
 
-        // Periodic telemetry heartbeat to Linux host gateway (every 5 seconds)
+        // Periodic telemetry heartbeat to Linux host gateway (every 3 seconds)
         static TickType_t lastTelemetryHeartbeat = 0;
-        if (xTaskGetTickCount() - lastTelemetryHeartbeat >= pdMS_TO_TICKS(5000)) {
+        if (xTaskGetTickCount() - lastTelemetryHeartbeat >= pdMS_TO_TICKS(3000)) {
             lastTelemetryHeartbeat = xTaskGetTickCount();
-            int curDist = getBinDistanceCm();
-            char hbBuf[128];
+            char hbBuf[256];
+            bool hwReady = pca9685Found && (!config.require_nir_sensor || spectrometerFound) && !isBinFull.load();
             snprintf(hbBuf, sizeof(hbBuf),
-                     "{\"event\":\"HEARTBEAT\",\"bin_distance_cm\":%d,\"is_bin_full\":%s}",
-                     curDist, isBinFull.load() ? "true" : "false");
+                     "{\"event\":\"HEARTBEAT\",\"bin_distance_cm\":%d,\"is_bin_full\":%s,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"gate_open\":%s,\"protocol\":2}",
+                     cachedBinDistanceCm.load(),
+                     isBinFull.load() ? "true" : "false",
+                     pca9685Found ? "true" : "false",
+                     spectrometerFound ? "true" : "false",
+                     hwReady ? "true" : "false",
+                     config.require_nir_sensor,
+                     depositCycleBusy.load() ? "true" : "false");
             emitSerialLine(hbBuf);
         }
 
@@ -580,20 +596,26 @@ void sensorTaskCode(void* parameter) {
         // 2. Await Entrance Request
         if (entranceGateRequested.exchange(false)) {
             xSemaphoreTake(creditMutex, portMAX_DELAY);
+            bool sensorReady = !config.require_nir_sensor || spectrometerFound;
             bool permitted = creditStorageOk && creditJournal.phase == 0 && creditJournal.session[0] &&
-                !finishRequested && !configRestartRequested && pca9685Found && spectrometerFound;
+                !finishRequested && !configRestartRequested && pca9685Found && sensorReady;
             if (permitted) depositCycleBusy = true;
             char curSession[37];
             strlcpy(curSession, creditJournal.session, sizeof(curSession));
             uint8_t curPhase = creditJournal.phase;
             xSemaphoreGive(creditMutex);
 
-            logDebug("CYCLE", "Entrance Gate Request: Permitted=%d (storageOk=%d, phase=%d, session='%s', finish=%d, pca=%d, spec=%d)",
-                     permitted, creditStorageOk.load(), curPhase, curSession, finishRequested.load(), pca9685Found, spectrometerFound);
+            logDebug("CYCLE", "Entrance Gate Request: Permitted=%d (storageOk=%d, phase=%d, session='%s', finish=%d, pca=%d, spec=%d, req_nir=%d)",
+                     permitted, creditStorageOk.load(), curPhase, curSession, finishRequested.load(), pca9685Found, spectrometerFound, config.require_nir_sensor);
 
             if (!permitted) {
                 logWarn("CYCLE", "Deposit cycle not permitted! Bypassing entrance request.");
-                vTaskDelay(pdMS_TO_TICKS(50));
+                if (!pca9685Found) {
+                    emitSerialLine("{\"event\":\"HARDWARE_ALERT\",\"reason\":\"actuators_offline\"}");
+                } else if (config.require_nir_sensor && !spectrometerFound) {
+                    emitSerialLine("{\"event\":\"HARDWARE_ALERT\",\"reason\":\"spectrometer_offline\"}");
+                }
+                vTaskDelay(pdMS_TO_TICKS(20));
                 continue;
             }
 
@@ -759,7 +781,7 @@ void sensorTaskCode(void* parameter) {
             logDebug("CYCLE", "Deposit cycle finished. Airlock resting for 1500 ms...");
             vTaskDelay(pdMS_TO_TICKS(1500));
         }
-        vTaskDelay(pdMS_TO_TICKS(50));
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(20));
     }
 }
 
@@ -878,8 +900,6 @@ void setup() {
              ESP.getFlashChipSize() / 1024, ESP.getFreeHeap());
     logDebug("BOOT", "eFuse MAC Address: %012llX", (unsigned long long)ESP.getEfuseMac());
 
-    emitSerialLine(String("{\"event\":\"BOOT\",\"protocol\":2,\"firmware_version\":\"") + ECOVENDO_VERSION + "\"}");
-
     logDebug("GPIO", "Configuring sensor and indicator GPIO pins...");
     pinMode(PIN_IR_TOP, INPUT_PULLUP);
     pinMode(PIN_IR_BOTTOM, INPUT_PULLUP);
@@ -915,12 +935,19 @@ void setup() {
     logDebug("I2C", "Probing AS7263 NIR Spectrometer...");
     if (spectrometer.begin() == false) {
         logError("I2C", "AS7263 NIR Spectrometer missing or failed to initialize!");
-        emitSerialLine("AS7263 Sensor missing!");
         spectrometerFound = false;
     } else {
         spectrometerFound = true;
         logDebug("I2C", "AS7263 NIR Spectrometer detected OK! Sensor Temp: %d C", spectrometer.getTemperature());
     }
+
+    char bootBuf[256];
+    snprintf(bootBuf, sizeof(bootBuf),
+             "{\"event\":\"BOOT\",\"protocol\":2,\"firmware_version\":\"%s\",\"pca9685_ready\":%s,\"spectrometer_ready\":%s}",
+             ECOVENDO_VERSION,
+             pca9685Found ? "true" : "false",
+             spectrometerFound ? "true" : "false");
+    emitSerialLine(bootBuf);
 
     loadPreferences();
     if (!validMachineConfig(config)) {
@@ -999,7 +1026,7 @@ void setup() {
     uiMutex = xSemaphoreCreateMutex();
 
     BaseType_t commCreated = xTaskCreatePinnedToCore(commTaskCode, "CommTask", 6144, NULL, 1, NULL, 1);
-    BaseType_t sensorCreated = xTaskCreatePinnedToCore(sensorTaskCode, "SensorTask", 6144, NULL, 1, NULL, 0);
+    BaseType_t sensorCreated = xTaskCreatePinnedToCore(sensorTaskCode, "SensorTask", 6144, NULL, 2, &sensorTaskHandle, 0);
 
     logDebug("BOOT", "CommTask (Core 1): %s", commCreated == pdPASS ? "OK" : "FAILED");
     logDebug("BOOT", "SensorTask (Core 0): %s", sensorCreated == pdPASS ? "OK" : "FAILED");
@@ -1076,6 +1103,7 @@ void loop() {
                     if (!depositCycleBusy) forceGateClose = false;
                     requestedGateTimeout = timeout;
                     entranceGateRequested = true;
+                    if (sensorTaskHandle) xTaskNotifyGive(sensorTaskHandle);
                     logDebug("CMD", "Entrance gate request queued successfully (timeout=%d s).", timeout);
                 }
             } else {
@@ -1182,6 +1210,10 @@ void loop() {
                 if (!command["rej_close_angle"].is<int>()) fieldsValid = false;
                 else next.rej_close_angle = command["rej_close_angle"];
             }
+            if (!command["require_nir_sensor"].isNull()) {
+                if (!command["require_nir_sensor"].is<int>()) fieldsValid = false;
+                else next.require_nir_sensor = command["require_nir_sensor"];
+            }
             if (fieldsValid && validMachineConfig(next)) {
                 desiredConfig = next;
                 xQueueOverwrite(configQueue, &next);
@@ -1190,11 +1222,32 @@ void loop() {
                 logWarn("CMD", "SET_CONFIG rejected: invalid fields or configuration out of bounds.");
                 emitSerialLine("{\"event\":\"CONFIG_INVALID\"}");
             }
+        } else if (strcmp(cmd, "TEST_SERVO") == 0) {
+            int channel = command["channel"] | -1;
+            int angle = command["angle"] | -1;
+            int holdMs = command["hold_ms"] | 1500;
+            if (pca9685Found && channel >= 0 && channel <= 2 && angle >= 0 && angle <= 180 && !depositCycleBusy) {
+                setServoAngle(channel, angle);
+                logDebug("CMD", "TEST_SERVO: channel %d moved to %d deg (hold %d ms)", channel, angle, holdMs);
+                char resBuf[128];
+                snprintf(resBuf, sizeof(resBuf),
+                         "{\"event\":\"SERVO_TEST_OK\",\"channel\":%d,\"angle\":%d}", channel, angle);
+                emitSerialLine(resBuf);
+            } else {
+                logWarn("CMD", "TEST_SERVO rejected: pcaReady=%d, channel=%d, angle=%d, busy=%d",
+                        pca9685Found, channel, angle, depositCycleBusy.load());
+                emitSerialLine("{\"event\":\"SERVO_TEST_REJECTED\"}");
+            }
         } else if (strcmp(cmd, "PING") == 0) {
-            char pongBuf[128];
+            char pongBuf[256];
+            bool hwReady = pca9685Found && (!desiredConfig.require_nir_sensor || spectrometerFound);
             snprintf(pongBuf, sizeof(pongBuf),
-                     "{\"event\":\"PONG\",\"firmware_version\":\"%s\",\"protocol\":2}",
-                     ECOVENDO_VERSION);
+                     "{\"event\":\"PONG\",\"firmware_version\":\"%s\",\"protocol\":2,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d}",
+                     ECOVENDO_VERSION,
+                     pca9685Found ? "true" : "false",
+                     spectrometerFound ? "true" : "false",
+                     hwReady ? "true" : "false",
+                     desiredConfig.require_nir_sensor);
             emitSerialLine(pongBuf);
             logDebug("CMD", "Responded to PING with PONG.");
         } else if (strlen(cmd) > 0) {

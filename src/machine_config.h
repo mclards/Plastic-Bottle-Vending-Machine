@@ -18,6 +18,9 @@ struct MachineConfig {
     int suc_close_angle = 0;
     int rej_open_angle = 90;
     int rej_close_angle = 0;
+
+    // Sensor Verification Requirements
+    int require_nir_sensor = 1; // 1 = Strict NIR polymer check required, 0 = Bench-test mode (servos only)
 };
 
 constexpr bool validMachineConfig(const MachineConfig& c) {
@@ -29,7 +32,8 @@ constexpr bool validMachineConfig(const MachineConfig& c) {
         c.reject_drop_time_ms >= 1 && c.reject_drop_time_ms <= 30000 &&
         c.ent_open_angle >= 0 && c.ent_open_angle <= 180 && c.ent_close_angle >= 0 && c.ent_close_angle <= 180 &&
         c.suc_open_angle >= 0 && c.suc_open_angle <= 180 && c.suc_close_angle >= 0 && c.suc_close_angle <= 180 &&
-        c.rej_open_angle >= 0 && c.rej_open_angle <= 180 && c.rej_close_angle >= 0 && c.rej_close_angle <= 180;
+        c.rej_open_angle >= 0 && c.rej_open_angle <= 180 && c.rej_close_angle >= 0 && c.rej_close_angle <= 180 &&
+        c.require_nir_sensor >= 0 && c.require_nir_sensor <= 1;
 }
 
 static_assert(validMachineConfig(MachineConfig{}), "Default hardware settings must be valid");
