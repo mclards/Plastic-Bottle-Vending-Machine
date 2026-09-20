@@ -1150,7 +1150,8 @@ def is_hardware_ready():
     if is_physical:
         if not physical_esp32_state.get('pca9685_ready', False):
             return False, 'actuators_offline', 'Servo driver (PCA9685) offline'
-        if physical_esp32_state.get('require_nir', 1) and not physical_esp32_state.get('spectrometer_ready', False):
+        req_nir = int(get_config('esp_require_nir_sensor', str(physical_esp32_state.get('require_nir', 1))))
+        if req_nir and not physical_esp32_state.get('spectrometer_ready', False):
             return False, 'sensors_offline', 'Optical spectrometer (AS7263) offline'
         if physical_esp32_state.get('bin_full', False):
             return False, 'storage_bin_full', 'Storage bin is full'
@@ -1184,6 +1185,7 @@ def push_config_to_physical_esp32():
             'rej_close_angle': int(cfg.get('esp_rej_close_angle', 0)),
             'rej_open_angle': int(cfg.get('esp_rej_open_angle', 90))
         }
+        physical_esp32_state['require_nir'] = payload['require_nir_sensor']
         if not transmit_to_esp32(payload):return False
         log.info("Synchronized configuration to physical ESP32.")
         return True
@@ -1238,7 +1240,7 @@ def hardware_serial_daemon():
                 log.info("Established physical serial connection to ESP32 on %s", valid_port)
                 push_config_to_physical_esp32()
                 
-                buffer = b''
+                
                 while True:
                     if not os.path.exists(valid_port):
                         break
@@ -1250,37 +1252,25 @@ def hardware_serial_daemon():
                         physical_esp32_state['sensor_bus_status'] = 'Offline'
                         break
                     try:
-                        waiting = getattr(s, 'in_waiting', 0) or 0
+                        # Blocking read: kernel sleeps the thread until data arrives or
+                        # the serial timeout (0.5s) expires, yielding near-zero idle CPU.
+                        raw_line = s.readline()
                     except Exception:
                         break
-                    if waiting <= 0:
-                        time.sleep(0.05)
+                    if not raw_line:
                         continue
-                    try:
-                        chunk = s.read(min(waiting, 4096))
-                    except Exception:
-                        break
-                    if not chunk:
-                        time.sleep(0.05)
+                    raw_line = raw_line.decode('utf-8', errors='ignore').strip()
+                    if not raw_line:
                         continue
-                    buffer += chunk
-                    if len(buffer) > 16384:
-                        buffer = buffer[-4096:]
-                    while b'\n' in buffer:
-                        line, buffer = buffer.split(b'\n', 1)
-                        raw_line = line.decode('utf-8', errors='ignore').strip()
-                        if not raw_line:
-                            continue
-                        last_esp32_rx_time = time.time()
-                        physical_esp32_state['last_seen'] = last_esp32_rx_time
-                        if raw_line.startswith('{') and raw_line.endswith('}'):
-                            try:
-                                data = json.loads(raw_line)
-                                handle_physical_esp32_packet(data)
-                                on_esp32_uart_output(raw_line, source='physical')
-                            except Exception:
-                                pass
-                    time.sleep(0.01)
+                    last_esp32_rx_time = time.time()
+                    physical_esp32_state['last_seen'] = last_esp32_rx_time
+                    if raw_line.startswith('{') and raw_line.endswith('}'):
+                        try:
+                            data = json.loads(raw_line)
+                            handle_physical_esp32_packet(data)
+                            on_esp32_uart_output(raw_line, source='physical')
+                        except Exception:
+                            pass
         except Exception:
             ser = None
             time.sleep(2)
@@ -1341,6 +1331,8 @@ def admin_api_esp32_save():
             data=validate_hardware_config(data,current)
             for key,value in data.items():
                 conn.execute('REPLACE INTO config(key,value) VALUES (?,?)',('esp_'+key,str(value)))
+            if 'require_nir_sensor' in data:
+                physical_esp32_state['require_nir'] = int(data['require_nir_sensor'])
     except ValueError as error:return jsonify(success=False,error=str(error)),400
     data['cmd'] = 'SET_CONFIG'
     transmit_to_esp32(data)
@@ -1394,7 +1386,7 @@ def admin_api_esp32_test_servo():
         'hold_ms': hold_ms
     }
     ok = transmit_to_esp32(payload)
-    if ok is False:
+    if not ok:
         return jsonify(success=False, error='hardware_unavailable'), 400
     return jsonify(success=True, channel=channel, angle=angle)
 

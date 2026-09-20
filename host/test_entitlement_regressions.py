@@ -837,7 +837,7 @@ class PortalRegression(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.get_json()['error'], 'hardware_unavailable')
         # Valid test servo
-        self.p.transmit_to_esp32 = sent.append
+        self.p.transmit_to_esp32 = lambda data: sent.append(data) or True
         r = self.client.post('/admin/api/esp32/test_servo', json={'channel': 0, 'angle': 90, 'hold_ms': 1500})
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.get_json()['success'])
