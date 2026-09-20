@@ -632,6 +632,7 @@ void sensorTaskCode(void* parameter) {
             logDebug("AIRLOCK", "Entrance gate OPEN (Ch 0 -> %d deg). Waiting up to %u ms for bottle insertion...",
                      config.ent_open_angle, gateTimeoutMs);
 
+            unsigned long lastWaitLog = millis();
             while (millis() - openTime < gateTimeoutMs) {
                 if (topIrTriggered || forceGateClose) {
                     if (topIrTriggered) {
@@ -643,6 +644,13 @@ void sensorTaskCode(void* parameter) {
                         logDebug("AIRLOCK", "Force gate close detected at +%lu ms!", millis() - openTime);
                     }
                     break;
+                }
+                if (millis() - lastWaitLog >= 5000) {
+                    lastWaitLog = millis();
+                    int rawTopIr = digitalRead(PIN_IR_TOP);
+                    logDebug("AIRLOCK", "Awaiting bottle insertion: Top IR (GPIO %d)=%s (Waiting for beam break / LOW). Remaining: %lu s",
+                             PIN_IR_TOP, rawTopIr == LOW ? "LOW (TRIGGERED)" : "HIGH (CLEAR)",
+                             (gateTimeoutMs - (millis() - openTime)) / 1000);
                 }
                 vTaskDelay(pdMS_TO_TICKS(20));
             }
@@ -1237,6 +1245,39 @@ void loop() {
                 logWarn("CMD", "TEST_SERVO rejected: pcaReady=%d, channel=%d, angle=%d, busy=%d",
                         pca9685Found, channel, angle, depositCycleBusy.load());
                 emitSerialLine("{\"event\":\"SERVO_TEST_REJECTED\"}");
+            }
+        } else if (strcmp(cmd, "TEST_NIR") == 0) {
+            if (spectrometerFound && !depositCycleBusy) {
+                logDebug("NIR", "--- On-Demand AS7263 NIR Spectrometer Scan ---");
+                spectrometer.takeMeasurements();
+                float nirAbsorption = spectrometer.getCalibratedW();
+                int r = spectrometer.getR();
+                int s = spectrometer.getS();
+                int t = spectrometer.getT();
+                int u = spectrometer.getU();
+                int v = spectrometer.getV();
+                int w = spectrometer.getW();
+                int tempC = spectrometer.getTemperature();
+                bool isPet = (nirAbsorption >= config.pet_nir_w_min && nirAbsorption <= config.pet_nir_w_max);
+
+                logDebug("NIR", "Spectral Channels: R(610nm)=%d, S(680nm)=%d, T(730nm)=%d, U(760nm)=%d, V(810nm)=%d, W(860nm)=%d | Sensor Temp=%d C",
+                         r, s, t, u, v, w, tempC);
+                logDebug("NIR", "Calibrated W: %.2f | Target PET Range: [%d - %d] -> %s",
+                         nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max,
+                         isPet ? "PET PLASTIC MATCH! (ACCEPT)" : "NON-PET / OUT OF RANGE (REJECT)");
+
+                char nirBuf[384];
+                snprintf(nirBuf, sizeof(nirBuf),
+                         "{\"event\":\"NIR_TEST\",\"success\":true,\"r\":%d,\"s\":%d,\"t\":%d,\"u\":%d,\"v\":%d,\"w\":%d,\"calibrated_w\":%.2f,\"temp_c\":%d,\"pet_min\":%d,\"pet_max\":%d,\"is_pet\":%s}",
+                         r, s, t, u, v, w, nirAbsorption, tempC, config.pet_nir_w_min, config.pet_nir_w_max, isPet ? "true" : "false");
+                emitSerialLine(nirBuf);
+            } else {
+                logWarn("CMD", "TEST_NIR rejected: spectrometerFound=%d, busy=%d", spectrometerFound, depositCycleBusy.load());
+                char nirBuf[128];
+                snprintf(nirBuf, sizeof(nirBuf),
+                         "{\"event\":\"NIR_TEST\",\"success\":false,\"error\":\"%s\"}",
+                         !spectrometerFound ? "spectrometer_offline" : "machine_busy");
+                emitSerialLine(nirBuf);
             }
         } else if (strcmp(cmd, "PING") == 0) {
             char pongBuf[256];

@@ -1075,7 +1075,8 @@ physical_esp32_state = {
     'hardware_ready': False,
     'require_nir': 1,
     'sensor_bus_status': 'Offline',
-    'last_event': None
+    'last_event': None,
+    'last_nir': None
 }
 
 def handle_physical_esp32_packet(data):
@@ -1135,6 +1136,10 @@ def handle_physical_esp32_packet(data):
         physical_esp32_state['last_event'] = 'Config Confirmed'
     elif ev == 'CREDIT_ADD':
         physical_esp32_state['last_event'] = 'Bottle Processed'
+    elif ev == 'NIR_TEST':
+        data['timestamp'] = time.time()
+        physical_esp32_state['last_nir'] = data
+        physical_esp32_state['last_event'] = 'NIR Scan ({})'.format('PET' if data.get('is_pet') else 'REJECT')
     elif ev == 'GATE_OPEN':
         physical_esp32_state['gate_open'] = True
     elif ev in ('TIMEOUT', 'REJECTED', 'GATE_CLOSED', 'FINISH'):
@@ -1389,6 +1394,28 @@ def admin_api_esp32_test_servo():
     if not ok:
         return jsonify(success=False, error='hardware_unavailable'), 400
     return jsonify(success=True, channel=channel, angle=angle)
+
+@app.route('/admin/api/esp32/test_nir', methods=['POST'])
+def admin_api_esp32_test_nir():
+    if not session.get('admin_logged_in'):
+        return (jsonify({'error': 'unauthorized'}), 401)
+    if not physical_esp32_state.get('spectrometer_ready', False):
+        return jsonify(success=False, error='spectrometer_offline', message='AS7263 NIR Spectrometer not detected.'), 400
+    start = time.time()
+    ok = transmit_to_esp32({'cmd': 'TEST_NIR'})
+    if not ok:
+        return jsonify(success=False, error='hardware_unavailable', message='Serial link to ESP32 unavailable.'), 400
+    sleep_fn = getattr(time, 'sleep', None)
+    max_wait = 0.01 if getattr(app, 'testing', False) else 2.0
+    while time.time() - start < max_wait:
+        nir = physical_esp32_state.get('last_nir')
+        if nir and nir.get('timestamp', 0) >= start:
+            return jsonify(nir)
+        if sleep_fn:
+            sleep_fn(0.05)
+        else:
+            break
+    return jsonify(success=True, message='TEST_NIR command sent to ESP32.')
 
 def validate_promo_rate_conflict(bottles, minutes, exclude_bottles=None):
     """

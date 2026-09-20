@@ -845,6 +845,32 @@ class PortalRegression(unittest.TestCase):
         self.assertEqual(sent[-1]['channel'], 0)
         self.assertEqual(sent[-1]['angle'], 90)
 
+    def test_admin_test_nir_endpoint(self):
+        sent = []
+        # Unauthorized without admin session
+        r = self.client.post('/admin/api/esp32/test_nir')
+        self.assertEqual(r.status_code, 401)
+        # Authorized
+        with self.client.session_transaction() as sess:
+            sess['admin_logged_in'] = True
+        # Spectrometer offline
+        self.p.physical_esp32_state['spectrometer_ready'] = False
+        r = self.client.post('/admin/api/esp32/test_nir')
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()['error'], 'spectrometer_offline')
+        # Spectrometer ready, hardware unavailable
+        self.p.physical_esp32_state['spectrometer_ready'] = True
+        self.p.transmit_to_esp32 = lambda data: False
+        r = self.client.post('/admin/api/esp32/test_nir')
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()['error'], 'hardware_unavailable')
+        # Valid test NIR
+        self.p.transmit_to_esp32 = lambda data: sent.append(data) or True
+        r = self.client.post('/admin/api/esp32/test_nir')
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.get_json()['success'])
+        self.assertEqual(sent[-1]['cmd'], 'TEST_NIR')
+
     def test_hardware_bounds_includes_require_nir_sensor(self):
         from esp32_simulator import HARDWARE_BOUNDS, validate_hardware_config
         self.assertIn('require_nir_sensor', HARDWARE_BOUNDS)
