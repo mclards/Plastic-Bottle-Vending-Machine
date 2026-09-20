@@ -119,3 +119,20 @@ Implemented in [`host/gateway_network.py`](file:///d:/PROJECTS_IO/Plastic-Bottle
 - **Output Target:** `resources/EcoFi_Opi_v<VERSION>.img` (along with `.md5` and `.sha256` files).
 - **Validation:** Runs ARM QEMU static emulator tests (`verify_arm_runtime.py`, route imports, `dnsmasq --test`, `e2fsck`) inside the mounted rootfs before finalizing.
 
+---
+
+## 8. Material Discrimination & AS7263 NIR Spectroscopy
+
+Comprehensive empirical research data archived in [`docs/AS7263_NIR_CALIBRATION_RESEARCH.md`](docs/AS7263_NIR_CALIBRATION_RESEARCH.md):
+- **Sensor:** SparkFun AS7263 6-Channel NIR (`0x49`) @ 64x Gain, 50 mA bulb drive, 140 ms integration.
+- **Empty Air Baseline:** Bounded at **~24.5 uW/cm²** (W ~ 22 counts, Sum ~ 1000).
+- **Clear PET Bottle Walls:** Produce **35–65 uW/cm²** (up to ~200 uW/cm² on corrugated/ribbed plastic).
+- **Cellophane / BOPP Labels:** Produce **103–238 uW/cm²** due to diffuse Lambertian scattering.
+- **Clear Glass vs Clear PET:** Both exhibit ~4% Fresnel reflectance ($n=1.51$ vs $1.57$) at 860 nm; single-point reflection alone cannot distinguish smooth clear glass from smooth clear PET.
+- **Colored Glass (Beer/Wine):** Strongly absorbs NIR ($8.9–17.8\text{ uW/cm}^2$, below empty air). Rejection threshold: `Cal-W < 22.0 uW/cm²`.
+- **Cardboard / Paper Cups:** Intense diffuse scattering ($R > 8000$, $\text{Raw Sum} > 15,000$, $\text{Cal-W} > 230\text{ uW/cm}^2$).
+- **Multimodal Sensor Fusion:**
+  - LJ12A3 Inductive: Rejects aluminum cans and glass bottles with metal crown caps.
+  - AS7263 NIR: Verifies polymer presence, rejects colored glass and paper waste.
+  - Dual IR (E18-D80NK): Confirms entrance and gravitational drop transit.
+

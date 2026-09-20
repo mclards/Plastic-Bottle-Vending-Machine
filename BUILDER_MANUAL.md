@@ -704,7 +704,11 @@ Use **BalenaEtcher** or **Raspberry Pi Imager** to write `resources/EcoFi_Opi_v<
    - Place a metal bottle cap inside the chute. Turn the rear sensitivity trimmer until the red indicator LED turns ON at a distance of 4–5 mm.
 3. **Calibrate AS7263 NIR Spectral Thresholds:**
    - Mount the GY-AS7263 on the upper wall of the chute pointing through an 8–10mm hole into the chamber.
-   - Run sample PET bottles and review serial logs or Admin Panel readings. Ensure `pet_nir_w_min` is set 20% below empty bottle baseline and `pet_nir_w_max` is above clear plastic readings.
+   - Authoritative research and empirical spectral data are archived in [`docs/AS7263_NIR_CALIBRATION_RESEARCH.md`](docs/AS7263_NIR_CALIBRATION_RESEARCH.md).
+   - Empty air baseline sits at **~24.5 uW/cm²**.
+   - Clear PET bottle walls produce **35–65 uW/cm²** (or up to ~200 uW/cm² on ribbed surfaces).
+   - Recommended production settings: `pet_nir_w_min = 30` (just above empty air) and `pet_nir_w_max = 220` (below diffuse cardboard/paper scattering).
+   - Note: Colored glass (beer/wine) absorbs NIR heavily (<18 uW/cm²), while diffuse paper/cardboard spikes (>230 uW/cm²). Metal-capped glass bottles are rejected by the LJ12A3 inductive sensor.
 4. **Calibrate E18-D80NK Optical IR Sensors:**
    - Turn the trimmer screw on the back of the Top and Bottom IR sensors so the beam triggers reliably across the diameter of your chute tube and does not trigger on the opposite empty wall.
 5. **Test Physical Drop:**

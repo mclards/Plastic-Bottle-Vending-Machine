@@ -11,4 +11,7 @@
    - Live OPi is the debugging ground truth.
    - When deploying to `/opt/ecofi/`, restart `ecofi_portal.service` and verify status.
    - Ensure the OS release image in `resources/` is rebuilt to match the live system.
+5. **NIR Material Discrimination Reference:**
+   - Empirical AS7263 calibration and spectroscopy research is archived in [`docs/AS7263_NIR_CALIBRATION_RESEARCH.md`](docs/AS7263_NIR_CALIBRATION_RESEARCH.md).
+   - Empty air baseline is ~24.5 uW/cm², clear PET is 35–65 uW/cm², colored glass absorbs (<22 uW/cm²), and paper spikes (>220 uW/cm²).
 
