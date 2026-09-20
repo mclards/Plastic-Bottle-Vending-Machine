@@ -1661,7 +1661,13 @@ def admin_dashboard():
 
 
 def _init_cpu_sample():
-    sample = {'time': time.time(), 'stats': {}}
+    num_cpus = os.cpu_count() or 4
+    sample = {
+        'time': time.time(),
+        'stats': {},
+        'cached_cores': [{'core': str(i), 'usage': 0} for i in range(num_cpus)],
+        'cached_overall': 0
+    }
     if os.path.exists('/proc/stat'):
         try:
             with open('/proc/stat', 'r') as f:
@@ -1701,8 +1707,17 @@ def get_system_hardware_stats():
 
     try:
         # 1. CPU /proc/stat
-        cur_stats = {}
-        if os.path.exists('/proc/stat'):
+        prev_time = _last_cpu_sample.get('time', 0)
+        time_delta = now - prev_time
+
+        # If sampled within the last 750ms, return cached CPU metrics.
+        # This prevents quantization false-positives where rapid page-load requests
+        # sample a 10-30ms slice and falsely show 100% on whichever core handled the request.
+        if time_delta < 0.75 and _last_cpu_sample.get('cached_cores'):
+            cores = list(_last_cpu_sample['cached_cores'])
+            cpu_overall = _last_cpu_sample.get('cached_overall', 0)
+        elif os.path.exists('/proc/stat'):
+            cur_stats = {}
             with open('/proc/stat', 'r') as f:
                 for line in f:
                     if line.startswith('cpu'):
@@ -1713,31 +1728,48 @@ def get_system_hardware_stats():
                         cur_stats[name] = (idle, sum(vals))
 
             prev_stats = _last_cpu_sample.get('stats', {})
-            _last_cpu_sample['stats'] = cur_stats
-            _last_cpu_sample['time'] = now
 
             if prev_stats and 'cpu' in prev_stats and 'cpu' in cur_stats:
                 dt = cur_stats['cpu'][1] - prev_stats['cpu'][1]
                 di = cur_stats['cpu'][0] - prev_stats['cpu'][0]
-                if dt > 0:
+                if dt >= 10:
                     cpu_overall = max(0, min(100, int((dt - di) * 100 / dt)))
+                else:
+                    cpu_overall = _last_cpu_sample.get('cached_overall', 0)
+
                 for k in sorted(cur_stats.keys()):
                     if k == 'cpu': continue
+                    core_num = k.replace('cpu', '')
                     if k in prev_stats:
                         cdt = cur_stats[k][1] - prev_stats[k][1]
                         cdi = cur_stats[k][0] - prev_stats[k][0]
-                        core_pct = max(0, min(100, int((cdt - cdi) * 100 / max(1, cdt))))
+                        if cdt >= 5:
+                            core_pct = max(0, min(100, int((cdt - cdi) * 100 / max(1, cdt))))
+                        else:
+                            prev_core_map = {c['core']: c['usage'] for c in _last_cpu_sample.get('cached_cores', [])}
+                            core_pct = prev_core_map.get(core_num, cpu_overall)
                     else:
                         core_pct = 0
-                    core_num = k.replace('cpu', '')
                     cores.append({'core': core_num, 'usage': core_pct})
+
+                _last_cpu_sample['stats'] = cur_stats
+                _last_cpu_sample['time'] = now
+                _last_cpu_sample['cached_cores'] = cores
+                _last_cpu_sample['cached_overall'] = cpu_overall
             else:
+                _last_cpu_sample['stats'] = cur_stats
+                _last_cpu_sample['time'] = now
                 if os.path.exists('/proc/loadavg'):
                     with open('/proc/loadavg', 'r') as f:
                         load = float(f.read().split()[0])
                         cpu_overall = min(100, int(load * 100 / (os.cpu_count() or 1)))
                 for i in range(os.cpu_count() or 4):
                     cores.append({'core': str(i), 'usage': cpu_overall})
+                _last_cpu_sample['cached_cores'] = cores
+                _last_cpu_sample['cached_overall'] = cpu_overall
+        else:
+            for i in range(os.cpu_count() or 4):
+                cores.append({'core': str(i), 'usage': 0})
 
         # 2. Temperature
         for tpath in ['/sys/devices/virtual/thermal/thermal_zone0/temp', '/etc/armbianmonitor/datasources/soctemp']:
