@@ -10,7 +10,7 @@
 ## 1. System Architecture & Distributed Processing
 
 VMC ECO-VENDO implements an industrial **Distributed Master-Subordinate Architecture**:
-- **Hardware Sub-Controller (ESP32 DevKit V1):** Executes a deterministic FreeRTOS dual-core firmware pipeline. Handles nanosecond-precision optical and inductive sensor sampling, AS7263 NIR spectroscopy, a 3-servo motorized airlock chute, local I2C displays, audible/visual feedback, and NVS non-volatile credit journal storage.
+- **Hardware Sub-Controller (ESP32 DevKit V1):** Executes a deterministic FreeRTOS dual-core firmware pipeline. Handles nanosecond-precision optical and inductive sensor sampling, AS7263 NIR spectroscopy, HX711 24-bit load cell mass discrimination, a 3-servo motorized airlock chute, local I2C displays, audible/visual feedback, and NVS non-volatile credit journal storage.
 - **Core Linux Gateway (Orange Pi One / PC):** Runs Armbian Linux (Debian Stretch, Python 3.5.3 target runtime). Operates an Nginx reverse proxy (Port 80) intercepting captive portal detection probes (`/generate_204`, `/connecttest.txt`, `ncsi.txt`), a multi-threaded Flask time entitlement engine (Port 5000), an atomic SQLite session database (`vendo_sessions.db`), Linux `tc` HTB bandwidth control, dynamic `ipset` packet filtering, cryptographic Silicon HWID licensing (`mclards23`), and Excel operational reporting.
 
 ```mermaid
@@ -26,10 +26,11 @@ flowchart TD
         IR_TOP["Top Optical IR (GPIO 32)"] --> AIRLOCK["Airlock State Machine"]
         METAL["Inductive Metal (GPIO 25)"] --> VAL["Anti-Cheat Multi-Sensor Fusion"]
         NIR["AS7263 NIR Spectrometer (I2C 0x49)"] --> VAL
+        WEIGHT["HX711 Load Cell (GPIO 15/4)"] --> VAL
         IR_BOT["Bottom Optical IR (GPIO 33)"] --> CHUTE["Drop Confirmation"]
         
         VAL -->|Valid PET Plastic| SERVO_SUC["Success Flap (PCA9685 Ch 1)"]
-        VAL -->|Metal / Non-Plastic / Fraud| SERVO_REJ["Reject Flap (PCA9685 Ch 2)"]
+        VAL -->|Metal / Glass / Liquid Fraud| SERVO_REJ["Reject Flap (PCA9685 Ch 2)"]
         AIRLOCK --> SERVO_ENT["Entrance Gate (PCA9685 Ch 0)"]
         
         JOURNAL["NVS Credit Journal (receipt blob)"]
@@ -80,6 +81,7 @@ flowchart TD
 | **Optical IR Proximity Sensors**| 2 | **E18-D80NK** Adjustable NPN-NO Optical IR Sensors | Top Intake Detector (IR1) & Bottom Chute Drop Detector (IR2) |
 | **Inductive Proximity Sensor** | 1 | **LJ12A3-4-Z/BX** NPN-NO (6–36V DC, 4mm detection distance) | Detects and rejects aluminum cans, metal caps, and foils |
 | **NIR Optical Spectrometer** | 1 | SparkFun / GY **AS7263** 6-Channel NIR Spectral Sensor (`0x49`) | Verifies calibrated optical absorption signature of PET polymer |
+| **Weight Sensor & ADC** | 1 | **HX711 24-Bit ADC + 1kg/5kg Miniature Load Cell** | Mass discrimination ($10\text{g} - 65\text{g}$); rejects heavy glass bottles and liquid fraud |
 | **Ultrasonic Distance Sensor** | 1 | **JSN-SR04T** Waterproof Ultrasonic Sensor (or HC-SR04) | Measures storage bin fill depth (15cm full threshold default) |
 | **I2C Character LCD Display** | 1 | **2004A** 20x4 Character LCD + PCF8574T Backpack (`0x27`) | Real-time customer instructions, rates, and bottle tally |
 | **Active Buzzer** | 1 | 5V Active Piezo Buzzer Module | Audible validation chimes and rejection alert pulses |
@@ -263,18 +265,18 @@ On the Allwinner H3 SoC, hardware UART3 is routed directly to `PA13` (TX) and `P
  [Drop Sensor (Bottom)] G33 │ [ 8]              [31] │ G19    [Finish Button (Internal Pull-up)]
  [Metal Sensor Divider] G25 │ [ 9]              [30] │ G18    [Active Buzzer]
                         G26 │ [10]              [29] │ G5     [Status LED GREEN]
-  [Ultra Echo Divider]  G27 │ [11]              [28] │ G17    [Status LED RED]
-                        G14 │ [12]              [27] │ G16    (Spare)
-      [MTDI (Keep Low)] G12 │ [13]              [26] │ G4     
-      [Common Star GND] GND │ [14]              [25] │ G0     [BOOT Button]
-                        G13 │ [15]              [24] │ G2     [Onboard LED]
-           (SPI Flash)  SD2 │ [16]              [23] │ G15    [Spare / Unused GPIO]
-           (SPI Flash)  SD3 │ [17]              [22] │ SD1    (SPI Flash)
-           (SPI Flash)  CMD │ [18]              [21] │ SD0    (SPI Flash)
-      [+5.1V Logic In]   V5 │ [19]              [20] │ CLK    (SPI Flash)
-                            ├────────────────────────┤
-                            │ [RST]   [USB]   [BOOT] │
-                            └────────────────────────┘
+   [Ultra Echo Divider]  G27 │ [11]              [28] │ G17    [Status LED RED]
+                         G14 │ [12]              [27] │ G16    (Spare)
+       [MTDI (Keep Low)] G12 │ [13]              [26] │ G4     [HX711 SCK (Clock)]
+       [Common Star GND] GND │ [14]              [25] │ G0     [BOOT Button]
+                         G13 │ [15]              [24] │ G2     [Onboard LED]
+            (SPI Flash)  SD2 │ [16]              [23] │ G15    [HX711 DOUT (Data)]
+            (SPI Flash)  SD3 │ [17]              [22] │ SD1    (SPI Flash)
+            (SPI Flash)  CMD │ [18]              [21] │ SD0    (SPI Flash)
+       [+5.1V Logic In]   V5 │ [19]              [20] │ CLK    (SPI Flash)
+                             ├────────────────────────┤
+                             │ [RST]   [USB]   [BOOT] │
+                             └────────────────────────┘
 ```
 
 ### Complete ESP32 Pin Mapping Table (38-Pin Reference)
@@ -284,7 +286,8 @@ On the Allwinner H3 SoC, hardware UART3 is routed directly to `PA13` (TX) and `P
 | **Top Optical IR (#1)** | **Pin 7** | `G32` | **GPIO 32** | Signal (Black wire) | 5.10V Logic (Brown), GND (Blue) | Internal `INPUT_PULLUP`. Beam broken = `LOW`, Clear = `HIGH`. Interrupt on `FALLING`. |
 | **Bottom Optical IR (#2)** | **Pin 8** | `G33` | **GPIO 33** | Signal (Black wire) | 5.10V Logic (Brown), GND (Blue) | Internal `INPUT_PULLUP`. Beam broken = `LOW`, Clear = `HIGH`. Interrupt on `FALLING`. |
 | **Inductive Metal Sensor** | **Pin 9** | `G25` | **GPIO 25** | Signal (Black wire) | 12.0V SMPS (Brown), GND (Blue) | **MANDATORY DIVIDER:** 10kΩ series + 3.9kΩ to GND (12V $\rightarrow$ 3.36V). Idle = `HIGH`, Metal = `LOW`. |
-| **Spare / Unused GPIO** | **Pin 23** | `G15` | **GPIO 15** | None (Unconnected) | 3.3V Logic | **Free GPIO:** Capacitive sensor omitted; MTDO strapping pin left floating/default. |
+| **HX711 Load Cell (DOUT)** | **Pin 23** | `G15` | **GPIO 15** | DT / DOUT Pin | 3.3V Logic Rail, GND | 24-bit ADC Serial Data Output. High-impedance serial reading. |
+| **HX711 Load Cell (SCK)** | **Pin 26** | `G4` | **GPIO 4** | SCK Pin | 3.3V Logic Rail, GND | 24-bit ADC Serial Clock Pulse. ESP32 push-pull digital output. |
 | **Ultrasonic Trigger** | **Pin 37** | `G23` | **GPIO 23** | TRIG Pin | 5.10V Logic (VCC), GND | Direct connection. ESP32 3.3V push-pull cleanly drives HC-SR04 Trig. |
 | **Ultrasonic Echo** | **Pin 11** | `G27` | **GPIO 27** | ECHO Pin (via R2 divider) | 5.10V Logic (VCC), GND | **MANDATORY DIVIDER:** 1kΩ series + 2kΩ to GND (5V → 3.33V). |
 | **I2C Bus Data (SDA)** | **Pin 33** | `G21` | **GPIO 21** | SDA Pin | 3.3V / 5.1V Logic, GND | Common I2C bus shared across PCA9685 (`0x40`), LCD (`0x27`), and AS7263 (`0x49`). |
@@ -387,7 +390,30 @@ $$\text{V}_{\text{GPIO}} = 5.0\text{V} \times \frac{2.0\text{k}\Omega}{1.0\text{
 
 ---
 
-### 6.5 Shared I2C Bus Daisy-Chain (GPIO 21 SDA & GPIO 22 SCL)
+### 6.5 HX711 24-Bit ADC & Strain Gauge Load Cell Module (GPIO 15 DOUT & GPIO 4 SCK)
+
+The HX711 module provides high-precision mass discrimination ($[10\text{g} - 65\text{g}]$) to solve the optical ambiguity where smooth clear glass and clear PET reflect nearly identical NIR Fresnel light ($\sim 4\%$).
+
+```text
+  [4-Wire Strain Gauge Load Cell Bar]
+  ├── RED wire   ────────► HX711 E+ (Excitation +)
+  ├── BLACK wire ────────► HX711 E- (Excitation -)
+  ├── WHITE wire ────────► HX711 A- (Signal -)
+  └── GREEN wire ────────► HX711 A+ (Signal +)
+
+  [HX711 Amplifier Board]
+  ├── VCC ────────► +3.3V Logic Rail (or +5.10V Logic)
+  ├── GND ────────► Common Star Ground
+  ├── DT (DOUT) ──► ESP32 Pin 23 (GPIO 15)  [24-Bit ADC Data Out]
+  └── SCK ────────► ESP32 Pin 26 (GPIO 4)   [Serial Clock In]
+```
+
+- **Physical Mounting:** Mount the miniature aluminum load cell bar horizontally underneath the intermediate airlock cradle between the entrance door and the sorting trapdoors. Ensure the cantilevered end with the directional arrow points in the direction of downward gravitational load, with at least a 1–2mm clearance underneath so the bar can flex under bottle weight.
+- **Safety / Bypass Mode:** The firmware auto-probes the HX711 during boot. If not detected, or if `require_weight_sensor = 0` (default), the machine runs normally using optical spectroscopy alone until physical installation is complete.
+
+---
+
+### 6.6 Shared I2C Bus Daisy-Chain (GPIO 21 SDA & GPIO 22 SCL)
 
 > [!CAUTION]
 > **I2C Voltage Mismatch Note:** The PCA9685 and LCD2004 are 5V devices. Connecting them directly to the ESP32 `D21`/`D22` pins (3.3V) violates the ESP32 spec. In practice most boards survive via internal clamping diodes, but be aware of this trade-off.
@@ -410,7 +436,7 @@ Power Connections:
 
 ---
 
-### 6.6 PCA9685 Servo Motor Actuator Mapping
+### 6.7 PCA9685 Servo Motor Actuator Mapping
 The PCA9685 PWM driver is connected to the ESP32 via I2C (`SDA = GPIO 21`, `SCL = GPIO 22`) at address `0x40`.
 
 ```text
@@ -442,7 +468,7 @@ The PCA9685 PWM driver is connected to the ESP32 via I2C (`SDA = GPIO 21`, `SCL 
 
 ---
 
-### 6.7 Finish / Config Button (GPIO 19)
+### 6.8 Finish / Config Button (GPIO 19)
 Connected to GPIO 19 with `INPUT_PULLUP` enabled in software. No external resistor is needed.
 
 ```text
@@ -458,7 +484,7 @@ Connected to GPIO 19 with `INPUT_PULLUP` enabled in software. No external resist
 
 ---
 
-### 6.8 Front Panel Connectors (Active Buzzer & Status Indicators)
+### 6.9 Front Panel Connectors (Active Buzzer & Status Indicators)
 These components are clustered together on the right side of the ESP32 (below the I2C lines) to allow routing to a single neat 6-pin Front Panel header.
 
 ```text
@@ -474,7 +500,7 @@ These components are clustered together on the right side of the ESP32 (below th
 
 ---
 
-#### 6.9 Orange Pi One Direct GPIO Header UART Link
+#### 6.10 Orange Pi One Direct GPIO Header UART Link
 ```text
   Orange Pi One 40-Pin Header                    ESP32 DevKit (38-Pin)
   ┌───────────────────────────                    ─────────────────────
@@ -485,7 +511,7 @@ These components are clustered together on the right side of the ESP32 (below th
 
 ---
 
-### 6.10 12V Cabinet Marquee Strip (Orange Pi GPIO via 1-Channel Relay)
+### 6.11 12V Cabinet Marquee Strip (Orange Pi GPIO via 1-Channel Relay)
 The 12V external Marquee LED strip signifies the system status. A 1-channel relay module is driven by the Orange Pi to switch between the Red strip (Offline / Booting) and the Green strip (System Online / Ready). 
 
 ```text
@@ -530,7 +556,7 @@ To prevent servo motor inductive kickback from browning out the ESP32 or Orange 
 
 ## 8. Multi-Sensor Anti-Fraud Verification Pipeline
 
-When a customer deposits an object, the ESP32 performs a strict 4-stage sequential verification:
+When a customer deposits an object, the ESP32 performs a strict 5-stage sequential verification:
 
 ```mermaid
 flowchart TD
@@ -542,10 +568,19 @@ flowchart TD
     SETTLE --> IND{Inductive Metal GPIO 25 == LOW?}
     
     IND -- Yes (Metal Detected) --> REJ_METAL[Reject Reason: REJECT_TIN]
-    IND -- No --> NIR_SPEC{AS7263 NIR Calibrated W Channel in [200, 5000]?}
+    IND -- No --> NIR_ABS{Colored Glass NIR Absorption < 22.0 uW/cm²?}
     
-    NIR_SPEC -- No (Spectral Mismatch) --> REJ_NIR[Reject Reason: REJECT_NIR]
-    NIR_SPEC -- Yes (PET Confirmed) --> ACCEPT[Open Success Flap Ch 1 -> 90°]
+    NIR_ABS -- Yes (Beer/Wine Glass) --> REJ_NIR[Reject Reason: REJECT_NIR]
+    NIR_ABS -- No --> NIR_PET{AS7263 NIR Cal-W in [30, 220] uW/cm²?}
+    
+    NIR_PET -- No (Paper / Bad Polymer) --> REJ_NIR
+    NIR_PET -- Yes (Polymer Verified) --> WT_CHECK{require_weight_sensor AND HX711 Ready?}
+    
+    WT_CHECK -- Yes --> WT_VAL{Mass in [10g, 65g]?}
+    WT_CHECK -- No (Bypassed) --> ACCEPT[Open Success Flap Ch 1 -> 90°]
+    
+    WT_VAL -- No (Clear Glass >65g or Liquid Fraud) --> REJ_WT[Reject Reason: REJECT_WEIGHT]
+    WT_VAL -- Yes (Empty PET Weight Confirmed) --> ACCEPT
     
     ACCEPT --> IR2{Bottom IR GPIO 33 Triggered within 3000ms?}
     IR2 -- Yes --> CREDIT[Commit NVS Journal: Increment Bottles & Transmit CREDIT_ADD]
@@ -553,12 +588,21 @@ flowchart TD
     
     REJ_METAL --> OPEN_REJ[Open Reject Flap Ch 2 -> 90° for 2000ms]
     REJ_NIR --> OPEN_REJ
+    REJ_WT --> OPEN_REJ
 ```
 
 1. **Intake Detection (Top IR - E18-D80NK):** Top optical beam break detects inserted bottle, triggers entrance gate closure, and seals the airlock chamber.
-2. **Metallic Rejection (LJ12A3 Inductive):** Metal cans, aluminum caps, and foils trigger GPIO 25 (`LOW`). Immediately opens the reject flap.
-3. **Polymer Spectroscopy (AS7263 NIR):** Samples 6 near-infrared optical bands (610nm–860nm). Validates that calibrated W-channel absorption falls within the authentic PET threshold (`pet_nir_w_min` to `pet_nir_w_max`), rejecting cardboard, glass, and non-PET materials.
-4. **Storage Drop Confirmation (Bottom IR - E18-D80NK):** Success flap opens. Bottle must physically drop through the bottom IR beam into the storage bin within `success_drop_tout_ms` (3000ms default) to commit the credit transaction, preventing string/theft exploits.
+2. **Metallic Rejection (LJ12A3 Inductive):** Metal cans, aluminum caps, and foils trigger GPIO 25 (`LOW`). Immediately routes to the reject chute (`REJECT_TIN`).
+3. **Polymer Spectroscopy (AS7263 NIR):** Samples 6 near-infrared optical bands (610nm–860nm).
+   - **Colored Glass Cutoff:** Iron-oxide impurities in amber/green glass absorb NIR heavily ($\text{Cal-W} < 22.0\ \mu\text{W/cm}^2$, below the empty air baseline of $24.5\ \mu\text{W/cm}^2$). Instantly rejected as `REJECT_NIR`.
+   - **Diffuse Paper Cutoff:** Cellulose paper and cardboard produce massive diffuse scattering ($\text{Cal-W} > 220\ \mu\text{W/cm}^2$, Raw $R > 8000$). Rejected as `REJECT_NIR`.
+   - **PET Polymer Signature:** Smooth clear and ribbed PET walls fall cleanly within the empirically calibrated envelope: `pet_nir_w_min = 30` to `pet_nir_w_max = 220` $\mu\text{W/cm}^2$.
+4. **Mass Discrimination (HX711 24-Bit ADC + Load Cell):**
+   - **Clear Glass Elimination:** Because smooth clear glass ($n \approx 1.51$) and smooth clear PET ($n \approx 1.57$) share identical $\approx 4\%$ Fresnel reflectance at 860nm, optical reflection alone is ambiguous. The load cell resolves this: a 500mL empty PET bottle weighs $\sim 20\text{g}$, while an empty 500mL glass bottle weighs $260 - 380\text{g}$ ($>10\times$ heavier).
+   - **Liquid Cheat Elimination:** Rejects cheat bottles containing water/sand ($> 70\text{g}$).
+   - **Accepted Window:** Strictly bounded to $[10\text{g} - 65\text{g}]$ (`min_bottle_weight_g` to `max_bottle_weight_g`).
+   - *(Note: If `require_weight_sensor = 0`, this step is safely bypassed for bench testing).*
+5. **Storage Drop Confirmation (Bottom IR - E18-D80NK):** Success flap opens. Bottle must physically drop through the bottom IR beam into the storage bin within `success_drop_tout_ms` (3000ms default) to commit the credit transaction, preventing string/theft exploits.
 
 ---
 
@@ -597,6 +641,22 @@ flowchart TD
   {"event":"BIN_FULL"}
   {"event":"BIN_OK"}
   ```
+- **Periodic Telemetry Heartbeat (Every 3s):**
+  ```json
+  {"event":"HEARTBEAT","bin_distance_cm":60,"is_bin_full":false,"pca9685_ready":true,"spectrometer_ready":true,"hx711_ready":true,"hardware_ready":true,"require_nir":1,"require_weight":0,"gate_open":false,"protocol":2}
+  ```
+- **On-Demand NIR Spectroscopy Result (`TEST_NIR`):**
+  ```json
+  {"event":"NIR_TEST","success":true,"r":120,"s":150,"t":180,"u":210,"v":240,"w":85,"calibrated_w":85.0,"temp_c":28,"pet_min":30,"pet_max":220,"is_pet":true}
+  ```
+- **On-Demand Load Cell Weight Result (`TEST_WEIGHT`):**
+  ```json
+  {"event":"WEIGHT_TEST","success":true,"weight_g":22.0,"min_g":10,"max_g":65,"cal_factor":420}
+  ```
+- **Load Cell Zero / Tare Result (`TARE_WEIGHT`):**
+  ```json
+  {"event":"TARE_OK","success":true}
+  ```
 - **Configuration Acknowledgment:**
   ```json
   {"event":"CONFIG_SAVED"}
@@ -622,7 +682,7 @@ flowchart TD
   ```json
   {"cmd":"FINISH_ACK","session_id":"sess-12345","protocol":2}
   ```
-- **Update Calibration Parameters:**
+- **Update Calibration & Material Parameters:**
   ```json
   {
     "cmd":"SET_CONFIG",
@@ -631,8 +691,13 @@ flowchart TD
     "settle_time_ms":500,
     "success_drop_tout_ms":3000,
     "reject_drop_time_ms":2000,
-    "pet_nir_w_min":200,
-    "pet_nir_w_max":5000,
+    "pet_nir_w_min":30,
+    "pet_nir_w_max":220,
+    "require_nir_sensor":1,
+    "require_weight_sensor":0,
+    "min_bottle_weight_g":10,
+    "max_bottle_weight_g":65,
+    "weight_cal_factor":420,
     "ent_open_angle":90,
     "ent_close_angle":0,
     "suc_open_angle":90,
@@ -640,6 +705,14 @@ flowchart TD
     "rej_open_angle":90,
     "rej_close_angle":0
   }
+  ```
+- **On-Demand Sensor Diagnostics:**
+  ```json
+  {"cmd":"TEST_NIR"}
+  {"cmd":"TEST_WEIGHT"}
+  {"cmd":"TARE_WEIGHT"}
+  {"cmd":"TEST_SERVO","channel":0,"angle":90,"hold_ms":1500}
+  {"cmd":"PING"}
   ```
 - **Trigger Onboard Wi-Fi Config AP:**
   ```json
@@ -707,36 +780,52 @@ Use **BalenaEtcher** or **Raspberry Pi Imager** to write `resources/EcoFi_Opi_v<
    - Authoritative research and empirical spectral data are archived in [`docs/AS7263_NIR_CALIBRATION_RESEARCH.md`](docs/AS7263_NIR_CALIBRATION_RESEARCH.md).
    - Empty air baseline sits at **~24.5 uW/cm²**.
    - Clear PET bottle walls produce **35–65 uW/cm²** (or up to ~200 uW/cm² on ribbed surfaces).
-   - Recommended production settings: `pet_nir_w_min = 30` (just above empty air) and `pet_nir_w_max = 220` (below diffuse cardboard/paper scattering).
-   - Note: Colored glass (beer/wine) absorbs NIR heavily (<18 uW/cm²), while diffuse paper/cardboard spikes (>230 uW/cm²). Metal-capped glass bottles are rejected by the LJ12A3 inductive sensor.
-4. **Calibrate E18-D80NK Optical IR Sensors:**
+   - Production settings: `pet_nir_w_min = 30` (just above empty air) and `pet_nir_w_max = 220` (below diffuse cardboard/paper scattering).
+   - Note: Colored glass (beer/wine) absorbs NIR heavily (<22 uW/cm²), while diffuse paper/cardboard spikes (>220 uW/cm²).
+4. **Calibrate HX711 Load Cell Weight Sensor:**
+   - With the intake cradle empty, go to Admin Panel (`http://10.0.0.1/admin`) -> **Hardware & Calibration** and click **Tare Scale** (or send UART command `{"cmd":"TARE_WEIGHT"}`).
+   - Place a known test weight or empty 500mL PET bottle ($\approx 20.0\text{g}$) on the cradle and click **Read HX711 Scale** (`{"cmd":"TEST_WEIGHT"}`).
+   - If the reading deviates, update `HX711 Calibration Factor` (`weight_cal_factor`, default `420`):
+     $$\text{New Factor} = \text{Current Factor} \times \frac{\text{Measured Reading}}{\text{Actual Known Weight}}$$
+   - Once calibrated, set `Weight Sensor (HX711) Requirement` (`require_weight_sensor`) to `Strict (1)` to enforce the $[10\text{g} - 65\text{g}]$ mass rejection envelope against clear glass and liquid fraud.
+5. **Calibrate E18-D80NK Optical IR Sensors:**
    - Turn the trimmer screw on the back of the Top and Bottom IR sensors so the beam triggers reliably across the diameter of your chute tube and does not trigger on the opposite empty wall.
-5. **Test Physical Drop:**
-   - Press "Insert Bottle" on the client captive portal (`10.0.0.1`). Ensure the entrance gate opens, bottle triggers Top IR, airlock settles, success flap opens, and bottom IR logs confirmation.
-6. **Verify System Regressions:**
+6. **Test Physical Drop:**
+   - Press "Insert Bottle" on the client captive portal (`10.0.0.1`). Ensure the entrance gate opens, bottle triggers Top IR, airlock settles, weight and NIR validate, success flap opens, and bottom IR logs confirmation.
+7. **Verify System Regressions:**
    ```powershell
    python -m unittest discover -s host -p "test_*.py"
    ```
-   *Ensure all 92 tests pass before releasing the unit to customers.*
+   *Ensure all 99 tests pass before releasing the unit to customers.*
 
 ---
 
 ## 13. Bench Testing & Actuator Verification
 
-The VMC ECO-VENDO system supports seamless bench testing so you can verify the entire servo mechanical sequence even before optical sensors (AS7263 NIR spectrometer, proximity sensors) are wired up.
+The VMC ECO-VENDO system supports seamless bench testing so you can verify the entire servo mechanical sequence even before optical sensors (AS7263 NIR spectrometer, load cell, proximity sensors) are wired up.
 
-### 13.1 Sensor Intake Requirement Setting (`require_nir_sensor`)
-In the Admin Dashboard (`http://10.0.0.1/admin` -> **Hardware & Calibration** -> **Intake Control**):
-- **Strict (Production):** Mandates both PCA9685 servo driver and AS7263 NIR spectrometer online before allowing bottle intake. If any sensor is missing, the captive portal informs users and disables the deposit button.
-- **Bypass (Servos-Only Bench Test):** Permits the entrance gate and deposit cycle to operate with only the PCA9685 servo driver connected. Perfect for mechanical bench-assembly and chute clearance testing!
+### 13.1 Sensor Intake Requirement Settings
+In the Admin Dashboard (`http://10.0.0.1/admin` -> **Hardware & Calibration**):
+- **NIR Sensor Requirement (`require_nir_sensor`):**
+  - **Strict (1, Production):** Mandates AS7263 NIR spectrometer online before allowing bottle intake.
+  - **Bypass (0, Bench Test):** Permits intake without NIR spectrometer connected.
+- **Weight Sensor Requirement (`require_weight_sensor`):**
+  - **Strict (1, Production):** Mandates HX711 load cell online and enforces $[10\text{g} - 65\text{g}]$ mass envelope.
+  - **Bypass (0, Default / Bench Test):** Permits intake without weight sensor connected. Perfect while waiting for load cell hardware delivery!
 
-### 13.2 Direct Servo Testing from Admin Panel
+### 13.2 Live Sensor Diagnostics from Admin Panel
+The Admin Panel provides tactile diagnostic tools to inspect sensor readings in real time:
+- **Test AS7263 NIR:** Fires an on-demand multi-spectral scan, returning 6-channel raw counts, Calibrated W ($\mu\text{W/cm}^2$), sensor temperature, and instant PET match verdict.
+- **Read HX711 Scale:** Takes a 5-sample average weight measurement and evaluates whether the object falls within valid bottle bounds ($[10\text{g} - 65\text{g}]$).
+- **Tare Scale:** Re-zeros the scale baseline.
+
+### 13.3 Direct Servo Testing from Admin Panel
 The Admin Panel provides tactile test buttons to command individual servos directly:
 - **Entrance Gate (PCA Channel 0):** Commands entrance flap to test angle (default 90°) for 1.5 seconds then returns.
 - **Success Chute (PCA Channel 1):** Commands success sorting flap to test angle.
 - **Reject Chute (PCA Channel 2):** Commands reject disposal flap to test angle.
 
-### 13.3 ESP32 Dual-Core Real-Time Performance
+### 13.4 ESP32 Dual-Core Real-Time Performance
 - **Core 0 (`SensorTask`):** High-priority dedicated sensor loop with sub-millisecond task notification (`ulTaskNotifyTake`). Ultrasonic HC-SR04 sampling runs in an isolated non-blocking 1.5s slice, preventing pulse timeouts from degrading servo response.
 - **Core 1 (`CommTask` & UART):** Handles bidirectional host communication. Upon `OPEN_GATE` arrival, wakes Core 0 instantly with `xTaskNotifyGive` (< 1ms reaction).
 - **100% Production Firmware:** The ESP32 firmware contains zero simulator residue or synthetic mock delays. Full hardware simulation is handled cleanly by the host-side simulator engine at `/simulator`.
