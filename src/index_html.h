@@ -261,8 +261,8 @@ const char* index_html PROGMEM = R"rawliteral(
                     <input type="number" id="suc_tout" name="suc_tout" value="%SUC_TOUT%" min="500" max="10000" step="100" required>
                 </div>
                 <div class="field">
-                    <label for="rej_time">Reject Flap Hold Time (ms)</label>
-                    <input type="number" id="rej_time" name="rej_time" value="%REJ_TIME%" min="500" max="10000" step="100" required>
+                    <label for="ret_tout">Manual Retrieval Timeout (seconds)</label>
+                    <input type="number" id="ret_tout" name="ret_tout" value="%RET_TOUT%" min="5" max="300" step="5" required>
                 </div>
             </div>
             <div class="section-footer">
@@ -320,20 +320,6 @@ const char* index_html PROGMEM = R"rawliteral(
                     <div class="field">
                         <label for="suc_close">Close Angle (°)</label>
                         <input type="number" id="suc_close" name="suc_close" value="%SUC_CLOSE%" min="0" max="180" required>
-                    </div>
-                </div>
-            </div>
-
-            <div class="servo-block">
-                <div class="servo-label"><span>❌</span> Channel 2 — Reject Flap</div>
-                <div class="field-row">
-                    <div class="field">
-                        <label for="rej_open">Open Angle (°)</label>
-                        <input type="number" id="rej_open" name="rej_open" value="%REJ_OPEN%" min="0" max="180" required>
-                    </div>
-                    <div class="field">
-                        <label for="rej_close">Close Angle (°)</label>
-                        <input type="number" id="rej_close" name="rej_close" value="%REJ_CLOSE%" min="0" max="180" required>
                     </div>
                 </div>
             </div>

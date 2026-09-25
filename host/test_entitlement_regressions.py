@@ -902,6 +902,194 @@ class PortalRegression(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_hardware_config({'require_nir_sensor': 2})
 
+    def test_admin_esp32_ap_toggle(self):
+        # 1. Unauthorized
+        r = self.client.post('/admin/api/esp32/ap', json={'enable': True})
+        self.assertEqual(r.status_code, 401)
+
+        # 2. Authorized
+        with self.client.session_transaction() as cookie:
+            cookie['admin_logged_in'] = True
+
+        sent = []
+        self.p.transmit_to_esp32 = lambda data: sent.append(data) or True
+        self.p.set_config('simulator_enabled', '1')
+
+        # Turn AP ON
+        r = self.client.post('/admin/api/esp32/ap', json={'enable': True})
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertTrue(data['success'])
+        self.assertTrue(data['ap_active'])
+        self.assertEqual(sent[-1], {'cmd': 'SET_AP', 'enable': True})
+
+        # Check stats reflects AP ON
+        stats = self.client.get('/admin/api/stats').get_json()
+        self.assertTrue(stats.get('esp32_ap_active'))
+
+        # Toggle (without explicit enable) -> turns OFF
+        r = self.client.post('/admin/api/esp32/ap', json={})
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertTrue(data['success'])
+        self.assertFalse(data['ap_active'])
+        self.assertEqual(sent[-1], {'cmd': 'SET_AP', 'enable': False})
+
+        # Turn AP OFF explicitly
+        r = self.client.post('/admin/api/esp32/ap', json={'enable': False})
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertFalse(data['ap_active'])
+
+        # Hardware unavailable error when neither physical nor simulator is enabled
+        self.p.set_config('simulator_enabled', '0')
+        self.p.esp32_port_name = None
+        self.p.ser = None
+        r = self.client.post('/admin/api/esp32/ap', json={'enable': True})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()['error'], 'hardware_unavailable')
+
+    def test_esp32_simulator_ap_auto_off(self):
+        from esp32_simulator import ESP32Simulator
+        import time
+
+        sim = ESP32Simulator()
+        try:
+            # Enable AP
+            sim.receive_uart(json.dumps({'cmd': 'SET_AP', 'enable': True}))
+            self.assertTrue(sim.ap_active)
+            self.assertEqual(sim.ap_stations, 0)
+
+            # Fast-forward ap_started_at by 65 seconds to simulate 1 minute inactivity
+            sim.ap_started_at = time.time() - 65
+            time.sleep(0.15)  # Allow background thread loop to run
+
+            # AP should be automatically turned OFF
+            self.assertFalse(sim.ap_active)
+
+            # Re-enable AP, but simulate a connected device (stations = 1)
+            sim.receive_uart(json.dumps({'cmd': 'SET_AP', 'enable': True}))
+            self.assertTrue(sim.ap_active)
+            sim.ap_stations = 1
+            sim.ap_started_at = time.time() - 65
+            time.sleep(0.15)
+            # AP should stay ON because stations > 0
+            self.assertTrue(sim.ap_active)
+        finally:
+            sim.stop()
+
+    def test_manual_retrieval_bounds_and_zero_residue(self):
+        from esp32_simulator import HARDWARE_BOUNDS, validate_hardware_config
+        self.assertIn('retrieval_timeout_s', HARDWARE_BOUNDS)
+        low, high, default = HARDWARE_BOUNDS['retrieval_timeout_s']
+        self.assertEqual((low, high, default), (5, 300, 45))
+        self.assertNotIn('reject_drop_time_ms', HARDWARE_BOUNDS)
+        self.assertNotIn('rej_open_angle', HARDWARE_BOUNDS)
+        self.assertNotIn('rej_close_angle', HARDWARE_BOUNDS)
+
+        cfg = validate_hardware_config({'retrieval_timeout_s': 60})
+        self.assertEqual(cfg['retrieval_timeout_s'], 60)
+        with self.assertRaises(ValueError):
+            validate_hardware_config({'retrieval_timeout_s': 4})
+        with self.assertRaises(ValueError):
+            validate_hardware_config({'retrieval_timeout_s': 301})
+
+    def test_admin_servo_channel_bounds_reject_channel_2(self):
+        sent = []
+        with self.client.session_transaction() as sess:
+            sess['admin_logged_in'] = True
+        self.p.transmit_to_esp32 = lambda data: sent.append(data) or True
+
+        # Channel 0 (Entrance) - valid
+        r0 = self.client.post('/admin/api/esp32/test_servo', json={'channel': 0, 'angle': 90})
+        self.assertEqual(r0.status_code, 200)
+        self.assertTrue(r0.get_json()['success'])
+        self.assertEqual(sent[-1]['channel'], 0)
+
+        # Channel 1 (Success) - valid
+        r1 = self.client.post('/admin/api/esp32/test_servo', json={'channel': 1, 'angle': 90})
+        self.assertEqual(r1.status_code, 200)
+        self.assertTrue(r1.get_json()['success'])
+        self.assertEqual(sent[-1]['channel'], 1)
+
+        # Channel 2 (Reject Flap Removed) - rejected with 400
+        r2 = self.client.post('/admin/api/esp32/test_servo', json={'channel': 2, 'angle': 90})
+        self.assertEqual(r2.status_code, 400)
+
+        # Channel 3 - rejected with 400
+        r3 = self.client.post('/admin/api/esp32/test_servo', json={'channel': 3, 'angle': 90})
+        self.assertEqual(r3.status_code, 400)
+
+    def test_manual_retrieval_events_lifecycle(self):
+        # Start a deposit session
+        start_res = self.request('/api/vendo/open_gate')
+        self.assertEqual(start_res.status_code, 200)
+        data = start_res.get_json()
+        self.assertTrue(data['success'])
+        sid = data['deposit_session_id']
+
+        # Initial status: rejection_alert should be inactive
+        st = self.request('/api/vendo/status', get=True).get_json()
+        self.assertIn('rejection_alert', st)
+        self.assertFalse(st['rejection_alert']['active'])
+
+        # 1. ESP32 emits REJECTED event
+        rej_evt = {
+            'event': 'REJECTED',
+            'session_id': sid,
+            'protocol': 2,
+            'reason': 'metal_detected',
+            'desc': 'Tin Can Detected'
+        }
+        self.p.time_service.on_event(rej_evt)
+
+        # Status should now indicate active rejection alert
+        st = self.request('/api/vendo/status', get=True).get_json()
+        self.assertTrue(st['rejection_alert']['active'])
+        self.assertEqual(st['rejection_alert']['reason'], 'metal_detected')
+        self.assertEqual(st['rejection_alert']['message'], 'Tin Can Detected')
+
+        # 2. ESP32 emits ITEM_CLEARED event when customer removes item
+        clear_evt = {
+            'event': 'ITEM_CLEARED',
+            'session_id': sid,
+            'protocol': 2
+        }
+        self.p.time_service.on_event(clear_evt)
+
+        # Status should now show inactive rejection alert
+        st = self.request('/api/vendo/status', get=True).get_json()
+        self.assertFalse(st['rejection_alert']['active'])
+
+        # 3. If customer re-inserts invalid item and fails to retrieve -> RETRIEVAL_TIMEOUT
+        self.p.time_service.on_event(rej_evt)
+        st = self.request('/api/vendo/status', get=True).get_json()
+        self.assertTrue(st['rejection_alert']['active'])
+
+        timeout_evt = {
+            'event': 'RETRIEVAL_TIMEOUT',
+            'session_id': sid,
+            'protocol': 2
+        }
+        self.p.time_service.on_event(timeout_evt)
+
+        # Rejection alert cleared and deposit session transitioned to HOLD
+        st = self.request('/api/vendo/status', get=True).get_json()
+        self.assertFalse(st['rejection_alert']['active'])
+        with self.p.db_connection() as conn:
+            row = conn.execute('SELECT status FROM deposit_sessions WHERE id=?', (sid,)).fetchone()
+            self.assertIn(row[0], ['HOLD', 'IDLE'])
+
+    def test_simulator_retrieve_endpoint(self):
+        with self.client.session_transaction() as cookie:
+            cookie['admin_logged_in'] = True
+        self.p.set_config('simulator_enabled', '1')
+        r = self.client.post('/simulator/api/retrieve')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertTrue(data['success'])
+        self.assertTrue(data['item_cleared'])
+
 
 def uuid_token():
     import uuid

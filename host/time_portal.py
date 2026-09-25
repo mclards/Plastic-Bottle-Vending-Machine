@@ -18,6 +18,8 @@ class Context(object):
     def __init__(self, values):
         object.__setattr__(self,'values',values)
     def __getattr__(self,key):
+        if key not in self.values:
+            raise AttributeError(key)
         return self.values[key]
     def __setattr__(self,key,value):
         self.values[key]=value
@@ -324,6 +326,24 @@ class TimePortal(object):
         value['hardware_msg'] = hw_msg
         value['bin_full'] = self.p.get_config('hw_bin_full','0')=='1' or self.p.esp32.get_state().get('is_bin_full',False) or (hw_code == 'storage_bin_full')
         value['gate_open'] = bool(value.get('deposit_session_id') and self.p.get_esp32_health_stats().get('esp32_gate_open',False))
+        rejection = getattr(self.p, 'active_deposit_rejection', None)
+        active_sid = value.get('deposit_session_id') or session.get('deposit_session_id')
+        client_ip = self.p.get_client_ip()
+        is_active_depositor = (self.p.active_depositor_ip == client_ip)
+        if rejection and rejection.get('active') and (not active_sid or rejection.get('session_id') == active_sid or is_active_depositor):
+            value['rejection_alert'] = {
+                'active': True,
+                'reason': rejection.get('reason'),
+                'message': rejection.get('message'),
+                'timestamp': rejection.get('timestamp')
+            }
+        else:
+            value['rejection_alert'] = {
+                'active': False,
+                'reason': None,
+                'message': None,
+                'timestamp': None
+            }
         self.reconcile()
         return jsonify(value)
 
@@ -536,6 +556,7 @@ class TimePortal(object):
             if opened and opened['owner_id']!=cd['owner_id']:raise ValueError('another_depositor_active')
             if opened:
                 sid=opened['id']
+                conn.execute("UPDATE deposit_sessions SET updated_at=? WHERE id=?",(now,sid))
             else:
                 sid=str(uuid.uuid4())
                 rates=engine.all_rows(conn,'SELECT bottles,minutes FROM promo_rates ORDER BY bottles DESC')
@@ -545,10 +566,12 @@ class TimePortal(object):
                     VALUES (?,?,?,'OPEN',?,?,?)''',(sid,cd['owner_id'],cd['id'],json.dumps(pricing),now,now))
         session['deposit_session_id']=sid
         self.p.active_depositor_ip=ip;self.p.active_depositor_timeout=now+timeout+5
+        self.p.active_deposit_rejection=None
         if self.p.transmit_to_esp32({'cmd':'OPEN_GATE','timeout':timeout,'session_id':sid,'protocol':2}) is False:
             with self.p.db_connection() as conn:
                 conn.execute("UPDATE deposit_sessions SET status='HOLD',error='Hardware unavailable' WHERE id=?",(sid,))
             self.p.active_depositor_ip=None;self.p.active_depositor_timeout=0
+            session.pop('deposit_session_id',None)
             raise ValueError('hardware_unavailable')
         return jsonify(success=True,timeout=timeout,deposit_session_id=sid)
 
@@ -582,10 +605,12 @@ class TimePortal(object):
             if sid:
                 deposit=engine.one(conn,'SELECT * FROM deposit_sessions WHERE id=?',(sid,))
             else:
-                deposit=engine.one(conn,"SELECT * FROM deposit_sessions WHERE owner_id=? AND status IN ('OPEN','HOLD') ORDER BY created_at DESC LIMIT 1",(cd['owner_id'],))
+                deposit=engine.one(conn,"SELECT * FROM deposit_sessions WHERE owner_id=? AND status IN ('OPEN','HOLD','FINALIZED') ORDER BY created_at DESC LIMIT 1",(cd['owner_id'],))
             if not deposit or deposit['owner_id']!=cd['owner_id']:raise ValueError('no_owned_deposit')
             result=self.finalize(conn,deposit,now,mono)
+        session.pop('deposit_session_id',None)
         self.p.active_depositor_ip=None;self.p.active_depositor_timeout=0
+        self.p.active_deposit_rejection=None
         self.p.transmit_to_esp32({'cmd':'CLOSE_GATE','session_id':deposit['id'],'protocol':2})
         self.restore_projections();self.reconcile()
         return jsonify(result)
@@ -595,7 +620,7 @@ class TimePortal(object):
         if source=='simulator' and not simulated:return
         if source=='physical' and simulated:return
         try:
-            data=json.loads(raw);event=data.get('event');now,mono=self.now()
+            data=json.loads(raw) if isinstance(raw,(str,bytes)) else dict(raw);event=data.get('event');now,mono=self.now()
             if event=='CREDIT_ADD':
                 event_id=data.get('event_id');sid=data.get('session_id');bottles=data.get('bottles')
                 encoded=json.dumps(data,sort_keys=True)
@@ -619,6 +644,7 @@ class TimePortal(object):
                 if isinstance(event_id,str):self.p.transmit_to_esp32({'cmd':'CREDIT_ACK','event_id':event_id,'session_id':sid,'protocol':2})
                 if valid and deposit and deposit['status']=='OPEN' and self.p.license_valid():
                     self.p.transmit_to_esp32({'cmd':'OPEN_GATE','session_id':sid,'protocol':2,'timeout':int(self.p.get_config('drop_timeout','60'))})
+                self.p.active_deposit_rejection=None
                 self.restore_projections()
             elif event=='DEPOSIT_RECOVERY':
                 event_id=data.get('event_id');sid=data.get('session_id')
@@ -629,11 +655,34 @@ class TimePortal(object):
                     conn.execute("UPDATE deposit_sessions SET status='HOLD',updated_at=? WHERE id=? AND status='OPEN'",(now,sid))
                 self.p.transmit_to_esp32({'cmd':'CREDIT_ACK','event_id':event_id,'session_id':sid,'protocol':2})
             elif event=='REJECTED':
+                sid=data.get('session_id')
+                reason=data.get('reason')
+                desc=data.get('desc') or data.get('message') or 'Invalid Material'
+                self.p.active_deposit_rejection={
+                    'session_id':sid,
+                    'active':True,
+                    'reason':reason,
+                    'message':desc,
+                    'timestamp':now
+                }
+                if self.p.active_depositor_ip:
+                    drop_tout=int(self.p.get_config('drop_timeout','60'))
+                    self.p.active_depositor_timeout=max(self.p.active_depositor_timeout,now+drop_tout+10)
+            elif event=='ITEM_CLEARED':
+                rejection=getattr(self.p,'active_deposit_rejection',None)
+                if rejection:
+                    self.p.active_deposit_rejection['active']=False
+                if self.p.active_depositor_ip:
+                    drop_tout=int(self.p.get_config('drop_timeout','60'))
+                    self.p.active_depositor_timeout=now+drop_tout+5
+            elif event=='RETRIEVAL_TIMEOUT':
+                sid=data.get('session_id')
                 with self.p.db_connection() as conn:
-                    deposit=engine.one(conn,"SELECT * FROM deposit_sessions WHERE id=? AND status='OPEN'",(data.get('session_id'),))
-                if deposit and self.p.license_valid():
-                    self.p.transmit_to_esp32({'cmd':'OPEN_GATE','session_id':deposit['id'],'protocol':2,
-                        'timeout':int(self.p.get_config('drop_timeout','60'))})
+                    if sid:conn.execute("UPDATE deposit_sessions SET status='HOLD',error='Retrieval timeout expired' WHERE id=? AND status='OPEN'",(sid,))
+                rejection=getattr(self.p,'active_deposit_rejection',None)
+                if rejection:
+                    self.p.active_deposit_rejection['active']=False
+                self.p.active_depositor_ip=None;self.p.active_depositor_timeout=0
             elif event=='FINISH':
                 sid=data.get('session_id')
                 if data.get('protocol')!=2 or not isinstance(sid,str):raise ValueError('invalid_finish')
@@ -644,12 +693,14 @@ class TimePortal(object):
                     self.finalize(conn,deposit,now,mono)
                 self.p.transmit_to_esp32({'cmd':'FINISH_ACK','session_id':sid,'protocol':2})
                 self.p.active_depositor_ip=None;self.p.active_depositor_timeout=0
+                self.p.active_deposit_rejection=None
                 self.restore_projections();self.reconcile()
-            elif event=='TIMEOUT':
+            elif event in ('TIMEOUT','DEPOSIT_ABORT','SESSION_HOLD'):
                 with self.p.db_connection() as conn:
                     sid=data.get('session_id')
                     if sid:conn.execute("UPDATE deposit_sessions SET status='HOLD' WHERE id=? AND status='OPEN'",(sid,))
                 self.p.active_depositor_ip=None;self.p.active_depositor_timeout=0
+                self.p.active_deposit_rejection=None
             elif event=='BIN_FULL':self.p.set_config('hw_bin_full','1')
             elif event=='BIN_OK':self.p.set_config('hw_bin_full','0')
         except Exception:

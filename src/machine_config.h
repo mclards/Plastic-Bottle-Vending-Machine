@@ -9,15 +9,13 @@ struct MachineConfig {
     // Hardware Timings
     int settle_time_ms = 500;
     int success_drop_tout_ms = 3000;
-    int reject_drop_time_ms = 2000;
+    int retrieval_timeout_s = 45;
 
     // Independent Servo Angles for Fine-Tuning
     int ent_open_angle = 90;
     int ent_close_angle = 0;
     int suc_open_angle = 90;
     int suc_close_angle = 0;
-    int rej_open_angle = 90;
-    int rej_close_angle = 0;
 
     // Sensor Verification Requirements
     int require_nir_sensor = 1;      // 1 = Strict NIR polymer check required, 0 = Bench-test mode (servos only)
@@ -33,10 +31,9 @@ constexpr bool validMachineConfig(const MachineConfig& c) {
         c.entrance_gate_timeout >= 1 && c.entrance_gate_timeout <= 600 &&
         c.settle_time_ms >= 1 && c.settle_time_ms <= 30000 &&
         c.success_drop_tout_ms >= 1 && c.success_drop_tout_ms <= 30000 &&
-        c.reject_drop_time_ms >= 1 && c.reject_drop_time_ms <= 30000 &&
+        c.retrieval_timeout_s >= 5 && c.retrieval_timeout_s <= 300 &&
         c.ent_open_angle >= 0 && c.ent_open_angle <= 180 && c.ent_close_angle >= 0 && c.ent_close_angle <= 180 &&
         c.suc_open_angle >= 0 && c.suc_open_angle <= 180 && c.suc_close_angle >= 0 && c.suc_close_angle <= 180 &&
-        c.rej_open_angle >= 0 && c.rej_open_angle <= 180 && c.rej_close_angle >= 0 && c.rej_close_angle <= 180 &&
         c.require_nir_sensor >= 0 && c.require_nir_sensor <= 1 &&
         c.require_weight_sensor >= 0 && c.require_weight_sensor <= 1 &&
         c.min_bottle_weight_g >= 1 && c.max_bottle_weight_g > c.min_bottle_weight_g && c.max_bottle_weight_g <= 5000 &&

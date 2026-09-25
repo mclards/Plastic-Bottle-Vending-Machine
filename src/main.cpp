@@ -78,11 +78,10 @@ void logError(const char* tag, const char* format, ...) {
 #define PIN_LED_GREEN 5           // Front Panel Green LED (Right Side)
 #define PIN_LED_RED 17            // Front Panel Red LED (Right Side)
 
-// PCA9685 I2C Servo Channels
+// PCA9685 I2C Servo Channels (2 Servos: Entrance Gate & Success Flap)
 #define PCA9685_I2C_ADDR 0x40
 #define PCA_CHANNEL_ENTRANCE 0
 #define PCA_CHANNEL_SUCCESS 1
-#define PCA_CHANNEL_REJECT 2
 
 #define SERVOMIN 125 // Global baseline 0 degrees (~500us pulse)
 #define SERVOMAX 575 // Global baseline 180 degrees (~2400us pulse)
@@ -109,11 +108,17 @@ std::atomic<int> requestedGateTimeout{60};
 std::atomic<bool> finishRequested{false};
 Preferences preferences;
 
-bool isConfigMode = false;
+#define AP_SSID "ESP32 Vendo"
+#define AP_PASSWORD "admin1234"
+
+std::atomic<bool> apActive{false};
+std::atomic<int> apStations{0};
+SemaphoreHandle_t apMutex = nullptr;
 WebServer server(80);
 DNSServer dnsServer;
+TaskHandle_t apTaskHandle = NULL;
+unsigned long apLastDeviceConnectedTime = 0;
 
-unsigned long lastActivityTime = 0;
 
 std::atomic<bool> topIrTriggered{false};
 std::atomic<bool> bottomIrTriggered{false};
@@ -137,7 +142,9 @@ enum EventMsg {
     MSG_VALIDATE_START,
     MSG_BOTTLE_SAVED,
     MSG_DROP_TIMEOUT,
-    MSG_GATE_TIMEOUT
+    MSG_GATE_TIMEOUT,
+    MSG_ITEM_CLEARED,
+    MSG_RETRIEVAL_TIMEOUT
 };
 
 const char* getEventMsgName(EventMsg kind) {
@@ -151,6 +158,8 @@ const char* getEventMsgName(EventMsg kind) {
         case MSG_BOTTLE_SAVED: return "BOTTLE_SAVED";
         case MSG_DROP_TIMEOUT: return "DROP_TIMEOUT";
         case MSG_GATE_TIMEOUT: return "GATE_TIMEOUT";
+        case MSG_ITEM_CLEARED: return "ITEM_CLEARED";
+        case MSG_RETRIEVAL_TIMEOUT: return "RETRIEVAL_TIMEOUT";
         default: return "UNKNOWN";
     }
 }
@@ -199,6 +208,55 @@ void scopedEvent(const char* event, const char* session) {
     serializeJson(doc, output);
     logDebug("TX-JSON", "Event '%s' for session '%s'", event, session);
     emitSerialLine(output);
+}
+
+// -----------------------------------------------------------------------------
+// MULTI-SPECTRAL HARDENED NIR DISCRIMINATOR
+// -----------------------------------------------------------------------------
+struct NirEvaluation {
+    bool is_pet;
+    const char* reason_code;
+    const char* reason_desc;
+    float wv_ratio;
+    float sr_ratio;
+    float tw_ratio;
+};
+
+inline NirEvaluation evaluateNirSpectrum(int r, int s, int t, int u, int v, int w, float cal_w, int nir_min, int nir_max) {
+    NirEvaluation res;
+    res.wv_ratio = (v > 0) ? ((float)w / (float)v) : 0.0f;
+    res.sr_ratio = (r > 0) ? ((float)s / (float)r) : 0.0f;
+    res.tw_ratio = (w > 0) ? ((float)t / (float)w) : 0.0f;
+
+    // 1. Absolute calibrated irradiance bounds [nir_min - nir_max]
+    if (cal_w < (float)nir_min) {
+        res.is_pet = false;
+        res.reason_code = (cal_w < 22.0f) ? "colored_glass" : "nir_low_absorption";
+        res.reason_desc = (cal_w < 22.0f) ? "Colored Glass Detected" : "Optical Signal Too Weak";
+        return res;
+    }
+    if (cal_w > (float)nir_max) {
+        res.is_pet = false;
+        res.reason_code = "nir_high_scatter";
+        res.reason_desc = "Intense Scattering (Paper/Cardboard)";
+        return res;
+    }
+
+    // 2. Minimum channel noise floor
+    if (r < 100 || s < 50 || v < 15 || w < 10) {
+        res.is_pet = false;
+        res.reason_code = "nir_signal_noise";
+        res.reason_desc = "Optical Signal Below Noise Floor";
+        return res;
+    }
+
+    // Note on Clear Glass: Both smooth clear glass and smooth clear PET exhibit ~4%
+    // Fresnel reflection at 860nm. Clear glass passes NIR and is authoritatively
+    // rejected by the physical HX711 scale (> 65g, typically 250g - 450g).
+    res.is_pet = true;
+    res.reason_code = "pet_confirmed";
+    res.reason_desc = "PET Plastic Confirmed";
+    return res;
 }
 
 void gateStateEvent(bool open) {
@@ -325,13 +383,11 @@ void loadPreferences() {
     config.entrance_gate_timeout = preferences.getInt("ent_tout", 60);
     config.settle_time_ms = preferences.getInt("stl_ms", 500);
     config.success_drop_tout_ms = preferences.getInt("suc_tout", 3000);
-    config.reject_drop_time_ms = preferences.getInt("rej_time", 2000);
+    config.retrieval_timeout_s = preferences.getInt("ret_tout", 45);
     config.ent_open_angle = preferences.getInt("ent_open", 90);
     config.ent_close_angle = preferences.getInt("ent_close", 0);
     config.suc_open_angle = preferences.getInt("suc_open", 90);
     config.suc_close_angle = preferences.getInt("suc_close", 0);
-    config.rej_open_angle = preferences.getInt("rej_open", 90);
-    config.rej_close_angle = preferences.getInt("rej_close", 0);
     config.require_nir_sensor = preferences.getInt("req_nir", 1);
     config.require_weight_sensor = preferences.getInt("req_wt", 0);
     config.min_bottle_weight_g = preferences.getInt("min_wt", 10);
@@ -342,12 +398,11 @@ void loadPreferences() {
     logDebug("NVS", "  Bin Full Threshold: %d cm", config.bin_full_threshold_cm);
     logDebug("NVS", "  PET NIR Range: [%d - %d]", config.pet_nir_w_min, config.pet_nir_w_max);
     logDebug("NVS", "  Entrance Gate Timeout: %d s", config.entrance_gate_timeout);
-    logDebug("NVS", "  Timings: Settle=%d ms, SuccessTout=%d ms, RejectTime=%d ms",
-             config.settle_time_ms, config.success_drop_tout_ms, config.reject_drop_time_ms);
-    logDebug("NVS", "  Servos: Ent=[%d/%d], Suc=[%d/%d], Rej=[%d/%d]",
+    logDebug("NVS", "  Timings: Settle=%d ms, SuccessTout=%d ms, RetrievalTimeout=%d s",
+             config.settle_time_ms, config.success_drop_tout_ms, config.retrieval_timeout_s);
+    logDebug("NVS", "  Servos: Ent=[%d/%d], Suc=[%d/%d]",
              config.ent_open_angle, config.ent_close_angle,
-             config.suc_open_angle, config.suc_close_angle,
-             config.rej_open_angle, config.rej_close_angle);
+             config.suc_open_angle, config.suc_close_angle);
     logDebug("NVS", "  Intake Requirements: NIR=%d, Weight=%d (Range: [%d - %d] g, CalFactor: %d)",
              config.require_nir_sensor, config.require_weight_sensor,
              config.min_bottle_weight_g, config.max_bottle_weight_g, config.weight_cal_factor);
@@ -360,13 +415,11 @@ void savePreferences() {
     preferences.putInt("ent_tout", config.entrance_gate_timeout);
     preferences.putInt("stl_ms", config.settle_time_ms);
     preferences.putInt("suc_tout", config.success_drop_tout_ms);
-    preferences.putInt("rej_time", config.reject_drop_time_ms);
+    preferences.putInt("ret_tout", config.retrieval_timeout_s);
     preferences.putInt("ent_open", config.ent_open_angle);
     preferences.putInt("ent_close", config.ent_close_angle);
     preferences.putInt("suc_open", config.suc_open_angle);
     preferences.putInt("suc_close", config.suc_close_angle);
-    preferences.putInt("rej_open", config.rej_open_angle);
-    preferences.putInt("rej_close", config.rej_close_angle);
     preferences.putInt("req_nir", config.require_nir_sensor);
     preferences.putInt("req_wt", config.require_weight_sensor);
     preferences.putInt("min_wt", config.min_bottle_weight_g);
@@ -379,7 +432,7 @@ void savePreferences() {
 // WEB CONFIGURATION PORTAL HANDLERS
 // -----------------------------------------------------------------------------
 void handleRoot() {
-    lastActivityTime = millis();
+    apLastDeviceConnectedTime = millis();
     logDebug("HTTP", "GET / served to %s", server.client().remoteIP().toString().c_str());
     String html = index_html;
 
@@ -387,15 +440,13 @@ void handleRoot() {
     html.replace("%ENT_TOUT%", String(config.entrance_gate_timeout));
     html.replace("%STL_MS%", String(config.settle_time_ms));
     html.replace("%SUC_TOUT%", String(config.success_drop_tout_ms));
-    html.replace("%REJ_TIME%", String(config.reject_drop_time_ms));
+    html.replace("%RET_TOUT%", String(config.retrieval_timeout_s));
     html.replace("%NIR_MIN%", String(config.pet_nir_w_min));
     html.replace("%NIR_MAX%", String(config.pet_nir_w_max));
     html.replace("%ENT_OPEN%", String(config.ent_open_angle));
     html.replace("%ENT_CLOSE%", String(config.ent_close_angle));
     html.replace("%SUC_OPEN%", String(config.suc_open_angle));
     html.replace("%SUC_CLOSE%", String(config.suc_close_angle));
-    html.replace("%REJ_OPEN%", String(config.rej_open_angle));
-    html.replace("%REJ_CLOSE%", String(config.rej_close_angle));
     html.replace("%REQ_NIR%", String(config.require_nir_sensor));
     html.replace("%REQ_WT%", String(config.require_weight_sensor));
     html.replace("%MIN_WT%", String(config.min_bottle_weight_g));
@@ -405,10 +456,10 @@ void handleRoot() {
 }
 
 void handleSave() {
-    lastActivityTime = millis();
+    apLastDeviceConnectedTime = millis();
     logDebug("HTTP", "POST /save received from %s", server.client().remoteIP().toString().c_str());
-    const char* fields[] = {"bin_cm", "ent_tout", "stl_ms", "suc_tout", "rej_time", "nir_min", "nir_max",
-        "ent_open", "ent_close", "suc_open", "suc_close", "rej_open", "rej_close", "req_nir",
+    const char* fields[] = {"bin_cm", "ent_tout", "stl_ms", "suc_tout", "ret_tout", "nir_min", "nir_max",
+        "ent_open", "ent_close", "suc_open", "suc_close", "req_nir",
         "req_wt", "min_wt", "max_wt", "wt_cal"};
     for (const char* field : fields) {
         if (!server.hasArg(field)) continue;
@@ -426,15 +477,13 @@ void handleSave() {
     if (server.hasArg("ent_tout")) config.entrance_gate_timeout = server.arg("ent_tout").toInt();
     if (server.hasArg("stl_ms")) config.settle_time_ms = server.arg("stl_ms").toInt();
     if (server.hasArg("suc_tout")) config.success_drop_tout_ms = server.arg("suc_tout").toInt();
-    if (server.hasArg("rej_time")) config.reject_drop_time_ms = server.arg("rej_time").toInt();
+    if (server.hasArg("ret_tout")) config.retrieval_timeout_s = server.arg("ret_tout").toInt();
     if (server.hasArg("nir_min")) config.pet_nir_w_min = server.arg("nir_min").toInt();
     if (server.hasArg("nir_max")) config.pet_nir_w_max = server.arg("nir_max").toInt();
     if (server.hasArg("ent_open")) config.ent_open_angle = server.arg("ent_open").toInt();
     if (server.hasArg("ent_close")) config.ent_close_angle = server.arg("ent_close").toInt();
     if (server.hasArg("suc_open")) config.suc_open_angle = server.arg("suc_open").toInt();
     if (server.hasArg("suc_close")) config.suc_close_angle = server.arg("suc_close").toInt();
-    if (server.hasArg("rej_open")) config.rej_open_angle = server.arg("rej_open").toInt();
-    if (server.hasArg("rej_close")) config.rej_close_angle = server.arg("rej_close").toInt();
     if (server.hasArg("req_nir")) config.require_nir_sensor = server.arg("req_nir").toInt();
     if (server.hasArg("req_wt")) config.require_weight_sensor = server.arg("req_wt").toInt();
     if (server.hasArg("min_wt")) config.min_bottle_weight_g = server.arg("min_wt").toInt();
@@ -453,7 +502,11 @@ void handleSave() {
     // Snap servos to new values immediately to visually test tuning
     setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
     setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
-    setServoAngle(PCA_CHANNEL_REJECT, config.rej_close_angle);
+
+    if (configQueue) {
+        xQueueOverwrite(configQueue, &config);
+    }
+    emitSerialLine("{\"event\":\"CONFIG_SAVED\"}");
     
     String html = "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Configuration Saved</title>";
     html += "<style>:root{--bg:#f8fafc;--card:#ffffff;--text:#0f172a;--muted:#64748b;--border:#e2e8f0;--btn:#0f172a;--btn-txt:#ffffff}@media(prefers-color-scheme:dark){:root{--bg:#090d16;--card:#111827;--text:#f9fafb;--muted:#9ca3af;--border:#1f2937;--btn:#2563eb;--btn-txt:#ffffff}}";
@@ -466,7 +519,7 @@ void handleSave() {
 }
 
 void handleStatus() {
-    lastActivityTime = millis();
+    apLastDeviceConnectedTime = millis();
     JsonDocument doc;
     doc["success"] = true;
     
@@ -482,63 +535,119 @@ void handleStatus() {
     doc["require_nir_sensor"] = config.require_nir_sensor;
     doc["hardware_ready"] = pca9685Found && (!config.require_nir_sensor || spectrometerFound);
     doc["version"] = ECOVENDO_VERSION;
+    doc["ap_active"] = apActive.load();
+    doc["ap_stations"] = apStations.load();
 
     String out;
     serializeJson(doc, out);
     server.send(200, "application/json", out);
 }
 
+void stopApMode() {
+    if (apMutex) xSemaphoreTakeRecursive(apMutex, portMAX_DELAY);
+    if (!apActive.load()) {
+        if (apMutex) xSemaphoreGiveRecursive(apMutex);
+        return;
+    }
+    apActive = false;
+    apStations.store(0);
+    server.stop();
+    dnsServer.stop();
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_OFF);
+    logDebug("CONFIG-AP", "SoftAP '%s' disabled.", AP_SSID);
+    emitSerialLine("{\"event\":\"AP_STATUS\",\"active\":false,\"stations\":0}");
+    if (apMutex) xSemaphoreGiveRecursive(apMutex);
+}
+
+void startWebServerRoutes();
+
+void startApMode() {
+    if (apMutex) xSemaphoreTakeRecursive(apMutex, portMAX_DELAY);
+    if (apActive.load()) {
+        apLastDeviceConnectedTime = millis();
+        if (apMutex) xSemaphoreGiveRecursive(apMutex);
+        return;
+    }
+    IPAddress apIP(192, 168, 4, 1);
+    IPAddress netMsk(255, 255, 255, 0);
+    WiFi.mode(WIFI_AP);
+    WiFi.softAPConfig(apIP, apIP, netMsk);
+    WiFi.softAP(AP_SSID, AP_PASSWORD);
+    dnsServer.start(53, "*", WiFi.softAPIP());
+    startWebServerRoutes();
+    apLastDeviceConnectedTime = millis();
+    apActive = true;
+    logDebug("CONFIG-AP", "SoftAP '%s' started at %s (Auto-off in 60s if no clients)",
+             AP_SSID, WiFi.softAPIP().toString().c_str());
+    char buf[128];
+    snprintf(buf, sizeof(buf), "{\"event\":\"AP_STATUS\",\"active\":true,\"stations\":0,\"ip\":\"%s\"}",
+             WiFi.softAPIP().toString().c_str());
+    emitSerialLine(buf);
+    if (apMutex) xSemaphoreGiveRecursive(apMutex);
+}
+
 void handleReboot() {
-    logDebug("HTTP", "GET /reboot received. Rebooting ESP32 into normal vending mode...");
-    server.send(200, "text/plain", "Rebooting...");
+    logDebug("HTTP", "GET /reboot received. Disabling AP mode...");
+    server.send(200, "text/plain", "AP Mode Disabled. Stopping SoftAP...");
     vTaskDelay(pdMS_TO_TICKS(500));
-    ESP.restart();
+    stopApMode();
 }
 
 void startWebServerRoutes() {
-    server.on("/", handleRoot);
-    server.on("/save", handleSave);
-    server.on("/status", handleStatus);
-    server.on("/reboot", handleReboot);
-    server.on("/generate_204", handleRoot); // Captive Portal Android
-    server.on("/hotspot-detect.html", handleRoot); // Captive Portal iOS
-    server.onNotFound(handleRoot);
+    static bool routesConfigured = false;
+    if (!routesConfigured) {
+        server.on("/", handleRoot);
+        server.on("/save", handleSave);
+        server.on("/status", handleStatus);
+        server.on("/reboot", handleReboot);
+        server.on("/generate_204", handleRoot); // Captive Portal Android
+        server.on("/hotspot-detect.html", handleRoot); // Captive Portal iOS
+        server.onNotFound(handleRoot);
+        routesConfigured = true;
+        logDebug("CONFIG-AP", "Web server routes registered on port 80.");
+    }
     server.begin();
-    logDebug("CONFIG-AP", "Web server routes registered on port 80.");
 }
 
-void configPortalTaskCode(void* parameter) {
+void apTaskCode(void* parameter) {
     (void)parameter;
-    logDebug("CONFIG-AP", "Config portal daemon active on Core %d", xPortGetCoreID());
-    lastActivityTime = millis();
+    logDebug("CONFIG-AP", "AP Task daemon active on Core %d", xPortGetCoreID());
     unsigned long lastStatusLog = 0;
 
     while (true) {
-        int stations = WiFi.softAPgetStationNum();
-        if (stations > 0) {
-            lastActivityTime = millis();
-        }
-        
-        if (millis() - lastStatusLog >= 15000) {
-            lastStatusLog = millis();
-            unsigned long idleTime = millis() - lastActivityTime;
-            logDebug("CONFIG-AP", "Connected clients: %d | Idle elapsed: %lu / 300000 ms",
-                     stations, idleTime);
-        }
+        if (apActive.load()) {
+            if (apMutex) xSemaphoreTakeRecursive(apMutex, portMAX_DELAY);
+            if (apActive.load()) {
+                int stations = WiFi.softAPgetStationNum();
+                apStations.store(stations);
+                if (stations > 0) {
+                    apLastDeviceConnectedTime = millis();
+                }
 
-        if (millis() - lastActivityTime > 300000) {
-            logWarn("CONFIG-AP", "Config Portal Inactivity Timeout reached (300s). Rebooting to normal mode...");
-            emitSerialLine("Config Portal Inactivity Timeout. Rebooting...");
-            lcd.clear();
-            lcd.setCursor(0, 0); lcd.print("CONFIG TIMEOUT");
-            lcd.setCursor(0, 1); lcd.print("Rebooting...");
-            vTaskDelay(pdMS_TO_TICKS(1500));
-            ESP.restart();
-        }
+                if (millis() - lastStatusLog >= 15000) {
+                    lastStatusLog = millis();
+                    unsigned long idleTime = millis() - apLastDeviceConnectedTime;
+                    logDebug("CONFIG-AP", "Connected clients: %d | Idle elapsed: %lu / 60000 ms",
+                             stations, idleTime);
+                }
 
-        dnsServer.processNextRequest();
-        server.handleClient();
-        vTaskDelay(pdMS_TO_TICKS(10));
+                // Auto-off if no device connected for 1 minute (60 seconds)
+                if (millis() - apLastDeviceConnectedTime >= 60000) {
+                    logWarn("CONFIG-AP", "Config Portal Inactivity Timeout reached (60s without devices). Auto turning OFF AP...");
+                    stopApMode();
+                    if (apMutex) xSemaphoreGiveRecursive(apMutex);
+                    continue;
+                }
+
+                dnsServer.processNextRequest();
+                server.handleClient();
+            }
+            if (apMutex) xSemaphoreGiveRecursive(apMutex);
+            vTaskDelay(pdMS_TO_TICKS(10));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(250));
+        }
     }
 }
 
@@ -552,10 +661,9 @@ void sensorTaskCode(void* parameter) {
     bool lastBinState = false;
 
     // Secure all gates at startup
-    logDebug("SENSOR", "Securing all servos at startup closed angles...");
+    logDebug("SENSOR", "Securing entrance and success servos at startup closed angles...");
     setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
     setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
-    setServoAngle(PCA_CHANNEL_REJECT, config.rej_close_angle);
 
     while (true) {
         // Apply configuration only between complete mechanical cycles. Only this
@@ -566,7 +674,6 @@ void sensorTaskCode(void* parameter) {
             savePreferences();
             setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
             setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
-            setServoAngle(PCA_CHANNEL_REJECT, config.rej_close_angle);
             logDebug("SENSOR", "Applied pending config and saved to Flash.");
             emitSerialLine("{\"event\":\"CONFIG_SAVED\"}");
         }
@@ -601,15 +708,18 @@ void sensorTaskCode(void* parameter) {
             lastTelemetryHeartbeat = xTaskGetTickCount();
             char hbBuf[256];
             bool hwReady = pca9685Found && (!config.require_nir_sensor || spectrometerFound) && !isBinFull.load();
+            int stations = apStations.load();
             snprintf(hbBuf, sizeof(hbBuf),
-                     "{\"event\":\"HEARTBEAT\",\"bin_distance_cm\":%d,\"is_bin_full\":%s,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"gate_open\":%s,\"protocol\":2}",
+                     "{\"event\":\"HEARTBEAT\",\"bin_distance_cm\":%d,\"is_bin_full\":%s,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"gate_open\":%s,\"ap_active\":%s,\"ap_stations\":%d,\"protocol\":2}",
                      cachedBinDistanceCm.load(),
                      isBinFull.load() ? "true" : "false",
                      pca9685Found ? "true" : "false",
                      spectrometerFound ? "true" : "false",
                      hwReady ? "true" : "false",
                      config.require_nir_sensor,
-                     depositCycleBusy.load() ? "true" : "false");
+                     depositCycleBusy.load() ? "true" : "false",
+                     apActive.load() ? "true" : "false",
+                     stations);
             emitSerialLine(hbBuf);
         }
 
@@ -703,7 +813,8 @@ void sensorTaskCode(void* parameter) {
             logDebug("SENSOR", "--- Starting Multi-Sensor Material Classification ---");
             bool isValid = true;
             EventMsg rejectReason = MSG_REJECT_NON_PLASTIC;
-            const char* rejectReasonDesc = "None";
+            const char* rejectReasonCode = "invalid_material";
+            const char* rejectReasonDesc = "Invalid Item";
 
             int metalReading = digitalRead(PIN_PROX_METAL);
             logDebug("SENSOR", "Proximity: Metal(GPIO%d)=%s (raw=%d)",
@@ -712,19 +823,24 @@ void sensorTaskCode(void* parameter) {
             if (metalReading == LOW) {
                 isValid = false;
                 rejectReason = MSG_REJECT_TIN;
-                rejectReasonDesc = "Metal/Tin Can Detected";
+                rejectReasonCode = "metal_detected";
+                rejectReasonDesc = "Tin Can Detected";
                 logWarn("DECISION", "REJECT: %s", rejectReasonDesc);
             } 
             else if (!spectrometerFound && config.require_nir_sensor) {
                 isValid = false;
                 rejectReason = MSG_REJECT_NIR;
+                rejectReasonCode = "spectrometer_offline";
                 rejectReasonDesc = "Spectrometer Offline";
                 logWarn("DECISION", "REJECT: %s", rejectReasonDesc);
             }
             else {
                 if (spectrometerFound) {
-                    logDebug("NIR", "Triggering AS7263 NIR spectrometer measurements...");
+                    logDebug("NIR", "Triggering AS7263 NIR spectrometer measurements with illumination bulb...");
+                    spectrometer.enableBulb();
+                    delay(40);
                     spectrometer.takeMeasurements();
+                    spectrometer.disableBulb();
                     float nirAbsorption = spectrometer.getCalibratedW();
                     int r = spectrometer.getR();
                     int s = spectrometer.getS();
@@ -739,19 +855,21 @@ void sensorTaskCode(void* parameter) {
                     logDebug("NIR", "Calibrated W Channel: %.2f (PET Range: [%d - %d])",
                              nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max);
 
+                    NirEvaluation eval = evaluateNirSpectrum(r, s, t, u, v, w, nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max);
+                    logDebug("NIR", "Ratios: W/V=%.2f, S/R=%.2f, T/W=%.2f | Cal-W: %.2f | Verdict: %s (%s)",
+                             eval.wv_ratio, eval.sr_ratio, eval.tw_ratio, nirAbsorption,
+                             eval.is_pet ? "ACCEPT" : "REJECT", eval.reason_desc);
+
                     if (config.require_nir_sensor) {
-                        if (nirAbsorption < 22.0f) {
+                        if (!eval.is_pet) {
                             isValid = false;
                             rejectReason = MSG_REJECT_NIR;
-                            rejectReasonDesc = "Colored Glass Bottle Detected (High NIR Absorption)";
-                            logWarn("DECISION", "REJECT: %s (Val: %.2f uW/cm2 < 22.0)", rejectReasonDesc, nirAbsorption);
-                        } else if (nirAbsorption < config.pet_nir_w_min || nirAbsorption > config.pet_nir_w_max) {
-                            isValid = false;
-                            rejectReason = MSG_REJECT_NIR;
-                            rejectReasonDesc = "NIR Spectrum Out of Range for PET Plastic";
-                            logWarn("DECISION", "REJECT: %s (Val: %.2f)", rejectReasonDesc, nirAbsorption);
+                            rejectReasonCode = eval.reason_code;
+                            rejectReasonDesc = eval.reason_desc;
+                            logWarn("DECISION", "REJECT NIR: %s (code: %s, W/V: %.2f, S/R: %.2f)",
+                                    eval.reason_desc, eval.reason_code, eval.wv_ratio, eval.sr_ratio);
                         } else {
-                            logDebug("NIR", "NIR Spectrum MATCHES PET Plastic!");
+                            logDebug("NIR", "NIR Multi-Spectral Match: PET Plastic Confirmed!");
                         }
                     }
                 }
@@ -768,13 +886,15 @@ void sensorTaskCode(void* parameter) {
                             if (weightG < config.min_bottle_weight_g) {
                                 isValid = false;
                                 rejectReason = MSG_REJECT_NON_PLASTIC;
-                                rejectReasonDesc = "Underweight: Foreign Object / Paper / Trash";
+                                rejectReasonCode = "underweight";
+                                rejectReasonDesc = "Underweight Object";
                                 logWarn("DECISION", "REJECT: %s (Weight: %.1f g < %d g)",
                                         rejectReasonDesc, weightG, config.min_bottle_weight_g);
                             } else if (weightG > config.max_bottle_weight_g) {
                                 isValid = false;
                                 rejectReason = MSG_REJECT_NON_PLASTIC;
-                                rejectReasonDesc = "Overweight: Clear Glass Bottle or Liquid Detected";
+                                rejectReasonCode = "overweight";
+                                rejectReasonDesc = "Heavy Glass / Liquid";
                                 logWarn("DECISION", "REJECT: %s (Weight: %.1f g > %d g)",
                                         rejectReasonDesc, weightG, config.max_bottle_weight_g);
                             } else {
@@ -784,7 +904,8 @@ void sensorTaskCode(void* parameter) {
                     } else if (config.require_weight_sensor) {
                         isValid = false;
                         rejectReason = MSG_REJECT_NON_PLASTIC;
-                        rejectReasonDesc = "HX711 Weight Sensor Offline";
+                        rejectReasonCode = "scale_offline";
+                        rejectReasonDesc = "Weight Sensor Offline";
                         logWarn("DECISION", "REJECT: %s", rejectReasonDesc);
                     }
                 }
@@ -839,17 +960,134 @@ void sensorTaskCode(void* parameter) {
                     postEvent(failMsg);
                 }
             } else {
-                // Reject Sequence
-                logWarn("DECISION", ">>> BOTTLE REJECTED: %s <<<", rejectReasonDesc);
-                EventMsg rejMsg = rejectReason;
-                postEvent(rejMsg);
+                // Reject Sequence: Manual Chute Retrieval
+                logWarn("DECISION", ">>> BOTTLE REJECTED: %s (%s) <<<", rejectReasonCode, rejectReasonDesc);
                 
-                logDebug("ACTUATION", "Opening reject flap (Ch 2 -> %d deg) for %d ms...",
-                         config.rej_open_angle, config.reject_drop_time_ms);
-                setServoAngle(PCA_CHANNEL_REJECT, config.rej_open_angle);
-                vTaskDelay(pdMS_TO_TICKS(config.reject_drop_time_ms)); // Give time for gravity rejection
-                setServoAngle(PCA_CHANNEL_REJECT, config.rej_close_angle);
-                logDebug("ACTUATION", "Closed reject flap (Ch 2 -> %d deg).", config.rej_close_angle);
+                char curSession[37] = {};
+                xSemaphoreTake(creditMutex, portMAX_DELAY);
+                strlcpy(curSession, creditJournal.session, sizeof(curSession));
+                xSemaphoreGive(creditMutex);
+
+                // 1. Alert indicators: Red LED ON, buzzer alert
+                digitalWrite(PIN_LED_RED, HIGH);
+                digitalWrite(PIN_LED_GREEN, LOW);
+                buzz(600, 1);
+
+                // 2. LCD update
+                xSemaphoreTake(uiMutex, portMAX_DELAY);
+                lcd.setCursor(0, 0); lcd.print("=== VMC ECO-VENDO ==");
+                lcd.setCursor(0, 1); lcd.print("STATUS: REJECTED!   ");
+                char lineBuf[21];
+                snprintf(lineBuf, sizeof(lineBuf), "%-20s", rejectReasonDesc);
+                lcd.setCursor(0, 2); lcd.print(lineBuf);
+                lcd.setCursor(0, 3); lcd.print("Please Remove Item  ");
+                xSemaphoreGive(uiMutex);
+
+                // 3. Emit structured REJECTED event to host gateway
+                JsonDocument rejDoc;
+                rejDoc["event"] = "REJECTED";
+                rejDoc["session_id"] = curSession;
+                rejDoc["protocol"] = 2;
+                rejDoc["reason"] = rejectReasonCode;
+                rejDoc["desc"] = rejectReasonDesc;
+                String rejOutput;
+                serializeJson(rejDoc, rejOutput);
+                emitSerialLine(rejOutput);
+
+                // 4. Ensure entrance gate is OPEN so user can reach into cradle to retrieve item
+                setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_open_angle);
+                gateStateEvent(true);
+
+                // 5. Await manual removal within retrieval_timeout_s
+                const uint32_t retrievalTimeoutMs = static_cast<uint32_t>(config.retrieval_timeout_s) * 1000UL;
+                unsigned long startWait = millis();
+                bool itemCleared = false;
+                unsigned long clearStartTime = 0;
+                const unsigned long STABILIZE_MS = 400; // Continuous debounce time
+
+                logDebug("RETRIEVAL", "Waiting up to %u ms for manual item removal...", retrievalTimeoutMs);
+
+                while (millis() - startWait < retrievalTimeoutMs) {
+                    if (forceGateClose) {
+                        logDebug("RETRIEVAL", "Force gate close detected during retrieval wait.");
+                        break;
+                    }
+
+                    int metalVal = digitalRead(PIN_PROX_METAL);
+                    int topIrVal = digitalRead(PIN_IR_TOP);
+                    float currentWt = 0.0f;
+                    if (hx711Found) {
+                        currentWt = scale.get_units(1);
+                    }
+
+                    // Cradle is clear when:
+                    // - Inductive metal sensor is HIGH (no metal object)
+                    // - Top IR optical sensor is HIGH (beam unbroken, no hand or bottle in entrance)
+                    // - If scale is attached: weight is below 5 grams
+                    bool sensorsClear = (metalVal == HIGH) && (topIrVal == HIGH) && (!hx711Found || currentWt < 5.0f);
+
+                    if (sensorsClear) {
+                        if (clearStartTime == 0) {
+                            clearStartTime = millis();
+                        } else if (millis() - clearStartTime >= STABILIZE_MS) {
+                            itemCleared = true;
+                            logDebug("RETRIEVAL", "Sensors confirmed chute is CLEARED after %lu ms!", millis() - startWait);
+                            break;
+                        }
+                    } else {
+                        clearStartTime = 0;
+                    }
+
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                }
+
+                digitalWrite(PIN_LED_RED, LOW);
+
+                if (itemCleared && !forceGateClose) {
+                    // Item retrieved successfully!
+                    logDebug("RETRIEVAL", "Item retrieved by user. Emitting ITEM_CLEARED.");
+                    buzz(100, 1); // Pleasant confirmation beep
+
+                    xSemaphoreTake(uiMutex, portMAX_DELAY);
+                    lcd.setCursor(0, 0); lcd.print("=== VMC ECO-VENDO ==");
+                    lcd.setCursor(0, 1); lcd.print("STATUS: ITEM REMOVED");
+                    lcd.setCursor(0, 2); lcd.print("Slot Cleared! Ready ");
+                    lcd.setCursor(0, 3); lcd.print("Insert Valid Bottle ");
+                    xSemaphoreGive(uiMutex);
+
+                    JsonDocument clrDoc;
+                    clrDoc["event"] = "ITEM_CLEARED";
+                    clrDoc["session_id"] = curSession;
+                    clrDoc["protocol"] = 2;
+                    String clrOutput;
+                    serializeJson(clrDoc, clrOutput);
+                    emitSerialLine(clrOutput);
+
+                    // Re-arm entrance gate for immediate next bottle insert
+                    entranceGateRequested = true;
+                } else {
+                    // Retrieval Timeout or Force Gate Close
+                    logWarn("RETRIEVAL", "Retrieval TIMEOUT (%u s elapsed) or forced. Securing entrance gate.", config.retrieval_timeout_s);
+                    buzz(600, 1); // Error buzzer
+
+                    setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
+                    gateStateEvent(false);
+
+                    xSemaphoreTake(uiMutex, portMAX_DELAY);
+                    lcd.setCursor(0, 0); lcd.print("=== VMC ECO-VENDO ==");
+                    lcd.setCursor(0, 1); lcd.print("STATUS: TIMEOUT     ");
+                    lcd.setCursor(0, 2); lcd.print("Item Not Retrieved  ");
+                    lcd.setCursor(0, 3); lcd.print("Session on Hold     ");
+                    xSemaphoreGive(uiMutex);
+
+                    JsonDocument toutDoc;
+                    toutDoc["event"] = "RETRIEVAL_TIMEOUT";
+                    toutDoc["session_id"] = curSession;
+                    toutDoc["protocol"] = 2;
+                    String toutOutput;
+                    serializeJson(toutDoc, toutOutput);
+                    emitSerialLine(toutOutput);
+                }
             }
             
             depositCycleBusy = false;
@@ -1013,7 +1251,12 @@ void setup() {
         spectrometerFound = false;
     } else {
         spectrometerFound = true;
-        logDebug("I2C", "AS7263 NIR Spectrometer detected OK! Sensor Temp: %d C", spectrometer.getTemperature());
+        spectrometer.setBulbCurrent(2);       // 50 mA current drive for optimal reflection
+        spectrometer.setGain(3);              // 64x gain
+        spectrometer.setIntegrationTime(50);   // 50 * 2.8ms = 140ms integration
+        spectrometer.disableBulb();           // Keep bulb OFF while idle to prevent thermal drift
+        spectrometer.disableIndicator();      // Keep red indicator LED OFF
+        logDebug("I2C", "AS7263 NIR Spectrometer detected OK (Gain 64x, 140ms, 50mA)! Sensor Temp: %d C", spectrometer.getTemperature());
     }
 
     loadPreferences();
@@ -1045,10 +1288,9 @@ void setup() {
              hx711Found ? "true" : "false");
     emitSerialLine(bootBuf);
 
-    logDebug("SERVO", "Aligning all servos to initial closed angles...");
+    logDebug("SERVO", "Aligning entrance and success servos to initial closed angles...");
     setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
     setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
-    setServoAngle(PCA_CHANNEL_REJECT, config.rej_close_angle);
 
     logDebug("NVS", "Initializing credit journal storage...");
     creditMutex = xSemaphoreCreateMutex();
@@ -1080,26 +1322,12 @@ void setup() {
         logDebug("BOOT", "Force config flag was set in flash. Entering Config Mode.");
     }
     bool btnDown = (digitalRead(PIN_FINISH_BTN) == LOW);
-    logDebug("BOOT", "Finish Button (GPIO 34) on boot: %s", btnDown ? "LOW (PRESSED)" : "HIGH (RELEASED)");
+    logDebug("BOOT", "Finish Button (GPIO %d) on boot: %s", PIN_FINISH_BTN, btnDown ? "LOW (PRESSED)" : "HIGH (RELEASED)");
 
     // Check for Config Mode Trigger
     if (forceConfig || btnDown) {
-        logDebug("BOOT", ">>> ENTERING CONFIG PORTAL AP MODE <<<");
-        isConfigMode = true;
-        lcd.setCursor(0, 0); lcd.print("** VMC ECO-VENDO ** ");
-        lcd.setCursor(0, 1); lcd.print("SSID: ESP32 Vendo   ");
-        lcd.setCursor(0, 2); lcd.print("IP: 192.168.4.1     ");
-        lcd.setCursor(0, 3); lcd.print("Port: 80 - Active   ");
-
-        WiFi.mode(WIFI_AP);
-        WiFi.softAP("ESP32 Vendo", "admin1234");
-        dnsServer.start(53, "*", WiFi.softAPIP());
-        logDebug("CONFIG-AP", "SoftAP 'ESP32 Vendo' started at %s", WiFi.softAPIP().toString().c_str());
-
-        startWebServerRoutes();
-
-        xTaskCreatePinnedToCore(configPortalTaskCode, "ConfigTask", 4096, NULL, 1, NULL, 0);
-        return; // Halt further setup for vending
+        logDebug("BOOT", ">>> STARTING WITH AP MODE ENABLED <<<");
+        startApMode();
     }
 
     // Normal Vending Setup
@@ -1112,14 +1340,17 @@ void setup() {
     eventQueue = xQueueCreate(10, sizeof(QueuedEvent));
     configQueue = xQueueCreate(1, sizeof(MachineConfig));
     uiMutex = xSemaphoreCreateMutex();
+    apMutex = xSemaphoreCreateRecursiveMutex();
 
     BaseType_t commCreated = xTaskCreatePinnedToCore(commTaskCode, "CommTask", 6144, NULL, 1, NULL, 1);
     BaseType_t sensorCreated = xTaskCreatePinnedToCore(sensorTaskCode, "SensorTask", 6144, NULL, 2, &sensorTaskHandle, 0);
+    BaseType_t apCreated = xTaskCreatePinnedToCore(apTaskCode, "ApTask", 8192, NULL, 1, &apTaskHandle, 0);
 
     logDebug("BOOT", "CommTask (Core 1): %s", commCreated == pdPASS ? "OK" : "FAILED");
     logDebug("BOOT", "SensorTask (Core 0): %s", sensorCreated == pdPASS ? "OK" : "FAILED");
+    logDebug("BOOT", "ApTask (Core 0): %s", apCreated == pdPASS ? "OK" : "FAILED");
 
-    if (!eventQueue || !configQueue || !uiMutex || commCreated != pdPASS || sensorCreated != pdPASS) {
+    if (!eventQueue || !configQueue || !uiMutex || !apMutex || commCreated != pdPASS || sensorCreated != pdPASS || apCreated != pdPASS) {
         logError("BOOT", "CRITICAL: Failed to create FreeRTOS queues or worker tasks!");
         emitSerialLine("{\"event\":\"STARTUP_ERROR\"}");
         while (true) delay(1000);
@@ -1132,10 +1363,6 @@ void setup() {
 // MAIN LOOP: HOST UART PROTOCOL & FINISH BUTTON (CORE 1)
 // -----------------------------------------------------------------------------
 void loop() {
-    if (isConfigMode) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        return;
-    }
 
     static char serialLine[1024];
     static size_t serialLength = 0;
@@ -1229,11 +1456,17 @@ void loop() {
                 logDebug("CMD", "Forced gate close flag set.");
             }
             xSemaphoreGive(creditMutex);
+        } else if (strcmp(cmd, "SET_AP") == 0) {
+            bool enable = command["enable"] | true;
+            logDebug("CMD", "SET_AP received: enable=%d", enable);
+            if (enable) {
+                startApMode();
+            } else {
+                stopApMode();
+            }
         } else if (strcmp(cmd, "TRIGGER_CONFIG") == 0) {
-            logDebug("CMD", "TRIGGER_CONFIG received! Scheduling config restart...");
-            configRestartRequested = true;
-            entranceGateRequested = false;
-            forceGateClose = true;
+            logDebug("CMD", "TRIGGER_CONFIG received! Enabling AP mode...");
+            startApMode();
         } else if (strcmp(cmd, "FINISH_ACK") == 0) {
             xSemaphoreTake(creditMutex, portMAX_DELAY);
             logDebug("CMD", "FINISH_ACK received for session='%s'", sid);
@@ -1270,9 +1503,9 @@ void loop() {
                 if (!command["success_drop_tout_ms"].is<int>()) fieldsValid = false;
                 else next.success_drop_tout_ms = command["success_drop_tout_ms"];
             }
-            if (!command["reject_drop_time_ms"].isNull()) {
-                if (!command["reject_drop_time_ms"].is<int>()) fieldsValid = false;
-                else next.reject_drop_time_ms = command["reject_drop_time_ms"];
+            if (!command["retrieval_timeout_s"].isNull()) {
+                if (!command["retrieval_timeout_s"].is<int>()) fieldsValid = false;
+                else next.retrieval_timeout_s = command["retrieval_timeout_s"];
             }
             if (!command["ent_open_angle"].isNull()) {
                 if (!command["ent_open_angle"].is<int>()) fieldsValid = false;
@@ -1289,14 +1522,6 @@ void loop() {
             if (!command["suc_close_angle"].isNull()) {
                 if (!command["suc_close_angle"].is<int>()) fieldsValid = false;
                 else next.suc_close_angle = command["suc_close_angle"];
-            }
-            if (!command["rej_open_angle"].isNull()) {
-                if (!command["rej_open_angle"].is<int>()) fieldsValid = false;
-                else next.rej_open_angle = command["rej_open_angle"];
-            }
-            if (!command["rej_close_angle"].isNull()) {
-                if (!command["rej_close_angle"].is<int>()) fieldsValid = false;
-                else next.rej_close_angle = command["rej_close_angle"];
             }
             if (!command["require_nir_sensor"].isNull()) {
                 if (!command["require_nir_sensor"].is<int>()) fieldsValid = false;
@@ -1333,7 +1558,7 @@ void loop() {
             int channel = command["channel"] | -1;
             int angle = command["angle"] | -1;
             int holdMs = command["hold_ms"] | 1500;
-            if (pca9685Found && channel >= 0 && channel <= 2 && angle >= 0 && angle <= 180 && !depositCycleBusy) {
+            if (pca9685Found && channel >= 0 && channel <= 1 && angle >= 0 && angle <= 180 && !depositCycleBusy) {
                 setServoAngle(channel, angle);
                 logDebug("CMD", "TEST_SERVO: channel %d moved to %d deg (hold %d ms)", channel, angle, holdMs);
                 char resBuf[128];
@@ -1346,9 +1571,24 @@ void loop() {
                 emitSerialLine("{\"event\":\"SERVO_TEST_REJECTED\"}");
             }
         } else if (strcmp(cmd, "TEST_NIR") == 0) {
+            if (!spectrometerFound) {
+                logDebug("NIR", "Spectrometer was offline; attempting dynamic I2C re-probe...");
+                if (spectrometer.begin()) {
+                    spectrometerFound = true;
+                    spectrometer.setBulbCurrent(2);       // 50 mA current drive
+                    spectrometer.setGain(3);              // 64x gain
+                    spectrometer.setIntegrationTime(50);   // 140ms integration
+                    spectrometer.disableBulb();
+                    spectrometer.disableIndicator();
+                    logDebug("NIR", "AS7263 NIR Spectrometer dynamically detected and initialized!");
+                }
+            }
             if (spectrometerFound && !depositCycleBusy) {
-                logDebug("NIR", "--- On-Demand AS7263 NIR Spectrometer Scan ---");
+                logDebug("NIR", "--- On-Demand AS7263 NIR Spectrometer Scan (with Bulb) ---");
+                spectrometer.enableBulb();
+                delay(40); // 40ms warmup for incandescent emission stability
                 spectrometer.takeMeasurements();
+                spectrometer.disableBulb(); // Shut off immediately to prevent sensor thermal drift
                 float nirAbsorption = spectrometer.getCalibratedW();
                 int r = spectrometer.getR();
                 int s = spectrometer.getS();
@@ -1357,18 +1597,19 @@ void loop() {
                 int v = spectrometer.getV();
                 int w = spectrometer.getW();
                 int tempC = spectrometer.getTemperature();
-                bool isPet = (nirAbsorption >= config.pet_nir_w_min && nirAbsorption <= config.pet_nir_w_max);
+                NirEvaluation eval = evaluateNirSpectrum(r, s, t, u, v, w, nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max);
 
                 logDebug("NIR", "Spectral Channels: R(610nm)=%d, S(680nm)=%d, T(730nm)=%d, U(760nm)=%d, V(810nm)=%d, W(860nm)=%d | Sensor Temp=%d C",
                          r, s, t, u, v, w, tempC);
-                logDebug("NIR", "Calibrated W: %.2f | Target PET Range: [%d - %d] -> %s",
-                         nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max,
-                         isPet ? "PET PLASTIC MATCH! (ACCEPT)" : "NON-PET / OUT OF RANGE (REJECT)");
+                logDebug("NIR", "Ratios: W/V=%.2f, S/R=%.2f, T/W=%.2f | Cal-W: %.2f | Verdict: %s (%s)",
+                         eval.wv_ratio, eval.sr_ratio, eval.tw_ratio, nirAbsorption,
+                         eval.is_pet ? "ACCEPT" : "REJECT", eval.reason_desc);
 
-                char nirBuf[384];
+                char nirBuf[448];
                 snprintf(nirBuf, sizeof(nirBuf),
-                         "{\"event\":\"NIR_TEST\",\"success\":true,\"r\":%d,\"s\":%d,\"t\":%d,\"u\":%d,\"v\":%d,\"w\":%d,\"calibrated_w\":%.2f,\"temp_c\":%d,\"pet_min\":%d,\"pet_max\":%d,\"is_pet\":%s}",
-                         r, s, t, u, v, w, nirAbsorption, tempC, config.pet_nir_w_min, config.pet_nir_w_max, isPet ? "true" : "false");
+                         "{\"event\":\"NIR_TEST\",\"success\":true,\"r\":%d,\"s\":%d,\"t\":%d,\"u\":%d,\"v\":%d,\"w\":%d,\"calibrated_w\":%.2f,\"temp_c\":%d,\"pet_min\":%d,\"pet_max\":%d,\"wv_ratio\":%.2f,\"sr_ratio\":%.2f,\"tw_ratio\":%.2f,\"is_pet\":%s,\"reason\":\"%s\"}",
+                         r, s, t, u, v, w, nirAbsorption, tempC, config.pet_nir_w_min, config.pet_nir_w_max,
+                         eval.wv_ratio, eval.sr_ratio, eval.tw_ratio, eval.is_pet ? "true" : "false", eval.reason_code);
                 emitSerialLine(nirBuf);
             } else {
                 logWarn("CMD", "TEST_NIR rejected: spectrometerFound=%d, busy=%d", spectrometerFound, depositCycleBusy.load());
@@ -1407,17 +1648,26 @@ void loop() {
         } else if (strcmp(cmd, "PING") == 0) {
             char pongBuf[256];
             bool hwReady = pca9685Found && (!desiredConfig.require_nir_sensor || spectrometerFound) && (!desiredConfig.require_weight_sensor || hx711Found);
+            int stations = apStations.load();
             snprintf(pongBuf, sizeof(pongBuf),
-                     "{\"event\":\"PONG\",\"firmware_version\":\"%s\",\"protocol\":2,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d}",
+                     "{\"event\":\"PONG\",\"firmware_version\":\"%s\",\"protocol\":2,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d,\"ap_active\":%s,\"ap_stations\":%d}",
                      ECOVENDO_VERSION,
                      pca9685Found ? "true" : "false",
                      spectrometerFound ? "true" : "false",
                      hx711Found ? "true" : "false",
                      hwReady ? "true" : "false",
                      desiredConfig.require_nir_sensor,
-                     desiredConfig.require_weight_sensor);
+                     desiredConfig.require_weight_sensor,
+                     apActive.load() ? "true" : "false",
+                     stations);
             emitSerialLine(pongBuf);
             logDebug("CMD", "Responded to PING with PONG.");
+        } else if (strcmp(cmd, "REBOOT") == 0) {
+            logDebug("CMD", "REBOOT command received. Restarting ESP32 in 100ms...");
+            emitSerialLine("{\"event\":\"REBOOTING\",\"success\":true}");
+            Serial.flush();
+            delay(100);
+            ESP.restart();
         } else if (strlen(cmd) > 0) {
             logWarn("CMD", "Unknown command received: '%s'", cmd);
         }
