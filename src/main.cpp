@@ -83,8 +83,10 @@ void logError(const char* tag, const char* format, ...) {
 #define PCA_CHANNEL_ENTRANCE 0
 #define PCA_CHANNEL_SUCCESS 1
 
-#define SERVOMIN 125 // Global baseline 0 degrees (~500us pulse)
-#define SERVOMAX 575 // Global baseline 180 degrees (~2400us pulse)
+// PCA9685 50Hz PWM Calibration (4096 counts / 20ms period = 4.8828 us/count):
+// 500us = 102 counts (0 deg), 1500us = 307 counts (90 deg true center), 2500us = 512 counts (180 deg)
+#define SERVOMIN 102 // Calibrated 0 degrees baseline (500us pulse)
+#define SERVOMAX 512 // Calibrated 180 degrees baseline (2500us pulse)
 
 // -----------------------------------------------------------------------------
 // PERIPHERALS & GLOBAL STATE
@@ -343,6 +345,8 @@ void IRAM_ATTR isrBottomIr() { bottomIrTriggered = true; }
 
 void setServoAngle(uint8_t channel, int angle) {
     if (pca9685Found) {
+        if (angle < 0) angle = 0;
+        if (angle > 180) angle = 180;
         int pulse = map(angle, 0, 180, SERVOMIN, SERVOMAX);
         pwm.setPWM(channel, 0, pulse);
         logDebug("SERVO", "Channel %u set to %d deg (PWM: %d)", channel, angle, pulse);
@@ -409,6 +413,7 @@ void loadPreferences() {
 }
 
 void savePreferences() {
+    preferences.begin("ecovendo", false);
     preferences.putInt("bin_cm", config.bin_full_threshold_cm);
     preferences.putInt("nir_min", config.pet_nir_w_min);
     preferences.putInt("nir_max", config.pet_nir_w_max);
@@ -587,6 +592,19 @@ void startApMode() {
     if (apMutex) xSemaphoreGiveRecursive(apMutex);
 }
 
+void handleTestServo() {
+    apLastDeviceConnectedTime = millis();
+    int ch = server.hasArg("channel") ? server.arg("channel").toInt() : -1;
+    int ang = server.hasArg("angle") ? server.arg("angle").toInt() : -1;
+    if (pca9685Found && ch >= 0 && ch <= 1 && ang >= 0 && ang <= 180 && !depositCycleBusy) {
+        setServoAngle((uint8_t)ch, ang);
+        logDebug("HTTP", "TEST_SERVO HTTP: ch=%d, angle=%d", ch, ang);
+        server.send(200, "application/json", "{\"success\":true}");
+    } else {
+        server.send(400, "application/json", "{\"success\":false,\"error\":\"invalid_params\"}");
+    }
+}
+
 void handleReboot() {
     logDebug("HTTP", "GET /reboot received. Disabling AP mode...");
     server.send(200, "text/plain", "AP Mode Disabled. Stopping SoftAP...");
@@ -599,6 +617,7 @@ void startWebServerRoutes() {
     if (!routesConfigured) {
         server.on("/", handleRoot);
         server.on("/save", handleSave);
+        server.on("/test_servo", handleTestServo);
         server.on("/status", handleStatus);
         server.on("/reboot", handleReboot);
         server.on("/generate_204", handleRoot); // Captive Portal Android

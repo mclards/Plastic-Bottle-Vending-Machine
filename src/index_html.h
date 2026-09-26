@@ -308,6 +308,10 @@ const char* index_html PROGMEM = R"rawliteral(
                         <input type="number" id="ent_close" name="ent_close" value="%ENT_CLOSE%" min="0" max="180" required>
                     </div>
                 </div>
+                <div style="display:flex;gap:8px;margin-top:8px;">
+                    <button type="button" class="btn-sm" style="background:#0284c7;" onclick="testServo(0, document.getElementById('ent_open').value)">Test Open</button>
+                    <button type="button" class="btn-sm" style="background:#475569;" onclick="testServo(0, document.getElementById('ent_close').value)">Test Close</button>
+                </div>
             </div>
 
             <div class="servo-block">
@@ -322,10 +326,14 @@ const char* index_html PROGMEM = R"rawliteral(
                         <input type="number" id="suc_close" name="suc_close" value="%SUC_CLOSE%" min="0" max="180" required>
                     </div>
                 </div>
+                <div style="display:flex;gap:8px;margin-top:8px;">
+                    <button type="button" class="btn-sm" style="background:#16a34a;" onclick="testServo(1, document.getElementById('suc_open').value)">Test Drop</button>
+                    <button type="button" class="btn-sm" style="background:#475569;" onclick="testServo(1, document.getElementById('suc_close').value)">Test Close</button>
+                </div>
             </div>
 
             <div class="section-footer">
-                <button type="submit" class="btn-sm">Save</button>
+                <button type="submit" class="btn-sm">Save Servo Positions</button>
             </div>
         </form>
 
@@ -342,7 +350,7 @@ const char* index_html PROGMEM = R"rawliteral(
                 btn.disabled = true;
                 fetch('/save', {
                     method: 'POST',
-                    body: new FormData(this)
+                    body: new URLSearchParams(new FormData(this))
                 }).then(() => {
                     btn.textContent = 'Saved ✓';
                     btn.classList.add('saved');
@@ -358,6 +366,14 @@ const char* index_html PROGMEM = R"rawliteral(
                 });
             });
         });
+
+        function testServo(channel, angle) {
+            fetch('/test_servo?channel=' + encodeURIComponent(channel) + '&angle=' + encodeURIComponent(angle), {
+                method: 'POST'
+            }).then(r => r.json()).then(d => {
+                if (!d.success) alert('Failed to move servo: ' + (d.error || 'error'));
+            }).catch(e => alert('Connection error: ' + e));
+        }
 
         function rebootVendo() {
             if (!confirm('Reboot ESP32 controller into normal vending mode?')) return;
