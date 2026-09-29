@@ -774,6 +774,7 @@ void sensorTaskCode(void* parameter) {
             }
 
             logDebug("CYCLE", "Starting deposit cycle for session '%s'...", curSession);
+            setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle); // Ensure drop flap is locked closed before entrance opens
             setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_open_angle); // Open entrance
             gateStateEvent(true);
             topIrTriggered = false;
