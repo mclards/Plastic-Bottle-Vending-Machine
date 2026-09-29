@@ -20,9 +20,12 @@ struct MachineConfig {
     // Sensor Verification Requirements
     int require_nir_sensor = 1;      // 1 = Strict NIR polymer check required, 0 = Bench-test mode (servos only)
     int require_weight_sensor = 0;   // 1 = Strict HX711 weight check required, 0 = Bypassed (sensor optional)
+    int require_bin_sensor = 0;      // 1 = Strict ultrasonic bin check required, 0 = Bypassed (sensor optional / disabled default)
     int min_bottle_weight_g = 10;    // Minimum weight for empty plastic bottle (grams)
     int max_bottle_weight_g = 65;    // Maximum weight for empty plastic bottle (grams; rejects glass >250g)
     int weight_cal_factor = 420;     // HX711 pulses-per-gram calibration factor
+    // Hardware Configuration Timestamp (Epoch seconds; latest timestamp always wins)
+    unsigned long config_timestamp = 0;
 };
 
 constexpr bool validMachineConfig(const MachineConfig& c) {
@@ -36,6 +39,7 @@ constexpr bool validMachineConfig(const MachineConfig& c) {
         c.suc_open_angle >= 0 && c.suc_open_angle <= 180 && c.suc_close_angle >= 0 && c.suc_close_angle <= 180 &&
         c.require_nir_sensor >= 0 && c.require_nir_sensor <= 1 &&
         c.require_weight_sensor >= 0 && c.require_weight_sensor <= 1 &&
+        c.require_bin_sensor >= 0 && c.require_bin_sensor <= 1 &&
         c.min_bottle_weight_g >= 1 && c.max_bottle_weight_g > c.min_bottle_weight_g && c.max_bottle_weight_g <= 5000 &&
         c.weight_cal_factor >= 1 && c.weight_cal_factor <= 50000;
 }

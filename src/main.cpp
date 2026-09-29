@@ -394,9 +394,11 @@ void loadPreferences() {
     config.suc_close_angle = preferences.getInt("suc_close", 0);
     config.require_nir_sensor = preferences.getInt("req_nir", 1);
     config.require_weight_sensor = preferences.getInt("req_wt", 0);
+    config.require_bin_sensor = preferences.getInt("req_bin", 0);
     config.min_bottle_weight_g = preferences.getInt("min_wt", 10);
     config.max_bottle_weight_g = preferences.getInt("max_wt", 65);
     config.weight_cal_factor = preferences.getInt("wt_cal", 420);
+    config.config_timestamp = preferences.getULong("cfg_ts", 0);
 
     logDebug("NVS", "Loaded Hardware Preferences:");
     logDebug("NVS", "  Bin Full Threshold: %d cm", config.bin_full_threshold_cm);
@@ -407,9 +409,10 @@ void loadPreferences() {
     logDebug("NVS", "  Servos: Ent=[%d/%d], Suc=[%d/%d]",
              config.ent_open_angle, config.ent_close_angle,
              config.suc_open_angle, config.suc_close_angle);
-    logDebug("NVS", "  Intake Requirements: NIR=%d, Weight=%d (Range: [%d - %d] g, CalFactor: %d)",
-             config.require_nir_sensor, config.require_weight_sensor,
+    logDebug("NVS", "  Intake Requirements: NIR=%d, Weight=%d, BinFull=%d (Range: [%d - %d] g, CalFactor: %d)",
+             config.require_nir_sensor, config.require_weight_sensor, config.require_bin_sensor,
              config.min_bottle_weight_g, config.max_bottle_weight_g, config.weight_cal_factor);
+    logDebug("NVS", "  Config Timestamp: %lu", config.config_timestamp);
 }
 
 void savePreferences() {
@@ -427,10 +430,12 @@ void savePreferences() {
     preferences.putInt("suc_close", config.suc_close_angle);
     preferences.putInt("req_nir", config.require_nir_sensor);
     preferences.putInt("req_wt", config.require_weight_sensor);
+    preferences.putInt("req_bin", config.require_bin_sensor);
     preferences.putInt("min_wt", config.min_bottle_weight_g);
     preferences.putInt("max_wt", config.max_bottle_weight_g);
     preferences.putInt("wt_cal", config.weight_cal_factor);
-    logDebug("NVS", "Persisted hardware parameters to Flash.");
+    preferences.putULong("cfg_ts", config.config_timestamp);
+    logDebug("NVS", "Persisted hardware parameters (ts=%lu) to Flash.", config.config_timestamp);
 }
 
 // -----------------------------------------------------------------------------
@@ -492,6 +497,7 @@ void handleSave() {
     if (server.hasArg("req_nir")) config.require_nir_sensor = server.arg("req_nir").toInt();
     if (server.hasArg("req_wt")) config.require_weight_sensor = server.arg("req_wt").toInt();
     if (server.hasArg("min_wt")) config.min_bottle_weight_g = server.arg("min_wt").toInt();
+    if (server.hasArg("req_bin")) config.require_bin_sensor = server.arg("req_bin").toInt();
     if (server.hasArg("max_wt")) config.max_bottle_weight_g = server.arg("max_wt").toInt();
     if (server.hasArg("wt_cal")) config.weight_cal_factor = server.arg("wt_cal").toInt();
 
@@ -501,8 +507,13 @@ void handleSave() {
         server.send(400, "text/plain", "Invalid hardware settings");
         return;
     }
+    if (config.config_timestamp > 0) {
+        config.config_timestamp++;
+    } else {
+        config.config_timestamp = (unsigned long)(millis() / 1000) + 1;
+    }
     savePreferences();
-    logDebug("HTTP", "Configuration saved. Snapping servos to closed positions to verify tuning.");
+    logDebug("HTTP", "Configuration saved (ts=%lu). Snapping servos to closed positions to verify tuning.", config.config_timestamp);
     
     // Snap servos to new values immediately to visually test tuning
     setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
@@ -511,7 +522,9 @@ void handleSave() {
     if (configQueue) {
         xQueueOverwrite(configQueue, &config);
     }
-    emitSerialLine("{\"event\":\"CONFIG_SAVED\"}");
+    char saveBuf[96];
+    snprintf(saveBuf, sizeof(saveBuf), "{\"event\":\"CONFIG_SAVED\",\"cfg_ts\":%lu}", config.config_timestamp);
+    emitSerialLine(saveBuf);
     
     String html = "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Configuration Saved</title>";
     html += "<style>:root{--bg:#f8fafc;--card:#ffffff;--text:#0f172a;--muted:#64748b;--border:#e2e8f0;--btn:#0f172a;--btn-txt:#ffffff}@media(prefers-color-scheme:dark){:root{--bg:#090d16;--card:#111827;--text:#f9fafb;--muted:#9ca3af;--border:#1f2937;--btn:#2563eb;--btn-txt:#ffffff}}";
@@ -693,8 +706,15 @@ void sensorTaskCode(void* parameter) {
             savePreferences();
             setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
             setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
-            logDebug("SENSOR", "Applied pending config and saved to Flash.");
-            emitSerialLine("{\"event\":\"CONFIG_SAVED\"}");
+            logDebug("SENSOR", "Applied pending config and saved to Flash (ts=%lu).", config.config_timestamp);
+            char saveBuf[96];
+            snprintf(saveBuf, sizeof(saveBuf), "{\"event\":\"CONFIG_SAVED\",\"cfg_ts\":%lu}", config.config_timestamp);
+            emitSerialLine(saveBuf);
+            if (!config.require_bin_sensor && isBinFull.load()) {
+                isBinFull = false;
+                lastBinState = false;
+                postEvent(MSG_BIN_OK);
+            }
         }
         if (configRestartRequested) {
             logDebug("SENSOR", "Config restart requested. Closing entrance gate and restarting...");
@@ -709,14 +729,14 @@ void sensorTaskCode(void* parameter) {
             lastUltrasonicCheck = xTaskGetTickCount();
             int distance = getBinDistanceCm();
             cachedBinDistanceCm.store(distance);
-            bool currentlyFull = (distance < config.bin_full_threshold_cm && distance > 0);
+            bool currentlyFull = config.require_bin_sensor && (distance < config.bin_full_threshold_cm && distance > 0);
             
             if (currentlyFull != lastBinState) {
                 isBinFull = currentlyFull;
                 lastBinState = currentlyFull;
                 EventMsg msg = currentlyFull ? MSG_BIN_FULL : MSG_BIN_OK;
-                logDebug("BIN", "Bin status changed -> %s (Measured: %d cm, Threshold: %d cm)",
-                         currentlyFull ? "FULL" : "OK", distance, config.bin_full_threshold_cm);
+                logDebug("BIN", "Bin status changed -> %s (Measured: %d cm, Threshold: %d cm, Req: %d)",
+                         currentlyFull ? "FULL" : "OK", distance, config.bin_full_threshold_cm, config.require_bin_sensor);
                 postEvent(msg);
             }
         }
@@ -725,24 +745,28 @@ void sensorTaskCode(void* parameter) {
         static TickType_t lastTelemetryHeartbeat = 0;
         if (xTaskGetTickCount() - lastTelemetryHeartbeat >= pdMS_TO_TICKS(3000)) {
             lastTelemetryHeartbeat = xTaskGetTickCount();
-            char hbBuf[256];
-            bool hwReady = pca9685Found && (!config.require_nir_sensor || spectrometerFound) && !isBinFull.load();
+            char hbBuf[384];
+            bool hwReady = pca9685Found && (!config.require_nir_sensor || spectrometerFound) && (!config.require_weight_sensor || hx711Found) && (!config.require_bin_sensor || !isBinFull.load());
             int stations = apStations.load();
             snprintf(hbBuf, sizeof(hbBuf),
-                     "{\"event\":\"HEARTBEAT\",\"bin_distance_cm\":%d,\"is_bin_full\":%s,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"gate_open\":%s,\"ap_active\":%s,\"ap_stations\":%d,\"protocol\":2}",
+                     "{\"event\":\"HEARTBEAT\",\"bin_distance_cm\":%d,\"is_bin_full\":%s,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d,\"require_bin\":%d,\"gate_open\":%s,\"ap_active\":%s,\"ap_stations\":%d,\"cfg_ts\":%lu,\"protocol\":2}",
                      cachedBinDistanceCm.load(),
                      isBinFull.load() ? "true" : "false",
                      pca9685Found ? "true" : "false",
                      spectrometerFound ? "true" : "false",
+                     hx711Found ? "true" : "false",
                      hwReady ? "true" : "false",
                      config.require_nir_sensor,
+                     config.require_weight_sensor,
+                     config.require_bin_sensor,
                      depositCycleBusy.load() ? "true" : "false",
                      apActive.load() ? "true" : "false",
-                     stations);
+                     stations,
+                     config.config_timestamp);
             emitSerialLine(hbBuf);
         }
 
-        if (isBinFull) {
+        if (config.require_bin_sensor && isBinFull) {
             vTaskDelay(pdMS_TO_TICKS(500));
             continue;
         }
@@ -1295,11 +1319,12 @@ void setup() {
 
     char bootBuf[256];
     snprintf(bootBuf, sizeof(bootBuf),
-             "{\"event\":\"BOOT\",\"protocol\":2,\"firmware_version\":\"%s\",\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s}",
+             "{\"event\":\"BOOT\",\"protocol\":2,\"firmware_version\":\"%s\",\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"cfg_ts\":%lu}",
              ECOVENDO_VERSION,
              pca9685Found ? "true" : "false",
              spectrometerFound ? "true" : "false",
-             hx711Found ? "true" : "false");
+             hx711Found ? "true" : "false",
+             config.config_timestamp);
     emitSerialLine(bootBuf);
 
     logDebug("SERVO", "Aligning entrance and success servos to initial closed angles...");
@@ -1553,9 +1578,24 @@ void loop() {
                 if (!command["max_bottle_weight_g"].is<int>()) fieldsValid = false;
                 else next.max_bottle_weight_g = command["max_bottle_weight_g"];
             }
+            if (!command["require_bin_sensor"].isNull()) {
+                if (!command["require_bin_sensor"].is<int>()) fieldsValid = false;
+                else next.require_bin_sensor = command["require_bin_sensor"];
+            }
             if (!command["weight_cal_factor"].isNull()) {
                 if (!command["weight_cal_factor"].is<int>()) fieldsValid = false;
                 else next.weight_cal_factor = command["weight_cal_factor"];
+            }
+            if (!command["timestamp"].isNull()) {
+                if (command["timestamp"].is<unsigned long>()) {
+                    next.config_timestamp = command["timestamp"].as<unsigned long>();
+                } else if (command["timestamp"].is<long long>()) {
+                    long long t = command["timestamp"].as<long long>();
+                    if (t > 0) next.config_timestamp = (unsigned long)t;
+                } else if (command["timestamp"].is<int>()) {
+                    long t = command["timestamp"].as<long>();
+                    if (t > 0) next.config_timestamp = (unsigned long)t;
+                }
             }
             if (fieldsValid && validMachineConfig(next)) {
                 desiredConfig = next;
@@ -1660,11 +1700,11 @@ void loop() {
                 emitSerialLine("{\"event\":\"TARE_REJECTED\",\"success\":false}");
             }
         } else if (strcmp(cmd, "PING") == 0) {
-            char pongBuf[256];
-            bool hwReady = pca9685Found && (!desiredConfig.require_nir_sensor || spectrometerFound) && (!desiredConfig.require_weight_sensor || hx711Found);
+            char pongBuf[384];
+            bool hwReady = pca9685Found && (!desiredConfig.require_nir_sensor || spectrometerFound) && (!desiredConfig.require_weight_sensor || hx711Found) && (!desiredConfig.require_bin_sensor || !isBinFull.load());
             int stations = apStations.load();
             snprintf(pongBuf, sizeof(pongBuf),
-                     "{\"event\":\"PONG\",\"firmware_version\":\"%s\",\"protocol\":2,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d,\"ap_active\":%s,\"ap_stations\":%d}",
+                     "{\"event\":\"PONG\",\"firmware_version\":\"%s\",\"protocol\":2,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d,\"require_bin\":%d,\"ap_active\":%s,\"ap_stations\":%d,\"cfg_ts\":%lu}",
                      ECOVENDO_VERSION,
                      pca9685Found ? "true" : "false",
                      spectrometerFound ? "true" : "false",
@@ -1672,10 +1712,12 @@ void loop() {
                      hwReady ? "true" : "false",
                      desiredConfig.require_nir_sensor,
                      desiredConfig.require_weight_sensor,
+                     desiredConfig.require_bin_sensor,
                      apActive.load() ? "true" : "false",
-                     stations);
+                     stations,
+                     desiredConfig.config_timestamp);
             emitSerialLine(pongBuf);
-            logDebug("CMD", "Responded to PING with PONG.");
+            logDebug("CMD", "Responded to PING with PONG (cfg_ts=%lu).", desiredConfig.config_timestamp);
         } else if (strcmp(cmd, "REBOOT") == 0) {
             logDebug("CMD", "REBOOT command received. Restarting ESP32 in 100ms...");
             emitSerialLine("{\"event\":\"REBOOTING\",\"success\":true}");

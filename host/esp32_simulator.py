@@ -11,7 +11,7 @@ HARDWARE_BOUNDS={
     'pet_nir_w_max':(1,65535,220),'entrance_gate_timeout':(1,600,60),
     'settle_time_ms':(1,30000,500),'success_drop_tout_ms':(1,30000,3000),
     'retrieval_timeout_s':(5,300,45),'require_nir_sensor':(0,1,1),
-    'require_weight_sensor':(0,1,0),'min_bottle_weight_g':(1,1000,10),
+    'require_weight_sensor':(0,1,0),'require_bin_sensor':(0,1,0),'min_bottle_weight_g':(1,1000,10),
     'max_bottle_weight_g':(1,2000,65),'weight_cal_factor':(1,50000,420)}
 for _prefix in ('ent','suc'):
     for _state,_default in (('open',90),('close',0)):
@@ -20,7 +20,7 @@ for _prefix in ('ent','suc'):
 
 def validate_hardware_config(data,current=None):
     if not isinstance(data,dict):raise ValueError('Invalid hardware configuration')
-    if set(data)-set(HARDWARE_BOUNDS)-{'cmd'}:raise ValueError('Unknown hardware setting')
+    if set(data)-set(HARDWARE_BOUNDS)-{'cmd','timestamp','updated_at'}:raise ValueError('Unknown hardware setting')
     values={key:(current or {}).get(key,limits[2]) for key,limits in HARDWARE_BOUNDS.items()}
     values.update({key:value for key,value in data.items() if key in HARDWARE_BOUNDS})
     for key,(low,high,default) in HARDWARE_BOUNDS.items():
@@ -48,6 +48,7 @@ class ESP32Simulator:
         self.retrieval_timeout_s = 45
         self.require_nir_sensor = 1
         self.require_weight_sensor = 0
+        self.require_bin_sensor = 0
         self.min_bottle_weight_g = 10
         self.max_bottle_weight_g = 65
         self.weight_cal_factor = 420
@@ -246,6 +247,10 @@ class ESP32Simulator:
             self.pending_config=None
             self.entrance_servo_angle=self.ent_close_angle
             self.success_servo_angle=self.suc_close_angle
+            if not self.require_bin_sensor and self.is_bin_full:
+                self.is_bin_full = False
+                self.led_red = False
+                self.send_uart({'event':'BIN_OK'})
         self.send_uart({'event':'CONFIG_SAVED'})
 
     def _run_loop(self):
@@ -256,7 +261,7 @@ class ESP32Simulator:
             now = time.time()
             if time.monotonic()-self.last_receipt_send>=1:self.replay_receipt()
             if now - last_ultrasonic_check >= 1.0:
-                currently_full = 0 < self.bin_distance_cm < self.bin_full_threshold_cm
+                currently_full = bool(self.require_bin_sensor and (0 < self.bin_distance_cm < self.bin_full_threshold_cm))
                 if currently_full != last_bin_state:
                     self.is_bin_full = currently_full
                     last_bin_state = currently_full
@@ -269,7 +274,7 @@ class ESP32Simulator:
                         self.led_red = False
                         self.send_uart({'event': 'BIN_OK'})
                 last_ultrasonic_check = now
-            if self.is_bin_full:
+            if self.require_bin_sensor and self.is_bin_full:
                 time.sleep(0.1)
                 continue
             if self.ap_active and self.ap_stations == 0 and self.ap_started_at and (now - self.ap_started_at >= 60.0):

@@ -324,7 +324,8 @@ class TimePortal(object):
         value['hardware_ready'] = hw_ready
         value['hardware_status'] = hw_code
         value['hardware_msg'] = hw_msg
-        value['bin_full'] = self.p.get_config('hw_bin_full','0')=='1' or self.p.esp32.get_state().get('is_bin_full',False) or (hw_code == 'storage_bin_full')
+        req_bin = self.p.get_config('esp_require_bin_sensor', '0') == '1'
+        value['bin_full'] = bool(req_bin and (self.p.get_config('hw_bin_full','0')=='1' or self.p.esp32.get_state().get('is_bin_full',False) or (hw_code == 'storage_bin_full')))
         value['gate_open'] = bool(value.get('deposit_session_id') and self.p.get_esp32_health_stats().get('esp32_gate_open',False))
         rejection = getattr(self.p, 'active_deposit_rejection', None)
         active_sid = value.get('deposit_session_id') or session.get('deposit_session_id')
@@ -545,7 +546,8 @@ class TimePortal(object):
         data=self.data();ip,mac=self.identity();now,mono=self.now()
         with self.p.db_connection() as conn:
             self.require_ready(conn)
-            if self.config(conn,'hw_bin_full','0')=='1' or self.p.esp32.get_state().get('is_bin_full',False):
+            req_bin = self.config(conn, 'esp_require_bin_sensor', '0') == '1'
+            if req_bin and (self.config(conn,'hw_bin_full','0')=='1' or self.p.esp32.get_state().get('is_bin_full',False)):
                 raise ValueError('storage_bin_full')
             cd=self.resolve(conn,ip,mac,now,mono)
             timeout=int(self.config(conn,'drop_timeout','60'))
@@ -701,7 +703,9 @@ class TimePortal(object):
                     if sid:conn.execute("UPDATE deposit_sessions SET status='HOLD' WHERE id=? AND status='OPEN'",(sid,))
                 self.p.active_depositor_ip=None;self.p.active_depositor_timeout=0
                 self.p.active_deposit_rejection=None
-            elif event=='BIN_FULL':self.p.set_config('hw_bin_full','1')
+            elif event=='BIN_FULL':
+                if self.p.get_config('esp_require_bin_sensor', '0') == '1':
+                    self.p.set_config('hw_bin_full','1')
             elif event=='BIN_OK':self.p.set_config('hw_bin_full','0')
         except Exception:
             self.p.log.exception('Device event was not acknowledged; replay/recovery is required')

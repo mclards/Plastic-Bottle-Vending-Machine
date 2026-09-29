@@ -902,6 +902,20 @@ class PortalRegression(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_hardware_config({'require_nir_sensor': 2})
 
+    def test_hardware_bounds_includes_require_bin_sensor(self):
+        from esp32_simulator import HARDWARE_BOUNDS, validate_hardware_config
+        self.assertIn('require_bin_sensor', HARDWARE_BOUNDS)
+        low, high, default = HARDWARE_BOUNDS['require_bin_sensor']
+        self.assertEqual((low, high, default), (0, 1, 0))
+        # Valid values
+        cfg0 = validate_hardware_config({'require_bin_sensor': 0})
+        self.assertEqual(cfg0['require_bin_sensor'], 0)
+        cfg1 = validate_hardware_config({'require_bin_sensor': 1})
+        self.assertEqual(cfg1['require_bin_sensor'], 1)
+        # Out of bounds
+        with self.assertRaises(ValueError):
+            validate_hardware_config({'require_bin_sensor': 2})
+
     def test_admin_esp32_ap_toggle(self):
         # 1. Unauthorized
         r = self.client.post('/admin/api/esp32/ap', json={'enable': True})
