@@ -1675,9 +1675,9 @@ void loop() {
             }
         } else if (strcmp(cmd, "TEST_WEIGHT") == 0) {
             if (hx711Found && !depositCycleBusy) {
-                float weightG = scale.get_units(5);
+                float weightG = scale.get_units(2);
                 lastMeasuredWeightG = weightG;
-                logDebug("SCALE", "--- On-Demand HX711 Load Cell Scan: %.1f g ---", weightG);
+                logDebug("SCALE", "--- Live HX711 Load Cell Scan: %.1f g ---", weightG);
                 char wtBuf[192];
                 snprintf(wtBuf, sizeof(wtBuf),
                          "{\"event\":\"WEIGHT_TEST\",\"success\":true,\"weight_g\":%.1f,\"min_g\":%d,\"max_g\":%d,\"cal_factor\":%d}",
