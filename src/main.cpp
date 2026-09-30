@@ -534,7 +534,17 @@ void sensorTaskCode(void* parameter) {
             setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle); // Ensure drop flap is locked closed before entrance opens
             setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_open_angle); // Open entrance
             gateStateEvent(true);
-            topIrTriggered = false;
+
+            // Tare scale cleanly right after entrance servo actuation settles to eliminate prior noise / mechanical drift
+            vTaskDelay(pdMS_TO_TICKS(150)); // Allow entrance servo transit vibration to settle
+            if (hx711Found && scale.wait_ready_timeout(200)) {
+                scale.tare(3); // Fast 3-sample zero calibration
+                lastMeasuredWeightG = 0.0f;
+                logDebug("SCALE", "Scale tared cleanly after entrance servo opened. Offset=%ld", scale.get_offset());
+            } else {
+                logDebug("SCALE", "Scale tare bypassed (hx711Found=%d)", hx711Found);
+            }
+            topIrTriggered = false; // Clear any latch from servo movement vibration
             
             unsigned long openTime = millis();
             bool dropped = false;
@@ -1012,8 +1022,8 @@ void sensorTaskCode(void* parameter) {
             }
             
             depositCycleBusy = false;
-            logDebug("CYCLE", "Deposit cycle finished. Airlock resting for 1500 ms...");
-            vTaskDelay(pdMS_TO_TICKS(1500));
+            logDebug("CYCLE", "Deposit cycle finished. Airlock resting for 800 ms...");
+            vTaskDelay(pdMS_TO_TICKS(800));
         }
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(20));
     }
