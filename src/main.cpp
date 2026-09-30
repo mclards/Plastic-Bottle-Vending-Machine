@@ -739,23 +739,41 @@ void sensorTaskCode(void* parameter) {
                     continue;
                 }
 
-                logDebug("ACTUATION", "Opening success flap (Ch 1 -> %d deg). Waiting for bottom IR (tout=%d ms)...",
+                logDebug("ACTUATION", "Opening success flap (Ch 1 -> %d deg). Awaiting drop transit & clear (tout=%d ms)...",
                          config.suc_open_angle, config.success_drop_tout_ms);
                 setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_open_angle);
 
                 unsigned long gateOpenTime = millis();
                 bool passedDrop = false;
+                bool bottleSeenInChute = false;
+                unsigned long clearHoldStart = 0;
+                const unsigned long CLEAR_HOLD_MS = 400; // Hold flap open for a moment after sensor clears
 
                 while (millis() - gateOpenTime < static_cast<uint32_t>(config.success_drop_tout_ms)) {
-                    if (bottomIrTriggered) {
-                        passedDrop = true;
-                        logDebug("ACTUATION", "Bottom IR triggered in %lu ms! Bottle confirmed in storage bin.",
-                                 millis() - gateOpenTime);
-                        break;
+                    // Check if object is currently breaking bottom sensor beam (LOW = obstacle detected)
+                    bool sensorActive = (digitalRead(PIN_IR_BOTTOM) == LOW) || bottomIrTriggered;
+
+                    if (sensorActive) {
+                        bottleSeenInChute = true;
+                        bottomIrTriggered = false; // consume ISR latch
+                        clearHoldStart = 0;        // reset clear timer while bottle is still passing through
+                    } else if (bottleSeenInChute) {
+                        // Bottle was detected and has now cleared the sensor (beam HIGH / unobstructed)
+                        if (clearHoldStart == 0) {
+                            clearHoldStart = millis();
+                            logDebug("ACTUATION", "Drop sensor cleared at %lu ms. Holding flap open for %u ms to clear sweep...",
+                                     millis() - gateOpenTime, CLEAR_HOLD_MS);
+                        } else if (millis() - clearHoldStart >= CLEAR_HOLD_MS) {
+                            passedDrop = true;
+                            logDebug("ACTUATION", "Drop transit complete! Bottle cleared into storage bin in %lu ms.",
+                                     millis() - gateOpenTime);
+                            break;
+                        }
                     }
                     vTaskDelay(pdMS_TO_TICKS(20));
                 }
 
+                // Drop flap closes ONLY after object is no longer detected + hold moment, or on watchdog timeout
                 setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
                 logDebug("ACTUATION", "Closed success flap (Ch 1 -> %d deg). Drop Passed=%d",
                          config.suc_close_angle, passedDrop);
@@ -767,7 +785,7 @@ void sensorTaskCode(void* parameter) {
                     logDebug("CYCLE", "Deposit cycle successfully completed. Session bottles: %d",
                              currentSessionBottles.load());
                 } else {
-                    logWarn("ACTUATION", "Drop TIMEOUT! Bottom IR was not triggered within %d ms. Chute jam possible!",
+                    logWarn("ACTUATION", "Drop TIMEOUT! Bottom IR was not cleared/triggered within %d ms. Chute jam possible!",
                             config.success_drop_tout_ms);
                     completeDrop(false);
                     EventMsg failMsg = MSG_DROP_TIMEOUT; // Blocked in chute
