@@ -88,7 +88,15 @@ def flash_firmware(firmware_path, port="/dev/ttyS3", baud=115200, offset=None):
         return False
 
     if offset is None:
-        offset = "0x0" if "factory" in os.path.basename(firmware_path).lower() else "0x10000"
+        try:
+            with open(firmware_path, "rb") as f_bin:
+                head = f_bin.read(4)
+                if head == b'\xff\xff\xff\xff' or "factory" in os.path.basename(firmware_path).lower():
+                    offset = "0x0"
+                else:
+                    offset = "0x10000"
+        except Exception:
+            offset = "0x0" if "factory" in os.path.basename(firmware_path).lower() else "0x10000"
 
     print("[FLASHER] Stopping portal service...")
     subprocess.call(["systemctl", "stop", "ecofi_portal.service"])
