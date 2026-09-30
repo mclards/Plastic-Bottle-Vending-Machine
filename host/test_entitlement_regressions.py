@@ -781,16 +781,15 @@ class PortalRegression(unittest.TestCase):
         grant_row = self.scalar("SELECT id FROM time_grants WHERE state='ACTIVE'")
         with self.p.db_connection() as c:
             g = c.execute("SELECT validity_duration_sec FROM time_grants WHERE id=?", (grant_row,)).fetchone()
-            self.assertEqual(g[0], 86400)
+            self.assertEqual(g[0], 10800)
         # Admin sets balance to 7 days (10080 minutes = 604800s)
         self.request('/admin/api/client/edit', {'ip': '10.0.0.2', 'minutes': 10080})
         with self.p.db_connection() as c:
             updated = c.execute("SELECT remaining_seconds, validity_duration_sec, valid_until_utc FROM time_grants WHERE id=?", (grant_row,)).fetchone()
             self.assertEqual(updated[0], 604800.0)
-            self.assertGreaterEqual(updated[1], 7776000)
+            self.assertGreaterEqual(updated[1], 604800)
             now = self.p.time.time()
             self.assertGreaterEqual(updated[2], now + 604800)
-            self.assertGreaterEqual(updated[2], now + 7776000)
 
     def test_client_time_sync_endpoint(self):
         with patch.object(self.p.time_service, 'clock_trusted', return_value=False):

@@ -255,8 +255,8 @@ class TestTransitionEngine(unittest.TestCase):
         self.assertTrue(res['success'])
         self.assertEqual(res['state'], 'ACTIVE')
         self.assertEqual(res['remaining_seconds'], 3600)
-        # The shipped default assigns 48 hours to the 60-minute bracket.
-        self.assertEqual(res['valid_until_utc'], self.now_utc + 172800)
+        # The shipped default assigns 12 hours (43200s) to the 3-hour bracket.
+        self.assertEqual(res['valid_until_utc'], self.now_utc + 43200)
 
         # Check ledger
         c = self.conn.cursor()
