@@ -1473,6 +1473,8 @@ void loop() {
                 emitSerialLine("{\"event\":\"SERVO_TEST_REJECTED\"}");
             }
         } else if (strcmp(cmd, "TEST_NIR") == 0) {
+            bool autoClose = command["auto_close"] | false;
+            bool openGate = command["open_gate"] | true;
             if (!spectrometerFound) {
                 logDebug("NIR", "Spectrometer was offline; attempting dynamic I2C re-probe...");
                 if (spectrometer.begin()) {
@@ -1486,10 +1488,10 @@ void loop() {
                 }
             }
             if (spectrometerFound && !depositCycleBusy) {
-                logDebug("NIR", "--- On-Demand AS7263 NIR Spectrometer Scan (with Gate Actuation) ---");
+                logDebug("NIR", "--- On-Demand AS7263 NIR Spectrometer Scan (openGate=%d, autoClose=%d) ---", openGate, autoClose);
 
-                // 1. Trigger the gate entrance servo to OPEN
-                if (pca9685Found) {
+                // 1. Trigger the gate entrance servo to OPEN if requested
+                if (openGate && pca9685Found) {
                     setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_open_angle);
                     gateStateEvent(true);
                     delay(500); // Allow servo to travel to open position
@@ -1509,8 +1511,8 @@ void loop() {
                 int tempC = spectrometer.getTemperature();
                 NirEvaluation eval = evaluateNirSpectrum(r, s, t, u, v, w, nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max);
 
-                // 2. When done, CLOSE the gate entrance servo!
-                if (pca9685Found) {
+                // 2. Only close gate if explicitly requested. In Teach mode, gate stays open until operator clicks OK!
+                if (autoClose && pca9685Found) {
                     delay(250);
                     setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
                     gateStateEvent(false);

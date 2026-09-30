@@ -538,13 +538,32 @@ class FleetManagerApp:
         self.root.after(1500, lambda: self.btn_copy_pass.configure(text="📋 Copy Pass", bg="#334155"))
         self.log_console("[DEV] Master password '{}' copied to clipboard.\n".format(pw), "info")
 
+    def _get_web_base_url(self, m):
+        if not m:
+            return "http://127.0.0.1:5000"
+        host = m.get('host', '').strip()
+        web_port = m.get('web_port')
+        if not web_port:
+            if host.startswith('100.'):
+                web_port = 5000
+            else:
+                web_port = 80
+        try:
+            port_num = int(web_port)
+        except (ValueError, TypeError):
+            port_num = 5000 if host.startswith('100.') else 80
+        if port_num == 80:
+            return "http://{}".format(host)
+        return "http://{}:{}".format(host, port_num)
+
     def copy_magic_auth_link(self):
         m = self.selected_machine or (self.machines[0] if self.machines else None)
         if not m:
             messagebox.showinfo("Select Machine", "Please select a machine first.")
             return
         passcode = self.get_current_dev_password()
-        url = "http://{}/admin/dev_auth?token={}".format(m['host'], passcode)
+        base_url = self._get_web_base_url(m)
+        url = "{}/admin/dev_auth?token={}".format(base_url, passcode)
         self.root.clipboard_clear()
         self.root.clipboard_append(url)
         self.btn_copy_link.configure(text="✅ URL Copied!", bg="#059669")
@@ -741,6 +760,7 @@ class FleetManagerApp:
         fields = [
             ("Machine Name:", "name", machine['name'] if machine else "Vendo #02 (Location)"),
             ("Host / Tailscale IP:", "host", machine['host'] if machine else "100.x.y.z"),
+            ("Web Port (80 for LAN, 5000 for Tailscale):", "web_port", str(machine.get('web_port', 5000 if (machine and machine.get('host', '').startswith('100.')) else 80))),
             ("SSH Port:", "port", str(machine.get('port', 22)) if machine else "22"),
             ("SSH Username:", "username", machine.get('username', 'root') if machine else "root"),
             ("SSH Password (blank = default):", "password", machine.get('password', '') if machine else ""),
@@ -772,6 +792,7 @@ class FleetManagerApp:
                 "name": name,
                 "host": host,
                 "port": int(entries['port'].get().strip() or 22),
+                "web_port": int(entries['web_port'].get().strip() or (5000 if host.startswith('100.') else 80)),
                 "username": entries['username'].get().strip() or "root",
                 "password": entries['password'].get().strip(),
                 "location": entries['location'].get().strip(),
@@ -823,7 +844,8 @@ class FleetManagerApp:
         if not m:
             return
         passcode = self.get_current_dev_password()
-        url = "http://{}/admin/dev_auth?token={}".format(m['host'], passcode)
+        base_url = self._get_web_base_url(m)
+        url = "{}/admin/dev_auth?token={}".format(base_url, passcode)
         self.log_console("\n[WEB] Launching browser: {} (Auto-authenticating as devclard)\n".format(url), "cmd")
         webbrowser.open(url)
 
