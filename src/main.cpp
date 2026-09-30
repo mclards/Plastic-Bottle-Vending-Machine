@@ -815,11 +815,16 @@ void sensorTaskCode(void* parameter) {
                 // 5. Await manual removal within retrieval_timeout_s
                 const uint32_t retrievalTimeoutMs = static_cast<uint32_t>(config.retrieval_timeout_s) * 1000UL;
                 unsigned long startWait = millis();
+                // User requirement: Sequential multi-sensor retrieval verification:
+                // Step 1: Entrance PIR detects object passed out through doorway
+                // Step 2: To confirm more, Scale detects item is no longer in cradle
+                // Step 3: Final confirmation: AS7263 NIR matches baseline / empty chute
+                enum RetrievalStep { STEP_PIR_PASS = 0, STEP_SCALE_CONFIRM = 1, STEP_NIR_BASELINE = 2 };
+                RetrievalStep retStep = STEP_PIR_PASS;
+
+                bool pirBeamBroken = false;
+                unsigned long pirClearStart = 0;
                 bool itemCleared = false;
-                bool handOrObjectDetected = false;
-                topIrTriggered = false; // Reset interrupt flag
-                unsigned long clearStartTime = 0;
-                const unsigned long STABILIZE_MS = 500; // Continuous debounce time
 
                 // Record reference weight of rejected item on scale
                 float initialWeightG = 0.0f;
@@ -829,10 +834,9 @@ void sensorTaskCode(void* parameter) {
                         initialWeightG = lastMeasuredWeightG;
                     }
                 }
-                float currentWt = initialWeightG;
 
-                logDebug("RETRIEVAL", "Waiting up to %u ms for item removal (Scale Initial Wt: %.1f g, ScaleFound: %d, SpecFound: %d)...",
-                         retrievalTimeoutMs, initialWeightG, hx711Found, spectrometerFound);
+                logDebug("RETRIEVAL", "Waiting up to %u ms for sequential item removal (Initial Wt: %.1f g)...",
+                         retrievalTimeoutMs, initialWeightG);
 
                 while (millis() - startWait < retrievalTimeoutMs) {
                     if (forceGateClose) {
@@ -843,85 +847,101 @@ void sensorTaskCode(void* parameter) {
                     int metalVal = digitalRead(PIN_PROX_METAL);
                     int topIrVal = digitalRead(PIN_IR_TOP);
 
-                    // 1. Entrance PIR/IR beam: Confirmer that hand or object is detected entering/exiting doorway
-                    if (topIrVal == LOW || topIrTriggered) {
-                        handOrObjectDetected = true;
-                        topIrTriggered = false;
-                    }
-
-                    // 2. Scale: Non-blocking read of current weight in cradle
-                    if (hx711Found) {
-                        if (scale.is_ready()) {
-                            currentWt = scale.get_units(1);
-                            lastMeasuredWeightG = currentWt;
+                    // =========================================================
+                    // STEP 1: PIR detects object passed out
+                    // =========================================================
+                    if (retStep == STEP_PIR_PASS) {
+                        if (topIrVal == LOW || topIrTriggered) {
+                            pirBeamBroken = true;
+                            topIrTriggered = false;
+                            pirClearStart = 0;
                         }
-                    }
 
-                    // 3. Sensor clearing criteria:
-                    // A) Metal sensor must be HIGH (no metal in cradle)
-                    bool metalCleared = (metalVal == HIGH);
-
-                    // B) Scale must confirm item is no longer on cradle:
-                    //    Weight drops below 5.0g AND (if initial weight was substantial) drops significantly
-                    bool scaleCleared = true;
-                    if (hx711Found) {
-                        scaleCleared = (currentWt < 5.0f);
-                        if (initialWeightG > 10.0f) {
-                            scaleCleared = (currentWt < 5.0f) || (currentWt <= initialWeightG * 0.35f);
-                        }
-                    }
-
-                    // C) Entrance IR confirmer:
-                    //    Hand or object MUST have been detected in doorway (handOrObjectDetected == true)
-                    //    AND the doorway must NOW be clear and unbroken (topIrVal == HIGH)
-                    bool entranceCleared = handOrObjectDetected && (topIrVal == HIGH);
-
-                    // All primary sensors indicate the item has been pulled out and doorway is clear
-                    if (metalCleared && scaleCleared && entranceCleared) {
-                        if (clearStartTime == 0) {
-                            clearStartTime = millis();
-                        } else if (millis() - clearStartTime >= STABILIZE_MS) {
-                            // Primary debounce passed! Now run optical NIR verification to confirm no object remains inside
-                            bool nirCleared = true;
-                            if (spectrometerFound) {
-                                logDebug("RETRIEVAL", "Running AS7263 NIR verification to confirm chamber is empty...");
-                                spectrometer.enableBulb();
-                                delay(30);
-                                spectrometer.takeMeasurements();
-                                spectrometer.disableBulb();
-                                float nirW = spectrometer.getCalibratedW();
-                                int nirR = spectrometer.getR();
-                                int nirRawW = spectrometer.getW();
-                                logDebug("RETRIEVAL", "NIR Chamber Check: Cal-W=%.2f, R=%d, W=%d", nirW, nirR, nirRawW);
-
-                                // Empty chamber produces empty air baseline:
-                                // Cal-W bounded in [21.0 - 30.0], low raw counts (R < 200, W < 45).
-                                // If an object is still inside:
-                                // - Plastic / paper produces Cal-W > 32.0 or R > 200 or W > 45
-                                // - Colored glass absorbs NIR: Cal-W < 21.0
-                                bool objectStillInside = (nirW > 32.0f) || (nirW < 21.0f) || (nirR > 200) || (nirRawW > 45);
-                                if (objectStillInside) {
-                                    nirCleared = false;
-                                    logWarn("RETRIEVAL", "NIR check indicates object STILL PRESENT in chamber (Cal-W=%.2f, R=%d)! Resetting clear timer.",
-                                            nirW, nirR);
-                                    clearStartTime = 0; // Reset clear timer until object is completely gone
-                                } else {
-                                    logDebug("RETRIEVAL", "NIR check CONFIRMED: Chamber optically empty.");
-                                }
+                        // Beam was broken by hand/object, now wait for hand/object to completely clear doorway
+                        if (pirBeamBroken && topIrVal == HIGH) {
+                            if (pirClearStart == 0) {
+                                pirClearStart = millis();
+                            } else if (millis() - pirClearStart >= 350) { // Unbroken continuously for 350ms
+                                logDebug("RETRIEVAL", "[Step 1/3 PASSED] Entrance PIR confirmed object/hand passed OUT of doorway.");
+                                retStep = STEP_SCALE_CONFIRM;
+                                vTaskDelay(pdMS_TO_TICKS(150)); // Allow mechanical scale to settle without user hand contact
                             }
+                        } else {
+                            pirClearStart = 0;
+                        }
+                    }
 
-                            if (nirCleared) {
-                                itemCleared = true;
-                                logDebug("RETRIEVAL", "Sensors confirmed chute is CLEARED after %lu ms! (Scale: %.1f g, TopIR: HIGH)",
-                                         millis() - startWait, currentWt);
-                                break;
+                    // =========================================================
+                    // STEP 2: To confirm more, Scale detects (cradle empty check)
+                    // =========================================================
+                    else if (retStep == STEP_SCALE_CONFIRM) {
+                        float measuredWt = 0.0f;
+                        bool scaleEmpty = true;
+
+                        if (hx711Found) {
+                            measuredWt = scale.get_units(2);
+                            lastMeasuredWeightG = measuredWt;
+                            scaleEmpty = (measuredWt < 5.0f);
+                            if (initialWeightG > 10.0f) {
+                                scaleEmpty = (measuredWt < 5.0f) || (measuredWt <= initialWeightG * 0.35f);
                             }
                         }
-                    } else {
-                        clearStartTime = 0;
+
+                        bool metalClear = (metalVal == HIGH);
+
+                        if (scaleEmpty && metalClear) {
+                            logDebug("RETRIEVAL", "[Step 2/3 PASSED] Scale confirmed cradle empty (Wt: %.1f g < 5.0g, Metal: CLEAR).", measuredWt);
+                            retStep = STEP_NIR_BASELINE;
+                        } else {
+                            logWarn("RETRIEVAL", "[Step 2 FAILED] Scale/Metal still detects item (Wt: %.1f g, Metal: %d). Returning to Step 1.",
+                                    measuredWt, metalVal);
+                            retStep = STEP_PIR_PASS;
+                            pirBeamBroken = false;
+                            pirClearStart = 0;
+                        }
                     }
 
-                    vTaskDelay(pdMS_TO_TICKS(40));
+                    // =========================================================
+                    // STEP 3: Final to confirm NIR is equal to baseline/empty chute
+                    // =========================================================
+                    else if (retStep == STEP_NIR_BASELINE) {
+                        bool nirMatchesBaseline = true;
+
+                        if (spectrometerFound) {
+                            logDebug("RETRIEVAL", "Running final AS7263 NIR baseline verification...");
+                            spectrometer.enableBulb();
+                            delay(40); // 40ms incandescent bulb warmup
+                            spectrometer.takeMeasurements();
+                            spectrometer.disableBulb();
+
+                            float nirW = spectrometer.getCalibratedW();
+                            int nirR = spectrometer.getR();
+                            int nirRawW = spectrometer.getW();
+                            logDebug("RETRIEVAL", "NIR Empty Chute Baseline Check: Cal-W=%.2f, R=%d, W=%d", nirW, nirR, nirRawW);
+
+                            // Empty Chute Baseline is tightly bounded in [20.0 - 30.0] uW/cm^2 with low diffuse reflectance
+                            // Any plastic bottle produces Cal-W >= 32.0 (typically 35-65), paper produces >= 200, colored glass absorbs < 20.0
+                            if (nirW > 32.0f || nirW < 20.0f || nirR > 200 || nirRawW > 45) {
+                                nirMatchesBaseline = false;
+                                logWarn("RETRIEVAL", "[Step 3 FAILED] NIR does NOT match baseline/empty chute (Cal-W=%.2f, R=%d). Returning to Step 1.",
+                                        nirW, nirR);
+                            } else {
+                                logDebug("RETRIEVAL", "[Step 3/3 PASSED] Final NIR confirms chute equals baseline (Cal-W=%.2f uW/cm^2).", nirW);
+                            }
+                        }
+
+                        if (nirMatchesBaseline) {
+                            itemCleared = true;
+                            logDebug("RETRIEVAL", ">>> ALL 3 RETRIEVAL STEPS VERIFIED: Item cleared successfully! <<<");
+                            break;
+                        } else {
+                            retStep = STEP_PIR_PASS;
+                            pirBeamBroken = false;
+                            pirClearStart = 0;
+                        }
+                    }
+
+                    vTaskDelay(pdMS_TO_TICKS(30));
                 }
 
                 digitalWrite(PIN_LED_RED, LOW);
@@ -1466,7 +1486,15 @@ void loop() {
                 }
             }
             if (spectrometerFound && !depositCycleBusy) {
-                logDebug("NIR", "--- On-Demand AS7263 NIR Spectrometer Scan (with Bulb) ---");
+                logDebug("NIR", "--- On-Demand AS7263 NIR Spectrometer Scan (with Gate Actuation) ---");
+
+                // 1. Trigger the gate entrance servo to OPEN
+                if (pca9685Found) {
+                    setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_open_angle);
+                    gateStateEvent(true);
+                    delay(500); // Allow servo to travel to open position
+                }
+
                 spectrometer.enableBulb();
                 delay(40); // 40ms warmup for incandescent emission stability
                 spectrometer.takeMeasurements();
@@ -1480,6 +1508,13 @@ void loop() {
                 int w = spectrometer.getW();
                 int tempC = spectrometer.getTemperature();
                 NirEvaluation eval = evaluateNirSpectrum(r, s, t, u, v, w, nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max);
+
+                // 2. When done, CLOSE the gate entrance servo!
+                if (pca9685Found) {
+                    delay(250);
+                    setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
+                    gateStateEvent(false);
+                }
 
                 logDebug("NIR", "Spectral Channels: R(610nm)=%d, S(680nm)=%d, T(730nm)=%d, U(760nm)=%d, V(810nm)=%d, W(860nm)=%d | Sensor Temp=%d C",
                          r, s, t, u, v, w, tempC);
