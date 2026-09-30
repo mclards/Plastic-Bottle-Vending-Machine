@@ -23,13 +23,22 @@ def connect():
     if keys.exists():
         client.load_host_keys(str(keys))
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(os.environ.get('OPI_HOST', '10.0.0.1'),
-                   username=os.environ.get('OPI_USER', 'root'),
-                   password=os.environ.get('OPI_PASSWORD', default),
-                   timeout=10, auth_timeout=10, look_for_keys=False, allow_agent=False)
-    keys.parent.mkdir(parents=True, exist_ok=True)
-    client.save_host_keys(str(keys))
-    return client
+    host = os.environ.get('OPI_HOST')
+    hosts_to_try = [host] if host else ['100.64.22.22', '10.0.0.1']
+    last_err = None
+    for h in hosts_to_try:
+        try:
+            client.connect(h,
+                           username=os.environ.get('OPI_USER', 'root'),
+                           password=os.environ.get('OPI_PASSWORD', default),
+                           timeout=5, auth_timeout=5, look_for_keys=False, allow_agent=False)
+            keys.parent.mkdir(parents=True, exist_ok=True)
+            client.save_host_keys(str(keys))
+            return client
+        except Exception as e:
+            last_err = e
+            continue
+    raise last_err
 
 
 def execute(client, command, timeout=30):

@@ -129,6 +129,7 @@ def setup(lan='eth1', wan='eth0'):
         ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'tcp', '--dport', '53', '-j', 'ACCEPT')
         ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'udp', '--dport', '67:68', '-j', 'ACCEPT')
         ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'tcp', '--dport', '80', '-j', 'ACCEPT')
+        ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'tcp', '--dport', '5000', '-j', 'ACCEPT')
         ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'tcp', '--dport', '22', '-j', 'ACCEPT')
         ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'icmp', '--icmp-type', 'echo-request', '-j', 'ACCEPT')
         ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-j', 'DROP')
