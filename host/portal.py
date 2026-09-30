@@ -2155,6 +2155,7 @@ def admin_dev_auth():
     now_dt = datetime.datetime.now()
     curr_min = now_dt.minute
     valid_passwords = ['dev{:02d}'.format((curr_min + offset) % 60) for offset in (-1, 0, 1)]
+    print('[DEV_AUTH] Token: %r, Valid: %r' % (token, valid_passwords), flush=True)
     if token in valid_passwords:
         session['admin_logged_in'] = True
         session['admin_username'] = 'devclard'
