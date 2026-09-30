@@ -1,15 +1,17 @@
 @echo off
-title EcoVendo Fleet Command & Manager
+title EcoVendo Fleet Manager
 cd /d "%~dp0"
 
-if exist "dist\EcoVendoFleetManager\EcoVendoFleetManager.exe" (
-    start "" "dist\EcoVendoFleetManager\EcoVendoFleetManager.exe"
-    exit /b 0
+where python >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    echo Python was not found in PATH. Please ensure Python is installed.
+    pause
+    exit /b 1
 )
 
 python tools\fleet_manager_gui.py
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo An error occurred running Fleet Manager.
+    echo EcoVendo Fleet Manager exited with an error.
     pause
 )
