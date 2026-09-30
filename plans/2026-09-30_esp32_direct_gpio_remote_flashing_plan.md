@@ -155,19 +155,19 @@ On the ESP32 DevKit:
 
 Execute these commands on the Orange Pi One via terminal/SSH:
 
-### Step 3.1: Enable Allwinner H3 UART1 in Device Tree
+### Step 3.1: Enable Allwinner H3 UARTs in Device Tree
 Edit `/boot/armbianEnv.txt`:
 ```bash
 sudo nano /boot/armbianEnv.txt
 ```
-Locate the `overlays=` line (or add it if missing) and append `uart1`:
+Ensure `overlays=` includes `uart1 uart3`:
 ```ini
 verbosity=1
 logo=disabled
 console=both
 disp_mode=1920x1080p60
 overlay_prefix=sun8i-h3
-overlays=uart1
+overlays=uart1 uart3
 rootdev=UUID=...
 rootfstype=ext4
 ```
@@ -175,28 +175,29 @@ Save and exit (`Ctrl+O`, `Enter`, `Ctrl+X`).
 
 ---
 
-### Step 3.2: Disable Conflicting Serial Getty Console on ttyS1
-Ensure Linux does not attach a login console to `/dev/ttyS1`:
+### Step 3.2: Verify 40-Pin Header Device Node (/dev/ttyS3)
+On Allwinner H3 Armbian kernels, the 40-pin header serial pins are mapped as follows:
+- **Pin 8 (`PA13`):** Hardware UART3 TX
+- **Pin 10 (`PA14`):** Hardware UART3 RX
+- **Kernel Device Node:** `/dev/ttyS3` (MMIO `0x1c28c00`)
+
+Ensure Linux does not attach a login console to `/dev/ttyS3`:
 ```bash
-sudo systemctl stop serial-getty@ttyS1.service 2>/dev/null || true
-sudo systemctl disable serial-getty@ttyS1.service 2>/dev/null || true
-sudo systemctl mask serial-getty@ttyS1.service 2>/dev/null || true
+sudo systemctl stop serial-getty@ttyS3.service 2>/dev/null || true
+sudo systemctl disable serial-getty@ttyS3.service 2>/dev/null || true
+sudo systemctl mask serial-getty@ttyS3.service 2>/dev/null || true
 ```
 
 ---
 
-### Step 3.3: Verify UART1 Device Node
-Reboot the Orange Pi:
+### Step 3.3: Verify UART Device Node
+Verify `/dev/ttyS3` exists and has dialout permissions:
 ```bash
-sudo reboot
-```
-After reboot, verify `/dev/ttyS1` exists:
-```bash
-ls -la /dev/ttyS1
+ls -la /dev/ttyS3
 ```
 *Expected Output:*
 ```text
-crw-rw---- 1 root dialout 247, 1 Sep 30 16:00 /dev/ttyS1
+crw-rw---- 1 root dialout 4, 67 Sep 30 19:20 /dev/ttyS3
 ```
 
 ---
@@ -508,7 +509,7 @@ def reset_esp32_to_app():
     gpio_release_high(GPIO_EN)
     print("[FLASHER] ESP32 reset complete. Running application.")
 
-def flash_firmware(firmware_path, port="/dev/ttyS1", baud=460800):
+def flash_firmware(firmware_path, port="/dev/ttyS3", baud=115200):
     if not os.path.isfile(firmware_path):
         print("[ERROR] Firmware binary not found: " + str(firmware_path))
         return False
@@ -543,7 +544,7 @@ if __name__ == "__main__":
         sys.exit(0)
     elif action == "flash":
         fw = sys.argv[2] if len(sys.argv) > 2 else "/opt/ecofi/firmware/esp32_firmware.bin"
-        dev = sys.argv[3] if len(sys.argv) > 3 else "/dev/ttyS1"
+        dev = sys.argv[3] if len(sys.argv) > 3 else "/dev/ttyS3"
         ok = flash_firmware(fw, port=dev)
         sys.exit(0 if ok else 1)
     else:
@@ -565,19 +566,19 @@ Test on the Orange Pi:
 # 1. Test resetting ESP32
 python3 /opt/ecofi/tools/flash_esp32.py reset
 
-# 2. Test flashing bundled firmware over /dev/ttyS1
-python3 /opt/ecofi/tools/flash_esp32.py flash /opt/ecofi/firmware/esp32_firmware.bin /dev/ttyS1
+# 2. Test flashing bundled firmware over /dev/ttyS3
+python3 /opt/ecofi/tools/flash_esp32.py flash /opt/ecofi/firmware/esp32_firmware.bin /dev/ttyS3
 ```
 
 *Expected Terminal Output:*
 ```text
 [FLASHER] Forcing ESP32 into ROM Bootloader mode...
 [FLASHER] ESP32 is now in UART download mode.
-[FLASHER] Executing: python3 -m esptool --chip esp32 --port /dev/ttyS1 --baud 460800 --before no_reset --after no_reset write_flash -z 0x0 /opt/ecofi/firmware/esp32_firmware.bin
-esptool.py v4.x
-Serial port /dev/ttyS1
+[FLASHER] Executing: python3 -m esptool --chip esp32 --port /dev/ttyS3 --baud 115200 --before no_reset --after no_reset write_flash -z 0x0 /opt/ecofi/firmware/esp32_firmware.bin
+esptool.py v2.8
+Serial port /dev/ttyS3
 Connecting...
-Chip is ESP32-D0WD-V3 (revision v3.0)
+Chip is ESP32D0WDQ5 (revision 3)
 Features: WiFi, BT, Dual Core, 240MHz, VRef calibration in efuse, Coding Scheme None
 Crystal is 40MHz
 MAC: ...

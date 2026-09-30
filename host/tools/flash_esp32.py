@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 VMC ECO-VENDO ESP32 Hardware Flasher & GPIO Reset Controller
-Target: Orange Pi One (Python 3.5.3, /dev/ttyS1, PA00=BOOT, PA01=EN)
+Target: Orange Pi One (Python 3.5.3, /dev/ttyS3, PA00=BOOT, PA01=EN)
 """
 import os
 import sys
@@ -70,7 +70,7 @@ def reset_esp32_to_app():
     gpio_release_high(GPIO_EN)
     print("[FLASHER] ESP32 reset complete. Running application.")
 
-def flash_firmware(firmware_path, port="/dev/ttyS1", baud=460800):
+def flash_firmware(firmware_path, port="/dev/ttyS3", baud=115200):
     if not os.path.isfile(firmware_path):
         print("[ERROR] Firmware binary not found: " + str(firmware_path))
         return False
@@ -105,7 +105,7 @@ if __name__ == "__main__":
         sys.exit(0)
     elif action == "flash":
         fw = sys.argv[2] if len(sys.argv) > 2 else "/opt/ecofi/firmware/esp32_firmware.bin"
-        dev = sys.argv[3] if len(sys.argv) > 3 else "/dev/ttyS1"
+        dev = sys.argv[3] if len(sys.argv) > 3 else "/dev/ttyS3"
         ok = flash_firmware(fw, port=dev)
         sys.exit(0 if ok else 1)
     else:
