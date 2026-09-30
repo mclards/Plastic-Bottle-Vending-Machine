@@ -632,6 +632,15 @@ void sensorTaskCode(void* parameter) {
                     EventMsg timeoutMsg = MSG_GATE_TIMEOUT;
                     postEvent(timeoutMsg);
                 }
+
+                // Tare to 0 as well when inserting is done and entrance gate closed safely
+                vTaskDelay(pdMS_TO_TICKS(150)); // Allow entrance servo physical travel to settle
+                if (hx711Found && scale.wait_ready_timeout(200)) {
+                    scale.tare(3);
+                    lastMeasuredWeightG = 0.0f;
+                    logDebug("SCALE", "Scale tared to 0 after inserting finished / gate closed. Offset=%ld", scale.get_offset());
+                }
+
                 depositCycleBusy = false;
                 continue;
             }
@@ -794,6 +803,14 @@ void sensorTaskCode(void* parameter) {
                     postEvent(okMsg);
                     logDebug("CYCLE", "Deposit cycle successfully completed. Session bottles: %d",
                              currentSessionBottles.load());
+
+                    // Tare to 0 as well after bottle has dropped into storage bin and cradle is empty
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                    if (hx711Found && scale.wait_ready_timeout(200)) {
+                        scale.tare(3);
+                        lastMeasuredWeightG = 0.0f;
+                        logDebug("SCALE", "Scale tared to 0 after bottle drop into bin. Offset=%ld", scale.get_offset());
+                    }
                 } else {
                     logWarn("ACTUATION", "Drop TIMEOUT! Bottom IR was not cleared/triggered within %d ms. Chute jam possible!",
                             config.success_drop_tout_ms);
