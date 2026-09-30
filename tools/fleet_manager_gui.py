@@ -76,16 +76,18 @@ def get_default_ssh_password():
 class FleetManagerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("VMC ECO-VENDO — Fleet Command & Manager v1.0")
-        self.root.geometry("1100x720")
-        self.root.minsize(980, 640)
-        self.root.configure(bg="#0B132B")
+        self.root.title("VMC ECO-VENDO — Fleet Command & Manager v1.2")
+        self.root.geometry("1280x820")
+        self.root.minsize(1050, 680)
+        self.root.configure(bg="#080E1E")
 
         self.machines = []
+        self.filtered_machines = []
         self.selected_machine = None
         self.ping_cache = {}  # {host: {"online": bool, "ms": int, "last_check": float}}
         self.log_stream_thread = None
         self.log_stream_running = False
+        self.autoscroll_enabled = True
 
         self.load_fleet()
         self.setup_ui()
@@ -106,6 +108,7 @@ class FleetManagerApp:
         else:
             self.machines = list(DEFAULT_MACHINES)
             self.save_fleet()
+        self.filtered_machines = list(self.machines)
 
     def save_fleet(self):
         try:
@@ -139,178 +142,374 @@ class FleetManagerApp:
         # Configure TTK Styles
         style = ttk.Style()
         style.theme_use('clam')
-        style.configure(".", background="#0B132B", foreground="#F8FAFC", font=("Segoe UI", 9))
+        style.configure(".", background="#080E1E", foreground="#F8FAFC", font=("Segoe UI", 9))
+        
+        # Treeview styling
         style.configure("Treeview",
-                        background="#111C38",
-                        foreground="#F8FAFC",
-                        fieldbackground="#111C38",
-                        rowheight=32,
-                        font=("Segoe UI", 9))
+                        background="#0F172A",
+                        foreground="#F1F5F9",
+                        fieldbackground="#0F172A",
+                        rowheight=34,
+                        font=("Segoe UI", 9),
+                        borderwidth=0)
         style.map("Treeview",
                   background=[('selected', '#1E3A8A')],
                   foreground=[('selected', '#FFFFFF')])
         style.configure("Treeview.Heading",
-                        background="#1C2D54",
+                        background="#1E293B",
                         foreground="#38BDF8",
                         font=("Segoe UI", 9, "bold"),
-                        relief="flat")
-        style.map("Treeview.Heading", background=[('active', '#253C70')])
+                        relief="flat",
+                        padding=6)
+        style.map("Treeview.Heading", background=[('active', '#334155')])
 
-        # 1. Top Header Bar
-        header = tk.Frame(self.root, bg="#111C38", height=60, padx=20, pady=10)
-        header.pack(fill="x")
+        # Scrollbar styling
+        style.configure("Vertical.TScrollbar", background="#1E293B", troughcolor="#0F172A", borderwidth=0, arrowsize=12)
 
-        title_box = tk.Frame(header, bg="#111C38")
-        title_box.pack(side="left")
+        # ---------------------------------------------------------
+        # 1. TOP HEADER & TELEMETRY BAR
+        # ---------------------------------------------------------
+        header = tk.Frame(self.root, bg="#0F172A", height=70, padx=20, pady=10, relief="flat")
+        header.pack(fill="x", side="top")
 
-        tk.Label(title_box, text="⚡ VMC ECO-VENDO FLEET COMMAND",
-                 font=("Segoe UI", 14, "bold"), fg="#10B981", bg="#111C38").pack(anchor="w")
-        tk.Label(title_box, text="Remote OTA Updates · Diagnostics · ESP32 Flashing · Master Dev Access",
-                 font=("Segoe UI", 9), fg="#94A3B8", bg="#111C38").pack(anchor="w")
+        # Left branding
+        title_box = tk.Frame(header, bg="#0F172A")
+        title_box.pack(side="left", fill="y")
+
+        brand_row = tk.Frame(title_box, bg="#0F172A")
+        brand_row.pack(anchor="w")
+
+        tk.Label(brand_row, text="⚡", font=("Segoe UI Emoji", 14), fg="#10B981", bg="#0F172A").pack(side="left", padx=(0, 6))
+        tk.Label(brand_row, text="ECO-VENDO", font=("Segoe UI", 13, "bold"), fg="#10B981", bg="#0F172A").pack(side="left")
+        tk.Label(brand_row, text="FLEET COMMAND", font=("Segoe UI", 13, "bold"), fg="#38BDF8", bg="#0F172A").pack(side="left", padx=(6, 8))
+
+        badge_ver = tk.Label(brand_row, text=" v1.2 PRO ", font=("Segoe UI", 8, "bold"), fg="#93C5FD", bg="#1E3A8A", padx=4, pady=1)
+        badge_ver.pack(side="left")
+
+        tk.Label(title_box, text="Remote OTA Updates • Hardware Flashing • Direct Diagnostics • Instant Dev Access",
+                 font=("Segoe UI", 8), fg="#64748B", bg="#0F172A").pack(anchor="w", pady=(2, 0))
+
+        # Center Fleet Telemetry Counters
+        self.stats_box = tk.Frame(header, bg="#0F172A")
+        self.stats_box.pack(side="left", padx=40)
+
+        self.lbl_stats_total = tk.Label(self.stats_box, text="TOTAL: 0", font=("Segoe UI", 8, "bold"), fg="#94A3B8", bg="#1E293B", padx=8, pady=3)
+        self.lbl_stats_total.pack(side="left", padx=3)
+        self.lbl_stats_online = tk.Label(self.stats_box, text="ONLINE: 0", font=("Segoe UI", 8, "bold"), fg="#34D399", bg="#064E3B", padx=8, pady=3)
+        self.lbl_stats_online.pack(side="left", padx=3)
+        self.lbl_stats_offline = tk.Label(self.stats_box, text="OFFLINE: 0", font=("Segoe UI", 8, "bold"), fg="#F87171", bg="#4C0519", padx=8, pady=3)
+        self.lbl_stats_offline.pack(side="left", padx=3)
 
         # Dynamic Dev Password Widget (Top Right)
-        self.dev_cred_box = tk.Frame(header, bg="#1C2D54", padx=12, pady=6, relief="ridge", bd=1)
+        self.dev_cred_box = tk.Frame(header, bg="#1E293B", padx=12, pady=6, relief="flat", highlightbackground="#334155", highlightthickness=1)
         self.dev_cred_box.pack(side="right")
 
-        tk.Label(self.dev_cred_box, text="MASTER DEV CREDENTIALS:",
-                 font=("Segoe UI", 8, "bold"), fg="#38BDF8", bg="#1C2D54").pack(anchor="e")
-        self.lbl_dev_creds = tk.Label(self.dev_cred_box, text="User: devclard | Pass: dev--",
-                                      font=("Consolas", 10, "bold"), fg="#FCD34D", bg="#1C2D54")
-        self.lbl_dev_creds.pack(anchor="e")
+        cred_top_row = tk.Frame(self.dev_cred_box, bg="#1E293B")
+        cred_top_row.pack(fill="x")
+        tk.Label(cred_top_row, text="MASTER REMOTE BYPASS", font=("Segoe UI", 7, "bold"), fg="#38BDF8", bg="#1E293B").pack(side="left")
+        self.lbl_sec_badge = tk.Label(cred_top_row, text="--s", font=("Segoe UI", 7, "bold"), fg="#FCD34D", bg="#1E293B")
+        self.lbl_sec_badge.pack(side="right")
 
-        # 2. Main Paned Layout
-        main_pane = tk.PanedWindow(self.root, orient="horizontal", bg="#0B132B", bd=0, sashwidth=6)
-        main_pane.pack(fill="both", expand=True, padx=14, pady=10)
+        cred_val_row = tk.Frame(self.dev_cred_box, bg="#1E293B")
+        cred_val_row.pack(fill="x", pady=(2, 4))
+        tk.Label(cred_val_row, text="User: ", font=("Segoe UI", 8), fg="#94A3B8", bg="#1E293B").pack(side="left")
+        tk.Label(cred_val_row, text="devclard", font=("Consolas", 9, "bold"), fg="#38BDF8", bg="#1E293B").pack(side="left", padx=(0, 8))
+        tk.Label(cred_val_row, text="Pass: ", font=("Segoe UI", 8), fg="#94A3B8", bg="#1E293B").pack(side="left")
+        self.lbl_dyn_pass = tk.Label(cred_val_row, text="dev--", font=("Consolas", 10, "bold"), fg="#FCD34D", bg="#1E293B")
+        self.lbl_dyn_pass.pack(side="left")
 
-        # LEFT PANE: Machine Roster
-        left_frame = tk.Frame(main_pane, bg="#111C38", relief="flat", padx=10, pady=10)
-        main_pane.add(left_frame, minsize=380, width=440)
+        cred_btn_row = tk.Frame(self.dev_cred_box, bg="#1E293B")
+        cred_btn_row.pack(fill="x")
+        self.btn_copy_pass = tk.Button(cred_btn_row, text="📋 Copy Pass", bg="#334155", fg="#FFFFFF",
+                                       font=("Segoe UI", 7, "bold"), relief="flat", padx=6, pady=1, cursor="hand2",
+                                       command=self.copy_current_password)
+        self.btn_copy_pass.pack(side="left", padx=(0, 4))
 
-        # Roster Header & Buttons
-        roster_top = tk.Frame(left_frame, bg="#111C38")
-        roster_top.pack(fill="x", pady=(0, 8))
+        self.btn_copy_link = tk.Button(cred_btn_row, text="🔗 Copy Magic Link", bg="#0284C7", fg="#FFFFFF",
+                                       font=("Segoe UI", 7, "bold"), relief="flat", padx=6, pady=1, cursor="hand2",
+                                       command=self.copy_magic_auth_link)
+        self.btn_copy_link.pack(side="left")
 
-        tk.Label(roster_top, text="MACHINES ROSTER",
-                 font=("Segoe UI", 10, "bold"), fg="#F8FAFC", bg="#111C38").pack(side="left")
+        # ---------------------------------------------------------
+        # 2. MAIN WORKSPACE PANES (EXPANDS FULLY TO EDGES)
+        # ---------------------------------------------------------
+        workspace = tk.Frame(self.root, bg="#080E1E", padx=12, pady=10)
+        workspace.pack(fill="both", expand=True)
 
-        btn_box = tk.Frame(roster_top, bg="#111C38")
-        btn_box.pack(side="right")
+        workspace.columnconfigure(0, weight=0, minsize=380)  # Left sidebar
+        workspace.columnconfigure(1, weight=1)               # Right main panel
+        workspace.rowconfigure(0, weight=1)
 
-        tk.Button(btn_box, text="+ Add", bg="#059669", fg="#FFFFFF", font=("Segoe UI", 8, "bold"),
-                  relief="flat", padx=6, pady=2, command=self.add_machine_dialog).pack(side="left", padx=2)
-        tk.Button(btn_box, text="✏️ Edit", bg="#2563EB", fg="#FFFFFF", font=("Segoe UI", 8, "bold"),
-                  relief="flat", padx=6, pady=2, command=self.edit_machine_dialog).pack(side="left", padx=2)
-        tk.Button(btn_box, text="🗑️ Del", bg="#DC2626", fg="#FFFFFF", font=("Segoe UI", 8, "bold"),
-                  relief="flat", padx=6, pady=2, command=self.delete_machine_action).pack(side="left", padx=2)
+        # ---------------------------------------------------------
+        # LEFT SIDEBAR: FLEET ROSTER & SEARCH
+        # ---------------------------------------------------------
+        left_card = tk.Frame(workspace, bg="#0F172A", relief="flat", padx=12, pady=12,
+                             highlightbackground="#1E293B", highlightthickness=1)
+        left_card.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
 
-        # Treeview for Machines
-        tree_frame = tk.Frame(left_frame, bg="#111C38")
-        tree_frame.pack(fill="both", expand=True)
+        # Title & Action Buttons Row
+        roster_header = tk.Frame(left_card, bg="#0F172A")
+        roster_header.pack(fill="x", pady=(0, 8))
+
+        tk.Label(roster_header, text="FLEET ROSTER", font=("Segoe UI", 10, "bold"), fg="#E2E8F0", bg="#0F172A").pack(side="left")
+
+        roster_btns = tk.Frame(roster_header, bg="#0F172A")
+        roster_btns.pack(side="right")
+
+        self._create_btn(roster_btns, "+ Add", "#059669", "#10B981", self.add_machine_dialog, padx=6, pady=2, font=("Segoe UI", 8, "bold")).pack(side="left", padx=2)
+        self._create_btn(roster_btns, "✏️ Edit", "#334155", "#475569", self.edit_machine_dialog, padx=6, pady=2, font=("Segoe UI", 8, "bold")).pack(side="left", padx=2)
+        self._create_btn(roster_btns, "🗑️ Del", "#7F1D1D", "#991B1B", self.delete_machine_action, padx=6, pady=2, font=("Segoe UI", 8, "bold")).pack(side="left", padx=2)
+
+        # Search Bar
+        search_frame = tk.Frame(left_card, bg="#1E293B", padx=6, pady=4, relief="flat")
+        search_frame.pack(fill="x", pady=(0, 8))
+
+        tk.Label(search_frame, text="🔍", font=("Segoe UI Emoji", 8), fg="#94A3B8", bg="#1E293B").pack(side="left", padx=(2, 4))
+        self.entry_search = tk.Entry(search_frame, bg="#1E293B", fg="#F8FAFC", font=("Segoe UI", 9),
+                                     insertbackground="#FFFFFF", relief="flat")
+        self.entry_search.pack(side="left", fill="x", expand=True)
+        self.entry_search.insert(0, "")
+        self.entry_search.bind("<KeyRelease>", self.filter_machines)
+
+        # Treeview Roster Table
+        tree_container = tk.Frame(left_card, bg="#0F172A")
+        tree_container.pack(fill="both", expand=True)
 
         cols = ("status", "name", "host", "latency")
-        self.tree = ttk.Treeview(tree_frame, columns=cols, show="headings", selectmode="browse")
+        self.tree = ttk.Treeview(tree_container, columns=cols, show="headings", selectmode="browse")
         self.tree.heading("status", text="Status")
         self.tree.heading("name", text="Machine Name")
-        self.tree.heading("host", text="Host / Tailscale IP")
+        self.tree.heading("host", text="Host / IP")
         self.tree.heading("latency", text="Ping")
 
-        self.tree.column("status", width=65, anchor="center")
-        self.tree.column("name", width=160, anchor="w")
-        self.tree.column("host", width=125, anchor="w")
+        self.tree.column("status", width=75, anchor="center")
+        self.tree.column("name", width=145, anchor="w")
+        self.tree.column("host", width=110, anchor="w")
         self.tree.column("latency", width=60, anchor="center")
 
-        tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        # Color tags for row status
+        self.tree.tag_configure('online', foreground='#34D399')
+        self.tree.tag_configure('offline', foreground='#FB7185')
+
+        tree_scroll = ttk.Scrollbar(tree_container, orient="vertical", command=self.tree.yview, style="Vertical.TScrollbar")
         self.tree.configure(yscrollcommand=tree_scroll.set)
         self.tree.pack(side="left", fill="both", expand=True)
         tree_scroll.pack(side="right", fill="y")
         self.tree.bind("<<TreeviewSelect>>", self.on_machine_selected)
 
-        # Refresh button under tree
-        refresh_bar = tk.Frame(left_frame, bg="#111C38", pady=6)
-        refresh_bar.pack(fill="x")
-        tk.Button(refresh_bar, text="🔄 Refresh All Pings", bg="#334155", fg="#F8FAFC",
-                  font=("Segoe UI", 8), relief="flat", command=self.trigger_all_pings).pack(side="left")
+        # Bottom Scan & Roster Meta Bar
+        roster_bottom = tk.Frame(left_card, bg="#0F172A", pady=6)
+        roster_bottom.pack(fill="x")
 
-        # RIGHT PANE: Machine Controls & Log Console
-        right_frame = tk.Frame(main_pane, bg="#0B132B")
-        main_pane.add(right_frame, minsize=520)
+        self._create_btn(roster_bottom, "🔄 Scan All Pings Now", "#1E293B", "#334155", self.trigger_all_pings, padx=8, pady=3, font=("Segoe UI", 8)).pack(side="left")
+        self.lbl_last_scan = tk.Label(roster_bottom, text="Auto-ping: 8s", font=("Segoe UI", 7), fg="#64748B", bg="#0F172A")
+        self.lbl_last_scan.pack(side="right", pady=4)
 
-        # Details Header Card
-        self.detail_card = tk.Frame(right_frame, bg="#111C38", padx=16, pady=12, relief="flat")
-        self.detail_card.pack(fill="x", pady=(0, 10))
+        # ---------------------------------------------------------
+        # RIGHT PANEL: MACHINE HERO CARD + OPERATIONS + TERMINAL
+        # ---------------------------------------------------------
+        right_panel = tk.Frame(workspace, bg="#080E1E")
+        right_panel.grid(row=0, column=1, sticky="nsew")
 
-        self.lbl_selected_title = tk.Label(self.detail_card, text="No Machine Selected",
-                                           font=("Segoe UI", 12, "bold"), fg="#F8FAFC", bg="#111C38")
-        self.lbl_selected_title.pack(anchor="w")
+        right_panel.columnconfigure(0, weight=1)
+        right_panel.rowconfigure(0, weight=0)  # Hero card
+        right_panel.rowconfigure(1, weight=0)  # Operations control center
+        right_panel.rowconfigure(2, weight=1)  # Terminal console (expands 100%)
 
-        self.lbl_selected_meta = tk.Label(self.detail_card, text="Select a machine from the left roster to perform maintenance.",
-                                          font=("Segoe UI", 9), fg="#94A3B8", bg="#111C38")
-        self.lbl_selected_meta.pack(anchor="w", pady=(2, 0))
+        # ---------------------------------------------------------
+        # 2A. MACHINE HERO CARD
+        # ---------------------------------------------------------
+        self.hero_card = tk.Frame(right_panel, bg="#0F172A", padx=16, pady=12, relief="flat",
+                                  highlightbackground="#1E293B", highlightthickness=1)
+        self.hero_card.grid(row=0, column=0, sticky="ew", pady=(0, 10))
 
-        # Command Action Buttons Grid
-        action_grid = tk.LabelFrame(right_frame, text=" Remote Operations & Diagnostics ",
-                                    bg="#111C38", fg="#38BDF8", font=("Segoe UI", 9, "bold"),
-                                    padx=12, pady=10)
-        action_grid.pack(fill="x", pady=(0, 10))
+        hero_top = tk.Frame(self.hero_card, bg="#0F172A")
+        hero_top.pack(fill="x")
 
-        # Row 1: Access & Shell
-        r1 = tk.Frame(action_grid, bg="#111C38")
-        r1.pack(fill="x", pady=3)
-        tk.Button(r1, text="🌐 Open Web Admin (Auto-Login)", bg="#2563EB", fg="#FFFFFF",
-                  font=("Segoe UI", 9, "bold"), padx=10, pady=4, relief="flat",
-                  command=self.open_web_admin_action).pack(side="left", padx=3)
-        tk.Button(r1, text="💻 Open SSH Terminal", bg="#0284C7", fg="#FFFFFF",
-                  font=("Segoe UI", 9, "bold"), padx=10, pady=4, relief="flat",
-                  command=self.open_ssh_terminal_action).pack(side="left", padx=3)
-        tk.Button(r1, text="💾 Pull DB Backup", bg="#059669", fg="#FFFFFF",
-                  font=("Segoe UI", 9, "bold"), padx=10, pady=4, relief="flat",
-                  command=self.pull_db_backup_action).pack(side="left", padx=3)
+        self.lbl_hero_name = tk.Label(hero_top, text="No Machine Selected",
+                                      font=("Segoe UI", 12, "bold"), fg="#FFFFFF", bg="#0F172A")
+        self.lbl_hero_name.pack(side="left")
 
-        # Row 2: Maintenance & Recoveries
-        r2 = tk.Frame(action_grid, bg="#111C38")
-        r2.pack(fill="x", pady=3)
-        tk.Button(r2, text="🚀 Push Host Update (SFTP Deploy)", bg="#7C3AED", fg="#FFFFFF",
-                  font=("Segoe UI", 9, "bold"), padx=10, pady=4, relief="flat",
-                  command=self.push_host_update_action).pack(side="left", padx=3)
-        tk.Button(r2, text="⚡ Flash ESP32 (.bin)", bg="#D97706", fg="#FFFFFF",
-                  font=("Segoe UI", 9, "bold"), padx=10, pady=4, relief="flat",
-                  command=self.flash_esp32_action).pack(side="left", padx=3)
-        tk.Button(r2, text="🔌 ESP32 GPIO Reset", bg="#B45309", fg="#FFFFFF",
-                  font=("Segoe UI", 9, "bold"), padx=10, pady=4, relief="flat",
-                  command=self.esp32_gpio_reset_action).pack(side="left", padx=3)
+        self.lbl_hero_badge = tk.Label(hero_top, text="● SELECT A TARGET",
+                                       font=("Segoe UI", 8, "bold"), fg="#94A3B8", bg="#1E293B", padx=8, pady=2)
+        self.lbl_hero_badge.pack(side="left", padx=(10, 0))
 
-        # Row 3: Admin & Licensing
-        r3 = tk.Frame(action_grid, bg="#111C38")
-        r3.pack(fill="x", pady=3)
-        tk.Button(r3, text="🔄 Reboot Machine", bg="#DC2626", fg="#FFFFFF",
-                  font=("Segoe UI", 8, "bold"), padx=8, pady=3, relief="flat",
-                  command=self.reboot_machine_action).pack(side="left", padx=3)
-        tk.Button(r3, text="🔑 Reset Owner Password", bg="#991B1B", fg="#FFFFFF",
-                  font=("Segoe UI", 8, "bold"), padx=8, pady=3, relief="flat",
-                  command=self.reset_owner_password_action).pack(side="left", padx=3)
-        tk.Button(r3, text="📜 Stream Live Journal Logs", bg="#334155", fg="#FFFFFF",
-                  font=("Segoe UI", 8, "bold"), padx=8, pady=3, relief="flat",
-                  command=self.toggle_live_logs_action).pack(side="left", padx=3)
-        tk.Button(r3, text="🗝️ Issue License Key", bg="#0D9488", fg="#FFFFFF",
-                  font=("Segoe UI", 8, "bold"), padx=8, pady=3, relief="flat",
-                  command=self.issue_license_action).pack(side="left", padx=3)
+        hero_quick_actions = tk.Frame(hero_top, bg="#0F172A")
+        hero_quick_actions.pack(side="right")
 
-        # Embedded Console Output / Log Stream Box
-        console_frame = tk.LabelFrame(right_frame, text=" Live Terminal & Deployment Console ",
-                                      bg="#111C38", fg="#38BDF8", font=("Segoe UI", 9, "bold"),
-                                      padx=10, pady=8)
-        console_frame.pack(fill="both", expand=True)
+        self.btn_quick_copy_ip = self._create_btn(hero_quick_actions, "📋 Copy IP", "#1E293B", "#334155",
+                                                  self.copy_target_ip, padx=6, pady=2, font=("Segoe UI", 8))
+        self.btn_quick_copy_ip.pack(side="left", padx=2)
 
-        self.txt_console = tk.Text(console_frame, bg="#050B14", fg="#A7F3D0",
-                                   font=("Consolas", 9), insertbackground="#FFFFFF",
-                                   relief="flat", wrap="word")
-        console_scroll = ttk.Scrollbar(console_frame, orient="vertical", command=self.txt_console.yview)
+        self.btn_quick_browser = self._create_btn(hero_quick_actions, "🌐 Open Browser", "#2563EB", "#3B82F6",
+                                                  self.open_web_admin_action, padx=8, pady=2, font=("Segoe UI", 8, "bold"))
+        self.btn_quick_browser.pack(side="left", padx=2)
+
+        # Meta tags row
+        self.hero_meta_frame = tk.Frame(self.hero_card, bg="#0F172A")
+        self.hero_meta_frame.pack(fill="x", pady=(6, 0))
+
+        self.lbl_hero_ip = tk.Label(self.hero_meta_frame, text="Host: --", font=("Segoe UI", 8), fg="#38BDF8", bg="#0F172A")
+        self.lbl_hero_ip.pack(side="left", padx=(0, 14))
+
+        self.lbl_hero_loc = tk.Label(self.hero_meta_frame, text="Location: --", font=("Segoe UI", 8), fg="#94A3B8", bg="#0F172A")
+        self.lbl_hero_loc.pack(side="left", padx=(0, 14))
+
+        self.lbl_hero_notes = tk.Label(self.hero_meta_frame, text="Notes: Select a machine from the left roster to begin.",
+                                       font=("Segoe UI", 8), fg="#64748B", bg="#0F172A")
+        self.lbl_hero_notes.pack(side="left", fill="x", expand=True)
+
+        # ---------------------------------------------------------
+        # 2B. REMOTE OPERATIONS & DIAGNOSTICS CENTER
+        # ---------------------------------------------------------
+        ops_card = tk.Frame(right_panel, bg="#0F172A", padx=14, pady=10, relief="flat",
+                            highlightbackground="#1E293B", highlightthickness=1)
+        ops_card.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+
+        ops_card.columnconfigure(0, weight=1)
+        ops_card.columnconfigure(1, weight=1)
+        ops_card.columnconfigure(2, weight=1)
+
+        # Category 1: Access & Shell
+        cat1 = tk.Frame(ops_card, bg="#0F172A")
+        cat1.grid(row=0, column=0, sticky="nsew", padx=4)
+        tk.Label(cat1, text="REMOTE ACCESS & SHELL", font=("Segoe UI", 8, "bold"), fg="#38BDF8", bg="#0F172A").pack(anchor="w", pady=(0, 4))
+
+        self._create_btn(cat1, "🌐 Web Admin (Zero-Click Dev Auth)", "#1D4ED8", "#2563EB",
+                         self.open_web_admin_action, padx=8, pady=5, font=("Segoe UI", 8, "bold")).pack(fill="x", pady=2)
+        self._create_btn(cat1, "💻 Open Native SSH Terminal", "#0369A1", "#0284C7",
+                         self.open_ssh_terminal_action, padx=8, pady=5, font=("Segoe UI", 8, "bold")).pack(fill="x", pady=2)
+        self._create_btn(cat1, "💾 Pull DB Backup to Disk", "#047857", "#059669",
+                         self.pull_db_backup_action, padx=8, pady=5, font=("Segoe UI", 8, "bold")).pack(fill="x", pady=2)
+
+        # Category 2: Firmware & Deployment
+        cat2 = tk.Frame(ops_card, bg="#0F172A")
+        cat2.grid(row=0, column=1, sticky="nsew", padx=4)
+        tk.Label(cat2, text="FIRMWARE & DEPLOYMENT", font=("Segoe UI", 8, "bold"), fg="#A78BFA", bg="#0F172A").pack(anchor="w", pady=(0, 4))
+
+        self._create_btn(cat2, "🚀 Deploy Host OTA (SFTP)", "#6D28D9", "#7C3AED",
+                         self.push_host_update_action, padx=8, pady=5, font=("Segoe UI", 8, "bold")).pack(fill="x", pady=2)
+        self._create_btn(cat2, "⚡ Flash ESP32 Firmware (.bin)", "#B45309", "#D97706",
+                         self.flash_esp32_action, padx=8, pady=5, font=("Segoe UI", 8, "bold")).pack(fill="x", pady=2)
+        self._create_btn(cat2, "🔌 Pulse ESP32 Reset (GPIO 1)", "#C2410C", "#EA580C",
+                         self.esp32_gpio_reset_action, padx=8, pady=5, font=("Segoe UI", 8, "bold")).pack(fill="x", pady=2)
+
+        # Category 3: System & Security Management
+        cat3 = tk.Frame(ops_card, bg="#0F172A")
+        cat3.grid(row=0, column=2, sticky="nsew", padx=4)
+        tk.Label(cat3, text="SYSTEM & SECURITY MGMT", font=("Segoe UI", 8, "bold"), fg="#F43F5E", bg="#0F172A").pack(anchor="w", pady=(0, 4))
+
+        btn_row_m1 = tk.Frame(cat3, bg="#0F172A")
+        btn_row_m1.pack(fill="x", pady=2)
+        self._create_btn(btn_row_m1, "🔄 Reboot Machine", "#B91C1C", "#DC2626",
+                         self.reboot_machine_action, padx=6, pady=5, font=("Segoe UI", 8, "bold")).pack(side="left", fill="x", expand=True, padx=(0, 2))
+        self._create_btn(btn_row_m1, "🔑 Reset Owner Pass", "#881337", "#9F1239",
+                         self.reset_owner_password_action, padx=6, pady=5, font=("Segoe UI", 8, "bold")).pack(side="left", fill="x", expand=True, padx=(2, 0))
+
+        self._create_btn(cat3, "🗝️ Issue License Key (HWID)", "#0F766E", "#0D9488",
+                         self.issue_license_action, padx=8, pady=5, font=("Segoe UI", 8, "bold")).pack(fill="x", pady=2)
+        self.btn_live_logs = self._create_btn(cat3, "📜 Stream Live Journal Logs", "#334155", "#475569",
+                                              self.toggle_live_logs_action, padx=8, pady=5, font=("Segoe UI", 8, "bold"))
+        self.btn_live_logs.pack(fill="x", pady=2)
+
+        # ---------------------------------------------------------
+        # 2C. LIVE TERMINAL & DEPLOYMENT CONSOLE (100% FILL)
+        # ---------------------------------------------------------
+        console_container = tk.Frame(right_panel, bg="#0F172A", relief="flat", padx=10, pady=8,
+                                     highlightbackground="#1E293B", highlightthickness=1)
+        console_container.grid(row=2, column=0, sticky="nsew")
+
+        console_container.columnconfigure(0, weight=1)
+        console_container.rowconfigure(0, weight=0)  # Toolbar
+        console_container.rowconfigure(1, weight=1)  # Text output
+
+        # Console Header Toolbar
+        c_tool_row = tk.Frame(console_container, bg="#0F172A")
+        c_tool_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+
+        tk.Label(c_tool_row, text="🖥️ LIVE TERMINAL & DIAGNOSTIC CONSOLE",
+                 font=("Segoe UI", 8, "bold"), fg="#38BDF8", bg="#0F172A").pack(side="left")
+
+        # Quick SSH Diagnostics buttons on the right of toolbar
+        c_actions = tk.Frame(c_tool_row, bg="#0F172A")
+        c_actions.pack(side="right")
+
+        self._create_btn(c_actions, "🩺 Service Status", "#1E293B", "#334155",
+                         lambda: self.run_quick_ssh("systemctl status ecofi_portal.service --no-pager", "SERVICE STATUS"),
+                         padx=6, pady=1, font=("Segoe UI", 7, "bold")).pack(side="left", padx=2)
+
+        self._create_btn(c_actions, "📊 Uptime & Load", "#1E293B", "#334155",
+                         lambda: self.run_quick_ssh("uptime", "UPTIME"),
+                         padx=6, pady=1, font=("Segoe UI", 7)).pack(side="left", padx=2)
+
+        self._create_btn(c_actions, "🧠 Memory", "#1E293B", "#334155",
+                         lambda: self.run_quick_ssh("free -h", "RAM USAGE"),
+                         padx=6, pady=1, font=("Segoe UI", 7)).pack(side="left", padx=2)
+
+        self._create_btn(c_actions, "💾 Disk", "#1E293B", "#334155",
+                         lambda: self.run_quick_ssh("df -h /", "DISK USAGE"),
+                         padx=6, pady=1, font=("Segoe UI", 7)).pack(side="left", padx=2)
+
+        self._create_btn(c_actions, "🌐 Tailscale", "#1E293B", "#334155",
+                         lambda: self.run_quick_ssh("tailscale status", "TAILSCALE STATUS"),
+                         padx=6, pady=1, font=("Segoe UI", 7)).pack(side="left", padx=2)
+
+        self.btn_autoscroll = self._create_btn(c_actions, "Auto-scroll: ON", "#065F46", "#047857",
+                                               self.toggle_autoscroll, padx=6, pady=1, font=("Segoe UI", 7))
+        self.btn_autoscroll.pack(side="left", padx=2)
+
+        self._create_btn(c_actions, "📋 Copy", "#334155", "#475569",
+                         self.copy_console_logs, padx=6, pady=1, font=("Segoe UI", 7)).pack(side="left", padx=2)
+
+        self._create_btn(c_actions, "🧹 Clear", "#334155", "#475569",
+                         self.clear_console, padx=6, pady=1, font=("Segoe UI", 7)).pack(side="left", padx=2)
+
+        # Embedded Console Output Text
+        c_text_box = tk.Frame(console_container, bg="#050811")
+        c_text_box.grid(row=1, column=0, sticky="nsew")
+
+        self.txt_console = tk.Text(c_text_box, bg="#050811", fg="#E2E8F0",
+                                   font=("Consolas", 10), insertbackground="#38BDF8",
+                                   relief="flat", wrap="word", padx=8, pady=8)
+        
+        # Tags for colored console log output
+        self.txt_console.tag_configure("info", foreground="#38BDF8")
+        self.txt_console.tag_configure("success", foreground="#34D399", font=("Consolas", 10, "bold"))
+        self.txt_console.tag_configure("warn", foreground="#FCD34D")
+        self.txt_console.tag_configure("error", foreground="#F87171", font=("Consolas", 10, "bold"))
+        self.txt_console.tag_configure("dim", foreground="#64748B")
+        self.txt_console.tag_configure("cmd", foreground="#A78BFA", font=("Consolas", 10, "bold"))
+
+        console_scroll = ttk.Scrollbar(c_text_box, orient="vertical", command=self.txt_console.yview, style="Vertical.TScrollbar")
         self.txt_console.configure(yscrollcommand=console_scroll.set)
         self.txt_console.pack(side="left", fill="both", expand=True)
         console_scroll.pack(side="right", fill="y")
 
-        self.log_console("System initialized. EcoVendo Fleet Manager ready.\n")
+        self.log_console("╔══════════════════════════════════════════════════════════════════════════════════════╗\n", "dim")
+        self.log_console("║   ECO-VENDO FLEET COMMAND & TELEMETRY STATION INITIALIZED (v1.2 PRO)                 ║\n", "info")
+        self.log_console("╚══════════════════════════════════════════════════════════════════════════════════════╝\n\n", "dim")
+        self.log_console("[INIT] Loaded {} machines into fleet roster.\n".format(len(self.machines)), "success")
+        self.log_console("[INFO] Ready. Select a machine or invoke an action above.\n\n", "info")
+
         self.refresh_roster_table()
+        # Auto-select the first machine if available
+        if self.machines:
+            first_id = self.machines[0]["id"]
+            for item in self.tree.get_children():
+                if self.tree.item(item, "tags") == (first_id,):
+                    self.tree.selection_set(item)
+                    self.on_machine_selected(None)
+                    break
+
+    # -------------------------------------------------------------
+    # Helper: Polished Hoverable Buttons
+    # -------------------------------------------------------------
+    def _create_btn(self, parent, text, bg_color, hover_color, command, **kwargs):
+        btn = tk.Button(parent, text=text, bg=bg_color, fg="#FFFFFF", relief="flat",
+                        cursor="hand2", command=command, **kwargs)
+        btn.bind("<Enter>", lambda e, b=btn, c=hover_color: b.configure(bg=c))
+        btn.bind("<Leave>", lambda e, b=btn, c=bg_color: b.configure(bg=c))
+        return btn
 
     # -------------------------------------------------------------
     # Clock & Dynamic Dev Password Calculator
@@ -322,23 +521,75 @@ class FleetManagerApp:
             sec = now.second
             passcode = "dev{:02d}".format(mm)
             sec_left = 60 - sec
-            self.lbl_dev_creds.configure(
-                text="User: devclard  |  Pass: {}  ({}s left)".format(passcode, sec_left)
-            )
+
+            self.lbl_dyn_pass.configure(text=passcode)
+            self.lbl_sec_badge.configure(text="{}s left".format(sec_left))
             self.root.after(1000, update)
         update()
 
     def get_current_dev_password(self):
         return "dev{:02d}".format(datetime.datetime.now().minute)
 
+    def copy_current_password(self):
+        pw = self.get_current_dev_password()
+        self.root.clipboard_clear()
+        self.root.clipboard_append(pw)
+        self.btn_copy_pass.configure(text="✅ Copied!", bg="#059669")
+        self.root.after(1500, lambda: self.btn_copy_pass.configure(text="📋 Copy Pass", bg="#334155"))
+        self.log_console("[DEV] Master password '{}' copied to clipboard.\n".format(pw), "info")
+
+    def copy_magic_auth_link(self):
+        m = self.selected_machine or (self.machines[0] if self.machines else None)
+        if not m:
+            messagebox.showinfo("Select Machine", "Please select a machine first.")
+            return
+        passcode = self.get_current_dev_password()
+        url = "http://{}/admin/dev_auth?token={}".format(m['host'], passcode)
+        self.root.clipboard_clear()
+        self.root.clipboard_append(url)
+        self.btn_copy_link.configure(text="✅ URL Copied!", bg="#059669")
+        self.root.after(1500, lambda: self.btn_copy_link.configure(text="🔗 Copy Magic Link", bg="#0284C7"))
+        self.log_console("[DEV] Direct auto-login URL copied: {}\n".format(url), "info")
+
+    def copy_target_ip(self):
+        if not self.selected_machine:
+            return
+        ip = self.selected_machine.get('host', '')
+        self.root.clipboard_clear()
+        self.root.clipboard_append(ip)
+        self.btn_quick_copy_ip.configure(text="✅ Copied!", bg="#059669")
+        self.root.after(1500, lambda: self.btn_quick_copy_ip.configure(text="📋 Copy IP", bg="#1E293B"))
+
     # -------------------------------------------------------------
-    # Console Logger
+    # Console Logger & Helpers
     # -------------------------------------------------------------
-    def log_console(self, text, color=None):
+    def log_console(self, text, tag=None):
         def append():
-            self.txt_console.insert("end", text)
-            self.txt_console.see("end")
+            if tag:
+                self.txt_console.insert("end", text, tag)
+            else:
+                self.txt_console.insert("end", text)
+            if self.autoscroll_enabled:
+                self.txt_console.see("end")
         self.root.after(0, append)
+
+    def clear_console(self):
+        self.txt_console.delete("1.0", "end")
+        self.log_console("[CONSOLE] Buffer cleared.\n", "dim")
+
+    def copy_console_logs(self):
+        content = self.txt_console.get("1.0", "end")
+        self.root.clipboard_clear()
+        self.root.clipboard_append(content)
+        self.log_console("[CONSOLE] All terminal logs copied to clipboard.\n", "info")
+
+    def toggle_autoscroll(self):
+        self.autoscroll_enabled = not self.autoscroll_enabled
+        if self.autoscroll_enabled:
+            self.btn_autoscroll.configure(text="Auto-scroll: ON", bg="#065F46")
+            self.txt_console.see("end")
+        else:
+            self.btn_autoscroll.configure(text="Auto-scroll: OFF", bg="#334155")
 
     # -------------------------------------------------------------
     # Background Ping Daemon
@@ -355,10 +606,11 @@ class FleetManagerApp:
                     continue
                 self._ping_host(host)
                 self.root.after(0, self.update_tree_row, m['id'])
+            self.root.after(0, self._update_global_stats)
             time.sleep(8)
 
     def _ping_host(self, host):
-        cmd = ["ping", "-n", "1", "-w", "1200", host] if sys.platform.startswith("win") else ["ping", "-c", "1", "-W", "1", host]
+        cmd = ["ping", "-n", "1", "-w", "1000", host] if sys.platform.startswith("win") else ["ping", "-c", "1", "-W", "1", host]
         try:
             start_t = time.time()
             proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -371,30 +623,67 @@ class FleetManagerApp:
             self.ping_cache[host] = {"online": False, "ms": None, "last_check": time.time()}
 
     def trigger_all_pings(self):
-        threading.Thread(target=lambda: [self._ping_host(m['host']) for m in self.machines], daemon=True).start()
-        self.log_console("[PING] Scanning all machine nodes in background...\n")
+        def task():
+            self.log_console("[PING] Scanning all fleet machine nodes in background...\n", "info")
+            for m in list(self.machines):
+                self._ping_host(m['host'])
+                self.root.after(0, self.update_tree_row, m['id'])
+            self.root.after(0, self._update_global_stats)
+            self.log_console("[PING] Scan complete.\n", "success")
+        threading.Thread(target=task, daemon=True).start()
+
+    def _update_global_stats(self):
+        total = len(self.machines)
+        online = sum(1 for m in self.machines if self.ping_cache.get(m['host'], {}).get('online', False))
+        offline = total - online
+        self.lbl_stats_total.configure(text="TOTAL: {}".format(total))
+        self.lbl_stats_online.configure(text="ONLINE: {}".format(online))
+        self.lbl_stats_offline.configure(text="OFFLINE: {}".format(offline))
 
     def update_tree_row(self, m_id):
         m = next((item for item in self.machines if item["id"] == m_id), None)
         if not m:
             return
         status_info = self.ping_cache.get(m['host'], {"online": False, "ms": None})
-        status_icon = "🟢 UP" if status_info['online'] else "🔴 DOWN"
-        latency_str = "{} ms".format(status_info['ms']) if status_info['online'] else "Timeout"
+        is_up = status_info['online']
+        status_tag = 'online' if is_up else 'offline'
+        status_icon = "● ONLINE" if is_up else "○ OFFLINE"
+        latency_str = "{} ms".format(status_info['ms']) if is_up else "Timeout"
 
         for item in self.tree.get_children():
-            if self.tree.item(item, "tags") == (m_id,):
-                self.tree.item(item, values=(status_icon, m['name'], m['host'], latency_str))
-                return
+            if self.tree.item(item, "tags") and self.tree.item(item, "tags")[0] == m_id:
+                self.tree.item(item, values=(status_icon, m['name'], m['host'], latency_str), tags=(m_id, status_tag))
+                break
+
+        # Also update hero card if this machine is actively selected
+        if self.selected_machine and self.selected_machine["id"] == m_id:
+            self._update_hero_card(m)
+
+    def filter_machines(self, event=None):
+        query = self.entry_search.get().strip().lower()
+        if not query:
+            self.filtered_machines = list(self.machines)
+        else:
+            self.filtered_machines = [
+                m for m in self.machines
+                if query in m.get('name', '').lower()
+                or query in m.get('host', '').lower()
+                or query in m.get('location', '').lower()
+                or query in m.get('notes', '').lower()
+            ]
+        self.refresh_roster_table()
 
     def refresh_roster_table(self):
         self.tree.delete(*self.tree.get_children())
-        for m in self.machines:
+        for m in self.filtered_machines:
             status_info = self.ping_cache.get(m['host'], {"online": False, "ms": None})
-            status_icon = "🟢 UP" if status_info['online'] else "🔴 DOWN"
-            latency_str = "{} ms".format(status_info['ms']) if status_info['online'] else "..."
-            self.tree.insert("", "end", tags=(m['id'],),
+            is_up = status_info['online']
+            status_tag = 'online' if is_up else 'offline'
+            status_icon = "● ONLINE" if is_up else "○ OFFLINE"
+            latency_str = "{} ms".format(status_info['ms']) if is_up else "..."
+            self.tree.insert("", "end", tags=(m['id'], status_tag),
                              values=(status_icon, m['name'], m['host'], latency_str))
+        self._update_global_stats()
 
     def on_machine_selected(self, event):
         selected_items = self.tree.selection()
@@ -406,15 +695,25 @@ class FleetManagerApp:
         m_id = item_tags[0]
         self.selected_machine = next((m for m in self.machines if m["id"] == m_id), None)
         if self.selected_machine:
-            m = self.selected_machine
-            st = self.ping_cache.get(m['host'], {}).get('online', False)
-            status_text = "🟢 ONLINE" if st else "🔴 OFFLINE"
-            self.lbl_selected_title.configure(text="{}  [{}]".format(m['name'], status_text))
-            self.lbl_selected_meta.configure(
-                text="Host: {} | Location: {} | Notes: {}".format(
-                    m['host'], m.get('location', 'N/A'), m.get('notes', 'None')
-                )
+            self._update_hero_card(self.selected_machine)
+
+    def _update_hero_card(self, m):
+        st_info = self.ping_cache.get(m['host'], {"online": False, "ms": None})
+        is_up = st_info.get('online', False)
+        ms = st_info.get('ms')
+
+        self.lbl_hero_name.configure(text=m['name'])
+        if is_up:
+            self.lbl_hero_badge.configure(
+                text="● ONLINE · {} ms".format(ms) if ms else "● ONLINE",
+                fg="#34D399", bg="#064E3B"
             )
+        else:
+            self.lbl_hero_badge.configure(text="○ OFFLINE · Timeout", fg="#FB7185", bg="#4C0519")
+
+        self.lbl_hero_ip.configure(text="Host: {} (Port: {})".format(m['host'], m.get('port', 22)))
+        self.lbl_hero_loc.configure(text="Location: {}".format(m.get('location') or 'Not specified'))
+        self.lbl_hero_notes.configure(text="Notes: {}".format(m.get('notes') or 'None'))
 
     # -------------------------------------------------------------
     # Machine Dialogs (Add / Edit / Delete)
@@ -431,12 +730,12 @@ class FleetManagerApp:
     def _machine_editor_modal(self, title, machine=None):
         dlg = tk.Toplevel(self.root)
         dlg.title(title)
-        dlg.geometry("450x420")
+        dlg.geometry("480x440")
         dlg.configure(bg="#0B132B")
         dlg.transient(self.root)
         dlg.grab_set()
 
-        form = tk.Frame(dlg, bg="#0B132B", padx=20, pady=15)
+        form = tk.Frame(dlg, bg="#0B132B", padx=24, pady=18)
         form.pack(fill="both", expand=True)
 
         fields = [
@@ -455,7 +754,7 @@ class FleetManagerApp:
                 row=idx, column=0, sticky="w", pady=4
             )
             e = tk.Entry(form, bg="#111C38", fg="#F8FAFC", font=("Segoe UI", 9),
-                         insertbackground="#FFFFFF", relief="flat")
+                         insertbackground="#FFFFFF", relief="flat", highlightbackground="#1E293B", highlightthickness=1)
             e.insert(0, val)
             e.grid(row=idx, column=1, sticky="ew", padx=(10, 0), pady=4)
             entries[key] = e
@@ -485,15 +784,13 @@ class FleetManagerApp:
             else:
                 self.machines.append(m_dict)
             self.save_fleet()
-            self.refresh_roster_table()
+            self.filter_machines()
             dlg.destroy()
 
-        btn_bar = tk.Frame(dlg, bg="#0B132B", pady=10)
+        btn_bar = tk.Frame(dlg, bg="#0B132B", pady=12)
         btn_bar.pack(fill="x")
-        tk.Button(btn_bar, text="Save Machine", bg="#10B981", fg="#FFFFFF",
-                  font=("Segoe UI", 9, "bold"), padx=15, pady=4, relief="flat", command=save).pack(side="right", padx=20)
-        tk.Button(btn_bar, text="Cancel", bg="#334155", fg="#FFFFFF",
-                  font=("Segoe UI", 9), padx=10, pady=4, relief="flat", command=dlg.destroy).pack(side="right")
+        self._create_btn(btn_bar, "Save Machine", "#059669", "#10B981", save, padx=16, pady=5, font=("Segoe UI", 9, "bold")).pack(side="right", padx=20)
+        self._create_btn(btn_bar, "Cancel", "#334155", "#475569", dlg.destroy, padx=12, pady=5, font=("Segoe UI", 9)).pack(side="right")
 
     def delete_machine_action(self):
         if not self.selected_machine:
@@ -504,9 +801,12 @@ class FleetManagerApp:
             self.machines = [item for item in self.machines if item["id"] != m["id"]]
             self.selected_machine = None
             self.save_fleet()
-            self.refresh_roster_table()
-            self.lbl_selected_title.configure(text="No Machine Selected")
-            self.lbl_selected_meta.configure(text="Select a machine from the left roster.")
+            self.filter_machines()
+            self.lbl_hero_name.configure(text="No Machine Selected")
+            self.lbl_hero_badge.configure(text="● SELECT A TARGET", fg="#94A3B8", bg="#1E293B")
+            self.lbl_hero_ip.configure(text="Host: --")
+            self.lbl_hero_loc.configure(text="Location: --")
+            self.lbl_hero_notes.configure(text="Select a machine from the left roster to begin.")
 
     # -------------------------------------------------------------
     # Remote Operation Actions
@@ -523,9 +823,8 @@ class FleetManagerApp:
         if not m:
             return
         passcode = self.get_current_dev_password()
-        # Open auto-login bypass endpoint
         url = "http://{}/admin/dev_auth?token={}".format(m['host'], passcode)
-        self.log_console("[WEB] Launching browser: {} (Auto-authenticating as devclard)\n".format(url))
+        self.log_console("\n[WEB] Launching browser: {} (Auto-authenticating as devclard)\n".format(url), "cmd")
         webbrowser.open(url)
 
     def open_ssh_terminal_action(self):
@@ -537,9 +836,8 @@ class FleetManagerApp:
         user = m.get('username', 'root')
         port = m.get('port', 22)
         ssh_cmd = "ssh -p {} {}@{}".format(port, user, host)
-        self.log_console("[SSH] Launching terminal: {}\n".format(ssh_cmd))
+        self.log_console("\n[SSH] Launching external terminal: {}\n".format(ssh_cmd), "cmd")
 
-        # Try Windows Terminal, fallback to PowerShell
         try:
             subprocess.Popen(["wt.exe", "new-tab", "--title", m['name'], "powershell", "-NoExit", "-Command", ssh_cmd])
         except Exception:
@@ -547,6 +845,31 @@ class FleetManagerApp:
                 subprocess.Popen(["cmd.exe", "/c", "start", "powershell", "-NoExit", "-Command", ssh_cmd])
             except Exception as e:
                 messagebox.showerror("SSH Error", "Could not launch terminal: " + str(e))
+
+    def run_quick_ssh(self, cmd_str, label="CMD"):
+        """Run quick diagnostic command over SSH and stream output to console."""
+        m = self._require_selected()
+        if not m:
+            return
+
+        def task():
+            self.log_console("\n[SSH:{}] Executing on {}: '{}'...\n".format(label, m['host'], cmd_str), "cmd")
+            try:
+                client = self.get_ssh_client(m, timeout=10)
+                stdin, stdout, stderr = client.exec_command(cmd_str, timeout=15)
+                out = stdout.read().decode('utf-8', errors='replace')
+                err = stderr.read().decode('utf-8', errors='replace')
+                client.close()
+
+                if out:
+                    self.log_console(out + "\n")
+                if err:
+                    self.log_console(err + "\n", "warn")
+                self.log_console("[SSH:{}] Command complete.\n".format(label), "success")
+            except Exception as e:
+                self.log_console("[SSH:{}] ERROR: {}\n".format(label, str(e)), "error")
+
+        threading.Thread(target=task, daemon=True).start()
 
     def esp32_gpio_reset_action(self):
         """Remotely pulse GPIO 1 (PA01) LOW -> HIGH to hardware-reset ESP32."""
@@ -557,10 +880,9 @@ class FleetManagerApp:
             return
 
         def task():
-            self.log_console("\n[ESP32] Connecting to {} via SSH to pulse reset line...\n".format(m['host']))
+            self.log_console("\n[ESP32] Connecting to {} via SSH to pulse reset line...\n".format(m['host']), "cmd")
             try:
                 client = self.get_ssh_client(m)
-                # Export and pulse PA01 (GPIO 1)
                 cmd = (
                     "echo 1 > /sys/class/gpio/export 2>/dev/null || true; "
                     "echo out > /sys/class/gpio/gpio1/direction; "
@@ -571,10 +893,10 @@ class FleetManagerApp:
                 stdin, stdout, stderr = client.exec_command(cmd, timeout=10)
                 stdout.channel.recv_exit_status()
                 client.close()
-                self.log_console("[ESP32] SUCCESS: Hardware pulse delivered to EN reset line!\n")
+                self.log_console("[ESP32] SUCCESS: Hardware pulse delivered to EN reset line!\n", "success")
                 messagebox.showinfo("Reset Sent", "ESP32 hardware pulse delivered successfully!")
             except Exception as e:
-                self.log_console("[ESP32] ERROR: {}\n".format(str(e)))
+                self.log_console("[ESP32] ERROR: {}\n".format(str(e)), "error")
                 messagebox.showerror("Reset Failed", "Could not pulse ESP32: " + str(e))
 
         threading.Thread(target=task, daemon=True).start()
@@ -588,15 +910,15 @@ class FleetManagerApp:
             return
 
         def task():
-            self.log_console("\n[REBOOT] Sending reboot command to {}...\n".format(m['host']))
+            self.log_console("\n[REBOOT] Sending reboot command to {}...\n".format(m['host']), "warn")
             try:
                 client = self.get_ssh_client(m)
                 client.exec_command("sync; reboot", timeout=5)
                 client.close()
-                self.log_console("[REBOOT] SUCCESS: System reboot initiated.\n")
+                self.log_console("[REBOOT] SUCCESS: System reboot initiated.\n", "success")
                 messagebox.showinfo("Rebooting", "Reboot command sent to " + m['name'])
             except Exception as e:
-                self.log_console("[REBOOT] {}\n".format(str(e)))
+                self.log_console("[REBOOT] {}\n".format(str(e)), "error")
 
         threading.Thread(target=task, daemon=True).start()
 
@@ -611,10 +933,9 @@ class FleetManagerApp:
             return
 
         def task():
-            self.log_console("\n[AUTH] Resetting admin password on {}...\n".format(m['host']))
+            self.log_console("\n[AUTH] Resetting admin password on {}...\n".format(m['host']), "cmd")
             try:
                 client = self.get_ssh_client(m)
-                # Generate standard hash for admin1234
                 py_cmd = (
                     "python3 -c \""
                     "import sqlite3; from werkzeug.security import generate_password_hash; "
@@ -627,12 +948,12 @@ class FleetManagerApp:
                 out = stdout.read().decode().strip()
                 client.close()
                 if "PASSWORD_RESET_OK" in out:
-                    self.log_console("[AUTH] SUCCESS: Admin password restored to default 'admin1234'.\n")
+                    self.log_console("[AUTH] SUCCESS: Admin password restored to default 'admin1234'.\n", "success")
                     messagebox.showinfo("Password Reset", "Admin password successfully reset to 'admin1234'!")
                 else:
-                    self.log_console("[AUTH] Output: {}\n".format(out))
+                    self.log_console("[AUTH] Output: {}\n".format(out), "warn")
             except Exception as e:
-                self.log_console("[AUTH] ERROR: {}\n".format(str(e)))
+                self.log_console("[AUTH] ERROR: {}\n".format(str(e)), "error")
                 messagebox.showerror("Reset Failed", "Could not reset password: " + str(e))
 
         threading.Thread(target=task, daemon=True).start()
@@ -644,7 +965,7 @@ class FleetManagerApp:
             return
 
         def task():
-            self.log_console("\n[BACKUP] Pulling vendo_sessions.db from {}...\n".format(m['host']))
+            self.log_console("\n[BACKUP] Pulling vendo_sessions.db from {}...\n".format(m['host']), "cmd")
             try:
                 client = self.get_ssh_client(m)
                 sftp = client.open_sftp()
@@ -658,10 +979,10 @@ class FleetManagerApp:
                 client.close()
 
                 size_kb = round(local_file.stat().st_size / 1024, 1)
-                self.log_console("[BACKUP] SUCCESS: Saved to {} ({} KB)\n".format(local_file.name, size_kb))
+                self.log_console("[BACKUP] SUCCESS: Saved to {} ({} KB)\n".format(local_file.name, size_kb), "success")
                 messagebox.showinfo("Backup Downloaded", "Database backup saved to:\n{}".format(local_file))
             except Exception as e:
-                self.log_console("[BACKUP] ERROR: {}\n".format(str(e)))
+                self.log_console("[BACKUP] ERROR: {}\n".format(str(e)), "error")
                 messagebox.showerror("Backup Failed", "Could not pull database: " + str(e))
 
         threading.Thread(target=task, daemon=True).start()
@@ -675,7 +996,7 @@ class FleetManagerApp:
             return
 
         def task():
-            self.log_console("\n[DEPLOY] Starting OTA host deployment to {}...\n".format(m['host']))
+            self.log_console("\n[DEPLOY] Starting OTA host deployment to {}...\n".format(m['host']), "cmd")
             host_dir = ROOT / 'host'
             files_to_deploy = [
                 'portal.py', 'time_portal.py', 'esp32_simulator.py',
@@ -685,7 +1006,6 @@ class FleetManagerApp:
             ]
             try:
                 client = self.get_ssh_client(m, timeout=12)
-                # Create remote rollback directory
                 ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
                 b_dir = "/opt/ecofi_backups/backup_" + ts
                 client.exec_command("mkdir -p " + b_dir)
@@ -695,23 +1015,23 @@ class FleetManagerApp:
                     loc = host_dir / fname
                     if loc.exists():
                         rem = "/opt/ecofi/" + fname
-                        self.log_console("  Uploading {} ({} bytes)...\n".format(fname, loc.stat().st_size))
+                        self.log_console("  Uploading {} ({} bytes)...\n".format(fname, loc.stat().st_size), "dim")
                         sftp.put(str(loc), rem)
                 sftp.close()
 
-                self.log_console("  Restarting ecofi_portal.service...\n")
+                self.log_console("  Restarting ecofi_portal.service...\n", "dim")
                 _, stdout, _ = client.exec_command("systemctl restart ecofi_portal.service && systemctl is-active ecofi_portal.service")
                 status = stdout.read().decode().strip()
                 client.close()
 
                 if status == "active":
-                    self.log_console("[DEPLOY] SUCCESS: Remote service active and verified healthy!\n")
+                    self.log_console("[DEPLOY] SUCCESS: Remote service active and verified healthy!\n", "success")
                     messagebox.showinfo("Deploy Complete", "Host files deployed successfully! ecofi_portal is active.")
                 else:
-                    self.log_console("[DEPLOY] WARNING: Service returned status: {}\n".format(status))
+                    self.log_console("[DEPLOY] WARNING: Service returned status: {}\n".format(status), "warn")
                     messagebox.showwarning("Deploy Warning", "Service status: " + status)
             except Exception as e:
-                self.log_console("[DEPLOY] ERROR: {}\n".format(str(e)))
+                self.log_console("[DEPLOY] ERROR: {}\n".format(str(e)), "error")
                 messagebox.showerror("Deploy Failed", "Deployment error: " + str(e))
 
         threading.Thread(target=task, daemon=True).start()
@@ -735,14 +1055,14 @@ class FleetManagerApp:
             return
 
         def task():
-            self.log_console("\n[FLASH] Uploading {} to {}...\n".format(bin_file.name, m['host']))
+            self.log_console("\n[FLASH] Uploading {} to {}...\n".format(bin_file.name, m['host']), "cmd")
             try:
                 client = self.get_ssh_client(m, timeout=15)
                 sftp = client.open_sftp()
                 sftp.put(str(bin_file), "/tmp/esp32_remote_firmware.bin")
                 sftp.close()
 
-                self.log_console("[FLASH] Stopping portal service & invoking esptool flasher on /dev/ttyS3...\n")
+                self.log_console("[FLASH] Stopping portal service & invoking esptool flasher on /dev/ttyS3...\n", "warn")
                 flash_cmd = (
                     "systemctl stop ecofi_portal.service && "
                     "esptool.py --chip esp32 --port /dev/ttyS3 --baud 115200 --before default_reset --after hard_reset "
@@ -757,13 +1077,13 @@ class FleetManagerApp:
                 client.close()
 
                 if exit_code == 0:
-                    self.log_console("[FLASH] SUCCESS: Custom firmware written, verified, and ESP32 rebooted!\n")
+                    self.log_console("[FLASH] SUCCESS: Custom firmware written, verified, and ESP32 rebooted!\n", "success")
                     messagebox.showinfo("Flash Success", "ESP32 firmware successfully written and verified!")
                 else:
-                    self.log_console("[FLASH] ERROR (Code {}): {}\n".format(exit_code, err_out))
+                    self.log_console("[FLASH] ERROR (Code {}): {}\n".format(exit_code, err_out), "error")
                     messagebox.showerror("Flash Error", "esptool failed. Check console log for details.")
             except Exception as e:
-                self.log_console("[FLASH] ERROR: {}\n".format(str(e)))
+                self.log_console("[FLASH] ERROR: {}\n".format(str(e)), "error")
                 messagebox.showerror("Flash Exception", str(e))
 
         threading.Thread(target=task, daemon=True).start()
@@ -772,14 +1092,16 @@ class FleetManagerApp:
         """Stream or stop live journalctl logs from remote machine."""
         if self.log_stream_running:
             self.log_stream_running = False
-            self.log_console("\n[LOGS] Live stream stopped.\n")
+            self.btn_live_logs.configure(text="📜 Stream Live Journal Logs", bg="#334155")
+            self.log_console("\n[LOGS] Live stream stopped.\n", "info")
             return
         m = self._require_selected()
         if not m:
             return
 
         self.log_stream_running = True
-        self.log_console("\n[LOGS] Streaming live journalctl logs from {} (Click button again to stop)...\n".format(m['host']))
+        self.btn_live_logs.configure(text="⏹️ Stop Live Logs Stream", bg="#B91C1C")
+        self.log_console("\n[LOGS] Streaming live journalctl logs from {} (Click button again to stop)...\n".format(m['host']), "cmd")
 
         def task():
             try:
@@ -793,8 +1115,9 @@ class FleetManagerApp:
                 client.close()
             except Exception as e:
                 if self.log_stream_running:
-                    self.log_console("[LOGS] Stream disconnected: {}\n".format(str(e)))
+                    self.log_console("[LOGS] Stream disconnected: {}\n".format(str(e)), "warn")
             self.log_stream_running = False
+            self.root.after(0, lambda: self.btn_live_logs.configure(text="📜 Stream Live Journal Logs", bg="#334155"))
 
         t = threading.Thread(target=task, daemon=True)
         t.start()
@@ -807,16 +1130,17 @@ class FleetManagerApp:
 
         dlg = tk.Toplevel(self.root)
         dlg.title("Issue License Key — " + m['name'])
-        dlg.geometry("540x360")
+        dlg.geometry("560x380")
         dlg.configure(bg="#0B132B")
         dlg.transient(self.root)
         dlg.grab_set()
 
-        form = tk.Frame(dlg, bg="#0B132B", padx=20, pady=15)
+        form = tk.Frame(dlg, bg="#0B132B", padx=24, pady=18)
         form.pack(fill="both", expand=True)
 
         tk.Label(form, text="Machine HWID:", font=("Segoe UI", 9, "bold"), fg="#38BDF8", bg="#0B132B").pack(anchor="w")
-        e_hwid = tk.Entry(form, bg="#111C38", fg="#FCD34D", font=("Consolas", 10), insertbackground="#FFFFFF", relief="flat")
+        e_hwid = tk.Entry(form, bg="#111C38", fg="#FCD34D", font=("Consolas", 10),
+                          insertbackground="#FFFFFF", relief="flat", highlightbackground="#1E293B", highlightthickness=1)
         e_hwid.pack(fill="x", pady=(2, 6))
 
         def fetch_hwid():
@@ -827,11 +1151,12 @@ class FleetManagerApp:
                 client.close()
                 e_hwid.delete(0, "end")
                 e_hwid.insert(0, hwid)
+                self.log_console("[LICENSE] HWID fetched for {}: {}\n".format(m['name'], hwid), "info")
             except Exception as e:
                 messagebox.showerror("HWID Fetch Failed", str(e), parent=dlg)
 
-        tk.Button(form, text="🔍 Fetch HWID from Machine over SSH", bg="#334155", fg="#FFFFFF",
-                  font=("Segoe UI", 8), relief="flat", command=fetch_hwid).pack(anchor="w", pady=(0, 10))
+        self._create_btn(form, "🔍 Fetch HWID from Machine over SSH", "#1E293B", "#334155", fetch_hwid,
+                         padx=8, pady=3, font=("Segoe UI", 8)).pack(anchor="w", pady=(0, 10))
 
         tk.Label(form, text="License Tier:", font=("Segoe UI", 9, "bold"), fg="#38BDF8", bg="#0B132B").pack(anchor="w")
         tier_cb = ttk.Combobox(form, values=["COMMERCIAL", "ENTERPRISE", "TRIAL"], state="readonly")
@@ -839,7 +1164,8 @@ class FleetManagerApp:
         tier_cb.pack(fill="x", pady=(2, 8))
 
         tk.Label(form, text="Generated Activation Key (PIN):", font=("Segoe UI", 9, "bold"), fg="#38BDF8", bg="#0B132B").pack(anchor="w")
-        e_pin = tk.Entry(form, bg="#111C38", fg="#10B981", font=("Consolas", 11, "bold"), insertbackground="#FFFFFF", relief="flat")
+        e_pin = tk.Entry(form, bg="#111C38", fg="#10B981", font=("Consolas", 11, "bold"),
+                         insertbackground="#FFFFFF", relief="flat", highlightbackground="#1E293B", highlightthickness=1)
         e_pin.pack(fill="x", pady=(2, 10))
 
         def compute_key():
@@ -862,17 +1188,16 @@ class FleetManagerApp:
                 data = json.dumps({"hwid": hwid, "tier": tier_cb.get(), "activation_key": pin, "activated_at": int(time.time())})
                 client.exec_command("echo '{}' > /opt/ecofi/license.key && systemctl restart ecofi_portal.service".format(data))
                 client.close()
+                self.log_console("[LICENSE] SUCCESS: Activated key pushed to {}!\n".format(m['name']), "success")
                 messagebox.showinfo("Activated", "License successfully written to machine and service restarted!", parent=dlg)
                 dlg.destroy()
             except Exception as e:
                 messagebox.showerror("Activation Failed", str(e), parent=dlg)
 
         b_bar = tk.Frame(form, bg="#0B132B")
-        b_bar.pack(fill="x", pady=6)
-        tk.Button(b_bar, text="Generate Key", bg="#2563EB", fg="#FFFFFF", font=("Segoe UI", 9, "bold"),
-                  relief="flat", padx=10, pady=3, command=compute_key).pack(side="left")
-        tk.Button(b_bar, text="🚀 Push & Activate on Machine", bg="#059669", fg="#FFFFFF", font=("Segoe UI", 9, "bold"),
-                  relief="flat", padx=10, pady=3, command=push_key).pack(side="right")
+        b_bar.pack(fill="x", pady=8)
+        self._create_btn(b_bar, "Generate Key", "#2563EB", "#3B82F6", compute_key, padx=12, pady=4, font=("Segoe UI", 9, "bold")).pack(side="left")
+        self._create_btn(b_bar, "🚀 Push & Activate on Machine", "#059669", "#10B981", push_key, padx=12, pady=4, font=("Segoe UI", 9, "bold")).pack(side="right")
 
 
 def main():
