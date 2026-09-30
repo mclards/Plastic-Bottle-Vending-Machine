@@ -816,11 +816,23 @@ void sensorTaskCode(void* parameter) {
                 const uint32_t retrievalTimeoutMs = static_cast<uint32_t>(config.retrieval_timeout_s) * 1000UL;
                 unsigned long startWait = millis();
                 bool itemCleared = false;
-                bool userInteracted = false;
+                bool handOrObjectDetected = false;
+                topIrTriggered = false; // Reset interrupt flag
                 unsigned long clearStartTime = 0;
-                const unsigned long STABILIZE_MS = 600; // Continuous debounce time
+                const unsigned long STABILIZE_MS = 500; // Continuous debounce time
 
-                logDebug("RETRIEVAL", "Waiting up to %u ms for manual item removal...", retrievalTimeoutMs);
+                // Record reference weight of rejected item on scale
+                float initialWeightG = 0.0f;
+                if (hx711Found) {
+                    initialWeightG = scale.is_ready() ? scale.get_units(2) : lastMeasuredWeightG;
+                    if (lastMeasuredWeightG > initialWeightG) {
+                        initialWeightG = lastMeasuredWeightG;
+                    }
+                }
+                float currentWt = initialWeightG;
+
+                logDebug("RETRIEVAL", "Waiting up to %u ms for item removal (Scale Initial Wt: %.1f g, ScaleFound: %d, SpecFound: %d)...",
+                         retrievalTimeoutMs, initialWeightG, hx711Found, spectrometerFound);
 
                 while (millis() - startWait < retrievalTimeoutMs) {
                     if (forceGateClose) {
@@ -830,37 +842,86 @@ void sensorTaskCode(void* parameter) {
 
                     int metalVal = digitalRead(PIN_PROX_METAL);
                     int topIrVal = digitalRead(PIN_IR_TOP);
-                    float currentWt = 0.0f;
+
+                    // 1. Entrance PIR/IR beam: Confirmer that hand or object is detected entering/exiting doorway
+                    if (topIrVal == LOW || topIrTriggered) {
+                        handOrObjectDetected = true;
+                        topIrTriggered = false;
+                    }
+
+                    // 2. Scale: Non-blocking read of current weight in cradle
                     if (hx711Found) {
-                        currentWt = scale.get_units(1);
+                        if (scale.is_ready()) {
+                            currentWt = scale.get_units(1);
+                            lastMeasuredWeightG = currentWt;
+                        }
                     }
 
-                    // User must reach their hand into the entrance doorway to remove the object
-                    if (topIrVal == LOW) {
-                        userInteracted = true;
+                    // 3. Sensor clearing criteria:
+                    // A) Metal sensor must be HIGH (no metal in cradle)
+                    bool metalCleared = (metalVal == HIGH);
+
+                    // B) Scale must confirm item is no longer on cradle:
+                    //    Weight drops below 5.0g AND (if initial weight was substantial) drops significantly
+                    bool scaleCleared = true;
+                    if (hx711Found) {
+                        scaleCleared = (currentWt < 5.0f);
+                        if (initialWeightG > 10.0f) {
+                            scaleCleared = (currentWt < 5.0f) || (currentWt <= initialWeightG * 0.35f);
+                        }
                     }
 
-                    // Cradle is confirmed clear when:
-                    // - Inductive metal sensor is HIGH (no metal in cradle)
-                    // - Doorway beam is HIGH (unbroken, hand has withdrawn)
-                    // - If scale is attached: weight is below 5g
-                    // - If no scale: user must have actually reached in (or metal sensor was cleared)
-                    bool canClear = hx711Found ? (currentWt < 5.0f) : (userInteracted || (rejectReason == MSG_REJECT_TIN && metalVal == HIGH));
-                    bool sensorsClear = (metalVal == HIGH) && (topIrVal == HIGH) && canClear;
+                    // C) Entrance IR confirmer:
+                    //    Hand or object MUST have been detected in doorway (handOrObjectDetected == true)
+                    //    AND the doorway must NOW be clear and unbroken (topIrVal == HIGH)
+                    bool entranceCleared = handOrObjectDetected && (topIrVal == HIGH);
 
-                    if (sensorsClear) {
+                    // All primary sensors indicate the item has been pulled out and doorway is clear
+                    if (metalCleared && scaleCleared && entranceCleared) {
                         if (clearStartTime == 0) {
                             clearStartTime = millis();
                         } else if (millis() - clearStartTime >= STABILIZE_MS) {
-                            itemCleared = true;
-                            logDebug("RETRIEVAL", "Sensors confirmed chute is CLEARED after %lu ms!", millis() - startWait);
-                            break;
+                            // Primary debounce passed! Now run optical NIR verification to confirm no object remains inside
+                            bool nirCleared = true;
+                            if (spectrometerFound) {
+                                logDebug("RETRIEVAL", "Running AS7263 NIR verification to confirm chamber is empty...");
+                                spectrometer.enableBulb();
+                                delay(30);
+                                spectrometer.takeMeasurements();
+                                spectrometer.disableBulb();
+                                float nirW = spectrometer.getCalibratedW();
+                                int nirR = spectrometer.getR();
+                                int nirRawW = spectrometer.getW();
+                                logDebug("RETRIEVAL", "NIR Chamber Check: Cal-W=%.2f, R=%d, W=%d", nirW, nirR, nirRawW);
+
+                                // Empty chamber produces empty air baseline:
+                                // Cal-W bounded in [21.0 - 30.0], low raw counts (R < 200, W < 45).
+                                // If an object is still inside:
+                                // - Plastic / paper produces Cal-W > 32.0 or R > 200 or W > 45
+                                // - Colored glass absorbs NIR: Cal-W < 21.0
+                                bool objectStillInside = (nirW > 32.0f) || (nirW < 21.0f) || (nirR > 200) || (nirRawW > 45);
+                                if (objectStillInside) {
+                                    nirCleared = false;
+                                    logWarn("RETRIEVAL", "NIR check indicates object STILL PRESENT in chamber (Cal-W=%.2f, R=%d)! Resetting clear timer.",
+                                            nirW, nirR);
+                                    clearStartTime = 0; // Reset clear timer until object is completely gone
+                                } else {
+                                    logDebug("RETRIEVAL", "NIR check CONFIRMED: Chamber optically empty.");
+                                }
+                            }
+
+                            if (nirCleared) {
+                                itemCleared = true;
+                                logDebug("RETRIEVAL", "Sensors confirmed chute is CLEARED after %lu ms! (Scale: %.1f g, TopIR: HIGH)",
+                                         millis() - startWait, currentWt);
+                                break;
+                            }
                         }
                     } else {
                         clearStartTime = 0;
                     }
 
-                    vTaskDelay(pdMS_TO_TICKS(50));
+                    vTaskDelay(pdMS_TO_TICKS(40));
                 }
 
                 digitalWrite(PIN_LED_RED, LOW);
