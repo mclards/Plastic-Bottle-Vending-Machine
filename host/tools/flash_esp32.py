@@ -44,6 +44,17 @@ def gpio_release_high(pin):
     except Exception as e:
         print("[GPIO ERROR] Failed releasing HIGH pin " + str(pin) + ": " + str(e))
 
+def gpio_drive_high(pin):
+    """Configures GPIO as OUTPUT and drives 3.3V (VCC)."""
+    gpio_export(pin)
+    try:
+        with open("/sys/class/gpio/gpio" + str(pin) + "/direction", "w") as f:
+            f.write("out")
+        with open("/sys/class/gpio/gpio" + str(pin) + "/value", "w") as f:
+            f.write("1")
+    except Exception as e:
+        print("[GPIO ERROR] Failed driving HIGH pin " + str(pin) + ": " + str(e))
+
 def enter_esp32_bootloader():
     """Deterministic hardware sequence to enter ESP32 ROM UART download mode."""
     print("[FLASHER] Forcing ESP32 into ROM Bootloader mode...")
@@ -52,13 +63,12 @@ def enter_esp32_bootloader():
     time.sleep(0.05)
     # 2. Drive EN LOW (Hold in reset)
     gpio_drive_low(GPIO_EN)
-    time.sleep(0.12)
-    # 3. Release EN HIGH (ESP32 samples IO0=LOW on rising edge)
-    gpio_release_high(GPIO_EN)
+    time.sleep(0.15)
+    # 3. Release EN HIGH (Actively drive 3.3V then float)
+    gpio_drive_high(GPIO_EN)
     time.sleep(0.10)
-    # 4. Release IO0 HIGH (Return to High-Z)
-    gpio_release_high(GPIO_BOOT)
-    time.sleep(0.05)
+    gpio_release_high(GPIO_EN)
+    time.sleep(0.20)
     print("[FLASHER] ESP32 is now in UART download mode.")
 
 def reset_esp32_to_app():
@@ -66,14 +76,22 @@ def reset_esp32_to_app():
     print("[FLASHER] Resetting ESP32 into application...")
     gpio_release_high(GPIO_BOOT)
     gpio_drive_low(GPIO_EN)
-    time.sleep(0.12)
+    time.sleep(0.15)
+    gpio_drive_high(GPIO_EN)
+    time.sleep(0.10)
     gpio_release_high(GPIO_EN)
     print("[FLASHER] ESP32 reset complete. Running application.")
 
-def flash_firmware(firmware_path, port="/dev/ttyS1", baud=460800):
+def flash_firmware(firmware_path, port="/dev/ttyS3", baud=115200, offset=None):
     if not os.path.isfile(firmware_path):
         print("[ERROR] Firmware binary not found: " + str(firmware_path))
         return False
+
+    if offset is None:
+        offset = "0x0" if "factory" in os.path.basename(firmware_path).lower() else "0x10000"
+
+    print("[FLASHER] Stopping portal service...")
+    subprocess.call(["systemctl", "stop", "ecofi_portal.service"])
 
     enter_esp32_bootloader()
 
@@ -85,14 +103,20 @@ def flash_firmware(firmware_path, port="/dev/ttyS1", baud=460800):
         "--before", "no_reset",
         "--after", "no_reset",
         "write_flash", "-z",
-        "0x0", firmware_path
+        "--flash_mode", "dio",
+        "--flash_freq", "40m",
+        "--flash_size", "detect",
+        offset, firmware_path
     ]
     print("[FLASHER] Executing: " + " ".join(cmd))
-    res = subprocess.run(cmd)
+    res = subprocess.call(cmd)
 
     # Always reset the ESP32 back to application mode
     reset_esp32_to_app()
-    return res.returncode == 0
+
+    print("[FLASHER] Restarting portal service...")
+    subprocess.call(["systemctl", "start", "ecofi_portal.service"])
+    return res == 0
 
 if __name__ == "__main__":
     action = sys.argv[1] if len(sys.argv) > 1 else "flash"
@@ -105,9 +129,10 @@ if __name__ == "__main__":
         sys.exit(0)
     elif action == "flash":
         fw = sys.argv[2] if len(sys.argv) > 2 else "/opt/ecofi/firmware/esp32_firmware.bin"
-        dev = sys.argv[3] if len(sys.argv) > 3 else "/dev/ttyS1"
-        ok = flash_firmware(fw, port=dev)
+        dev = sys.argv[3] if len(sys.argv) > 3 else "/dev/ttyS3"
+        off = sys.argv[4] if len(sys.argv) > 4 else None
+        ok = flash_firmware(fw, port=dev, offset=off)
         sys.exit(0 if ok else 1)
     else:
-        print("Usage: python3 flash_esp32.py [flash <path> [port]] | reset | bootloader")
+        print("Usage: python3 flash_esp32.py [flash <path> [port] [offset]] | reset | bootloader")
         sys.exit(1)

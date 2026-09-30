@@ -1087,16 +1087,27 @@ class FleetManagerApp:
                 sftp.put(str(bin_file), "/tmp/esp32_remote_firmware.bin")
                 sftp.close()
 
-                self.log_console("[FLASH] Stopping portal service & invoking esptool flasher on /dev/ttyS3...\n", "warn")
+                flash_offset = "0x0" if "factory" in bin_file.name.lower() else "0x10000"
+                self.log_console("[FLASH] Stopping portal service & forcing ESP32 ROM bootloader via GPIO (Offset: {})...\n".format(flash_offset), "warn")
                 flash_cmd = (
                     "systemctl stop ecofi_portal.service; "
-                    "esptool.py --chip esp32 --port /dev/ttyS3 --baud 115200 --before default_reset --after hard_reset "
-                    "write_flash -z --flash_mode dio --flash_freq 40m --flash_size detect 0x10000 /tmp/esp32_remote_firmware.bin; "
+                    "for p in 0 1; do [ ! -d /sys/class/gpio/gpio$p ] && echo $p > /sys/class/gpio/export 2>/dev/null || true; done; "
+                    "echo out > /sys/class/gpio/gpio0/direction; echo 0 > /sys/class/gpio/gpio0/value; "
+                    "echo out > /sys/class/gpio/gpio1/direction; echo 0 > /sys/class/gpio/gpio1/value; "
+                    "sleep 0.15; "
+                    "echo 1 > /sys/class/gpio/gpio1/value; sleep 0.1; echo in > /sys/class/gpio/gpio1/direction; "
+                    "sleep 0.2; "
+                    "python3 -m esptool --chip esp32 --port /dev/ttyS3 --baud 115200 --before no_reset --after no_reset "
+                    "write_flash -z --flash_mode dio --flash_freq 40m --flash_size detect {} /tmp/esp32_remote_firmware.bin; "
                     "FLASH_EC=$?; "
+                    "echo in > /sys/class/gpio/gpio0/direction; "
+                    "echo out > /sys/class/gpio/gpio1/direction; echo 0 > /sys/class/gpio/gpio1/value; "
+                    "sleep 0.15; "
+                    "echo 1 > /sys/class/gpio/gpio1/value; sleep 0.1; echo in > /sys/class/gpio/gpio1/direction; "
                     "systemctl start ecofi_portal.service; "
                     "exit $FLASH_EC"
-                )
-                stdin, stdout, stderr = client.exec_command(flash_cmd, timeout=90)
+                ).format(flash_offset)
+                stdin, stdout, stderr = client.exec_command(flash_cmd, timeout=180)
                 for line in iter(stdout.readline, ""):
                     self.log_console("  " + line)
                 err_out = stderr.read().decode()
