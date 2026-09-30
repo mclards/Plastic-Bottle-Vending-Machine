@@ -1223,26 +1223,40 @@ class FleetManagerApp:
         def push_key():
             pin = e_pin.get().strip()
             hwid = e_hwid.get().strip()
+            tier = tier_cb.get().strip()
             if not pin:
                 messagebox.showerror("Error", "Please compute key first.", parent=dlg)
                 return
             try:
                 client = self.get_ssh_client(m)
-                data = json.dumps({"hwid": hwid, "tier": tier_cb.get(), "activation_key": pin, "activated_at": int(time.time())})
-                sftp = client.open_sftp()
-                with sftp.file('/opt/ecofi/license.key', 'w') as f:
-                    f.write(data)
-                sftp.close()
-                _, stdout, stderr = client.exec_command("systemctl restart ecofi_portal.service && systemctl is-active ecofi_portal.service")
-                status = stdout.read().decode().strip()
-                client.close()
-                if status == "active":
-                    self.log_console("[LICENSE] SUCCESS: Activated key pushed to {}!\n".format(m['name']), "success")
-                    messagebox.showinfo("Activated", "License successfully written to machine and service verified active!", parent=dlg)
+                py_cmd = (
+                    "PYTHONPATH=/opt/ecofi python3 -c \""
+                    "import license_manager as lm, json; "
+                    "res = lm.activate_machine('{}', tier='{}'); "
+                    "print(json.dumps(res))\"".format(pin, tier)
+                )
+                stdin, stdout, stderr = client.exec_command(py_cmd, timeout=10)
+                out_raw = stdout.read().decode().strip()
+                err_raw = stderr.read().decode().strip()
+                res = None
+                if out_raw:
+                    try:
+                        res = json.loads(out_raw)
+                    except Exception:
+                        pass
+
+                if res and res.get('success'):
+                    _, stdout_svc, _ = client.exec_command("systemctl restart ecofi_portal.service && systemctl is-active ecofi_portal.service")
+                    svc_status = stdout_svc.read().decode().strip()
+                    client.close()
+                    self.log_console("[LICENSE] SUCCESS: Activated key pushed to {} ({} Edition)!\n".format(m['name'], tier), "success")
+                    messagebox.showinfo("Activated", "License successfully written and verified on machine!\nStatus: ACTIVATED ({})".format(tier), parent=dlg)
                     dlg.destroy()
                 else:
-                    self.log_console("[LICENSE] WARNING: Service returned status '{}' after license update\n".format(status), "warn")
-                    messagebox.showwarning("Warning", "License saved, but service status is: " + status, parent=dlg)
+                    msg = (res.get('message') if res else (out_raw or err_raw)) or "Activation failed"
+                    client.close()
+                    self.log_console("[LICENSE] Activation failed: {}\n".format(msg), "error")
+                    messagebox.showerror("Activation Failed", msg, parent=dlg)
             except Exception as e:
                 self.log_console("[LICENSE] Activation failed: {}\n".format(str(e)), "error")
                 messagebox.showerror("Activation Failed", str(e), parent=dlg)

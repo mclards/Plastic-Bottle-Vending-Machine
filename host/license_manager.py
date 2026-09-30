@@ -154,7 +154,7 @@ def verify_license() -> dict:
     try:
         with open(LICENSE_FILE, 'r') as f:
             data = json.load(f)
-        stored_hwid = data.get('machine_hwid', '')
+        stored_hwid = data.get('machine_hwid', '') or data.get('hwid', '')
         stored_tier = data.get('tier', 'COMMERCIAL')
         stored_key = data.get('activation_key', '')
         licensee = data.get('licensee', 'Standard Client')
