@@ -2041,6 +2041,8 @@ def admin_login():
                     del admin_login_attempts[client_ip]
                 session['admin_logged_in'] = True
                 session['admin_username'] = username
+                if password == 'admin1234':
+                    session['must_change_password'] = True
                 return redirect('/admin')
             else:
                 admin_login_attempts[client_ip][0] += 1

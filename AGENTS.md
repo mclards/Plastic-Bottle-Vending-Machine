@@ -42,6 +42,7 @@
 4. **Authoritative Admin Credentials (PERMANENT RULE):**
    - **Default Username:** `admin`
    - **Default Password:** `admin1234`
+   - **Forced Password Change:** The forced password change on first login with default `admin1234` is an intentional security design and MUST be preserved.
    - **STRICT PROHIBITION:** AI agents must NEVER change, overwrite, or randomize the default admin credentials in code, tests, scripts, or database under any circumstances.
 
 ---
