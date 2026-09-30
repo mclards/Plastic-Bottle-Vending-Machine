@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import sys
 import urllib.request
 
 import paramiko
@@ -81,7 +82,10 @@ if __name__ == '__main__':
         text = result + ('\nSTDERR:\n' + error if error else '')
         if args.output:
             args.output.write_text(text, encoding='utf-8')
-        print(text)
+        try:
+            print(text)
+        except UnicodeEncodeError:
+            print(text.encode(sys.stdout.encoding or 'utf-8', errors='replace').decode(sys.stdout.encoding or 'utf-8', errors='replace'))
         raise SystemExit(code)
     finally:
         client.close()
