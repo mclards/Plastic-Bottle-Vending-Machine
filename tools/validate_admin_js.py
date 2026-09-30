@@ -1,49 +1,35 @@
-#!/usr/bin/env python3
-import re
 import subprocess
 import sys
-import os
+import re
 
-with open('host/portal.py', 'r', encoding='utf-8') as f:
-    text = f.read()
+def main():
+    sys.path.insert(0, 'host')
+    import portal
+    html = portal.ADMIN_HTML
 
-start_marker = "ADMIN_HTML = '"
-s_pos = text.find(start_marker)
-if s_pos == -1:
-    print('ERROR: start marker not found')
-    sys.exit(1)
+    # Find all <script> tags
+    scripts = re.findall(r'<script(?:\s+[^>]*)?>(.*?)</script>', html, re.DOTALL)
+    print("Found {} script block(s)".format(len(scripts)))
 
-s_pos += len(start_marker)
-# Find ending quote at end of the line
-eol = text.find('\n', s_pos)
-# The quote is right before \n
-e_pos = eol - 1
-while e_pos > s_pos and text[e_pos] != "'":
-    e_pos -= 1
-
-raw_html = text[s_pos:e_pos]
-print('ADMIN_HTML extracted, length: %d' % len(raw_html))
-
-# Unescape
-html = raw_html.replace(r"\'", "'").replace(r"\n", "\n").replace(r"\\", "\\")
-
-scripts = re.findall(r'<script>(.*?)</script>', html, re.DOTALL)
-print('Found %d script tags in ADMIN_HTML' % len(scripts))
-
-for i, s in enumerate(scripts):
-    tmp_file = 'temp_check_%d.js' % i
-    with open(tmp_file, 'w', encoding='utf-8') as tf:
-        tf.write(s)
-    try:
-        res = subprocess.run(['node', '--check', tmp_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+    for i, s in enumerate(scripts):
+        # Skip external scripts or empty ones
+        if not s.strip():
+            continue
+        test_file = 'scratch_admin_check_{}.js'.format(i)
+        with open(test_file, 'w', encoding='utf-8') as f:
+            f.write(s)
+        res = subprocess.run(['node', '--check', test_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        print("Script {} check: returncode={}".format(i, res.returncode))
         if res.returncode != 0:
-            print('Syntax error in script %d:\n%s' % (i, res.stderr))
+            print("STDOUT:", res.stdout)
+            print("STDERR:", res.stderr)
+            import os
+            os.remove(test_file)
             sys.exit(1)
-        else:
-            print('Script %d: Syntax OK (node --check passed)' % i)
-    finally:
-        if os.path.exists(tmp_file):
-            os.remove(tmp_file)
+        import os
+        os.remove(test_file)
 
-print('ALL JAVASCRIPT IN ADMIN_HTML VALID!')
+    print("ALL JAVASCRIPT VALIDATED CLEANLY VIA NODE --CHECK!")
 
+if __name__ == '__main__':
+    main()
