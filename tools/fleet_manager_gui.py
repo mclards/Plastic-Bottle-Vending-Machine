@@ -959,27 +959,39 @@ class FleetManagerApp:
         threading.Thread(target=task, daemon=True).start()
 
     def pull_db_backup_action(self):
-        """Download remote SQLite database to local backups folder."""
+        """Download remote SQLite database to user-selected folder."""
         m = self._require_selected()
         if not m:
             return
 
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = "{}_{}.db".format(m['id'], ts)
+        backup_dir = ROOT / 'backups'
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        target_path = filedialog.asksaveasfilename(
+            title="Save Database Backup As",
+            initialdir=str(backup_dir),
+            initialfile=default_filename,
+            filetypes=[("SQLite Database (*.db)", "*.db"), ("All Files", "*.*")]
+        )
+        if not target_path:
+            return
+
+        local_file = Path(target_path)
+        local_file.parent.mkdir(parents=True, exist_ok=True)
+
         def task():
-            self.log_console("\n[BACKUP] Pulling vendo_sessions.db from {}...\n".format(m['host']), "cmd")
+            self.log_console("\n[BACKUP] Pulling /opt/ecofi/vendo_sessions.db from {}...\n".format(m['host']), "cmd")
             try:
                 client = self.get_ssh_client(m)
                 sftp = client.open_sftp()
-                backup_dir = ROOT / 'backups'
-                backup_dir.mkdir(parents=True, exist_ok=True)
-                ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                local_file = backup_dir / "{}_{}.db".format(m['id'], ts)
-
                 sftp.get('/opt/ecofi/vendo_sessions.db', str(local_file))
                 sftp.close()
                 client.close()
 
                 size_kb = round(local_file.stat().st_size / 1024, 1)
-                self.log_console("[BACKUP] SUCCESS: Saved to {} ({} KB)\n".format(local_file.name, size_kb), "success")
+                self.log_console("[BACKUP] SUCCESS: Saved to {} ({} KB)\n".format(local_file, size_kb), "success")
                 messagebox.showinfo("Backup Downloaded", "Database backup saved to:\n{}".format(local_file))
             except Exception as e:
                 self.log_console("[BACKUP] ERROR: {}\n".format(str(e)), "error")
@@ -1002,7 +1014,7 @@ class FleetManagerApp:
                 'portal.py', 'time_portal.py', 'esp32_simulator.py',
                 'gateway_network.py', 'license_manager.py', 'status_led.py',
                 'time_policy.py', 'time_schema.py', 'transition_engine.py',
-                'VERSION'
+                'migrate_legacy_sessions.py'
             ]
             try:
                 client = self.get_ssh_client(m, timeout=12)
@@ -1017,7 +1029,19 @@ class FleetManagerApp:
                         rem = "/opt/ecofi/" + fname
                         self.log_console("  Uploading {} ({} bytes)...\n".format(fname, loc.stat().st_size), "dim")
                         sftp.put(str(loc), rem)
+
+                ver_file = ROOT / 'VERSION'
+                if ver_file.exists():
+                    sftp.put(str(ver_file), "/opt/ecofi/VERSION")
+
                 sftp.close()
+
+                # Verify remote python syntax before restarting service!
+                self.log_console("  Validating remote Python syntax...\n", "dim")
+                _, stdout, stderr = client.exec_command("python3 -m py_compile /opt/ecofi/*.py")
+                compile_err = stderr.read().decode().strip()
+                if compile_err:
+                    raise RuntimeError("Remote syntax check failed: " + compile_err)
 
                 self.log_console("  Restarting ecofi_portal.service...\n", "dim")
                 _, stdout, _ = client.exec_command("systemctl restart ecofi_portal.service && systemctl is-active ecofi_portal.service")
@@ -1056,6 +1080,7 @@ class FleetManagerApp:
 
         def task():
             self.log_console("\n[FLASH] Uploading {} to {}...\n".format(bin_file.name, m['host']), "cmd")
+            client = None
             try:
                 client = self.get_ssh_client(m, timeout=15)
                 sftp = client.open_sftp()
@@ -1064,17 +1089,18 @@ class FleetManagerApp:
 
                 self.log_console("[FLASH] Stopping portal service & invoking esptool flasher on /dev/ttyS3...\n", "warn")
                 flash_cmd = (
-                    "systemctl stop ecofi_portal.service && "
+                    "systemctl stop ecofi_portal.service; "
                     "esptool.py --chip esp32 --port /dev/ttyS3 --baud 115200 --before default_reset --after hard_reset "
-                    "write_flash -z --flash_mode dio --flash_freq 40m --flash_size detect 0x10000 /tmp/esp32_remote_firmware.bin && "
-                    "systemctl start ecofi_portal.service"
+                    "write_flash -z --flash_mode dio --flash_freq 40m --flash_size detect 0x10000 /tmp/esp32_remote_firmware.bin; "
+                    "FLASH_EC=$?; "
+                    "systemctl start ecofi_portal.service; "
+                    "exit $FLASH_EC"
                 )
                 stdin, stdout, stderr = client.exec_command(flash_cmd, timeout=90)
                 for line in iter(stdout.readline, ""):
                     self.log_console("  " + line)
                 err_out = stderr.read().decode()
                 exit_code = stdout.channel.recv_exit_status()
-                client.close()
 
                 if exit_code == 0:
                     self.log_console("[FLASH] SUCCESS: Custom firmware written, verified, and ESP32 rebooted!\n", "success")
@@ -1085,6 +1111,17 @@ class FleetManagerApp:
             except Exception as e:
                 self.log_console("[FLASH] ERROR: {}\n".format(str(e)), "error")
                 messagebox.showerror("Flash Exception", str(e))
+                if client:
+                    try:
+                        client.exec_command("systemctl start ecofi_portal.service")
+                    except Exception:
+                        pass
+            finally:
+                if client:
+                    try:
+                        client.close()
+                    except Exception:
+                        pass
 
         threading.Thread(target=task, daemon=True).start()
 
@@ -1146,13 +1183,19 @@ class FleetManagerApp:
         def fetch_hwid():
             try:
                 client = self.get_ssh_client(m)
-                stdin, stdout, stderr = client.exec_command("python3 -c 'import license_manager as lm; print(lm.get_machine_hwid())'")
+                stdin, stdout, stderr = client.exec_command(
+                    "PYTHONPATH=/opt/ecofi python3 -c 'import license_manager as lm; print(lm.get_machine_hwid())'"
+                )
                 hwid = stdout.read().decode().strip()
+                err = stderr.read().decode().strip()
                 client.close()
+                if not hwid:
+                    raise RuntimeError("Remote error: " + (err or "Empty HWID returned."))
                 e_hwid.delete(0, "end")
                 e_hwid.insert(0, hwid)
-                self.log_console("[LICENSE] HWID fetched for {}: {}\n".format(m['name'], hwid), "info")
+                self.log_console("[LICENSE] HWID fetched for {}: {}\n".format(m['name'], hwid), "success")
             except Exception as e:
+                self.log_console("[LICENSE] HWID fetch error: {}\n".format(str(e)), "error")
                 messagebox.showerror("HWID Fetch Failed", str(e), parent=dlg)
 
         self._create_btn(form, "🔍 Fetch HWID from Machine over SSH", "#1E293B", "#334155", fetch_hwid,
@@ -1186,12 +1229,22 @@ class FleetManagerApp:
             try:
                 client = self.get_ssh_client(m)
                 data = json.dumps({"hwid": hwid, "tier": tier_cb.get(), "activation_key": pin, "activated_at": int(time.time())})
-                client.exec_command("echo '{}' > /opt/ecofi/license.key && systemctl restart ecofi_portal.service".format(data))
+                sftp = client.open_sftp()
+                with sftp.file('/opt/ecofi/license.key', 'w') as f:
+                    f.write(data)
+                sftp.close()
+                _, stdout, stderr = client.exec_command("systemctl restart ecofi_portal.service && systemctl is-active ecofi_portal.service")
+                status = stdout.read().decode().strip()
                 client.close()
-                self.log_console("[LICENSE] SUCCESS: Activated key pushed to {}!\n".format(m['name']), "success")
-                messagebox.showinfo("Activated", "License successfully written to machine and service restarted!", parent=dlg)
-                dlg.destroy()
+                if status == "active":
+                    self.log_console("[LICENSE] SUCCESS: Activated key pushed to {}!\n".format(m['name']), "success")
+                    messagebox.showinfo("Activated", "License successfully written to machine and service verified active!", parent=dlg)
+                    dlg.destroy()
+                else:
+                    self.log_console("[LICENSE] WARNING: Service returned status '{}' after license update\n".format(status), "warn")
+                    messagebox.showwarning("Warning", "License saved, but service status is: " + status, parent=dlg)
             except Exception as e:
+                self.log_console("[LICENSE] Activation failed: {}\n".format(str(e)), "error")
                 messagebox.showerror("Activation Failed", str(e), parent=dlg)
 
         b_bar = tk.Frame(form, bg="#0B132B")
