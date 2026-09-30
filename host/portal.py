@@ -206,7 +206,7 @@ def init_db():
             ('clients3.google.com','Android connectivity check'),
             ('www.msftconnecttest.com','Windows/Microsoft connectivity check')]:
             c.execute('DELETE FROM walled_garden WHERE domain=? AND note=?',(domain,note))
-        default_hash = generate_password_hash('admin123', method='pbkdf2:sha256')
+        default_hash = generate_password_hash('admin1234', method='pbkdf2:sha256')
         c.execute("INSERT OR IGNORE INTO admins (username, password_hash) VALUES ('admin', ?)", (default_hash,))
         conn.commit()
 init_db()
@@ -2005,7 +2005,7 @@ def admin_force_password_change():
         return redirect('/admin/login')
     if request.method == 'POST':
         new_pw = request.form.get('new_password', '').strip()
-        if new_pw and len(new_pw) >= 6 and (new_pw != 'admin123'):
+        if new_pw and len(new_pw) >= 6 and (new_pw != 'admin1234'):
             admin_user = session.get('admin_username', 'admin')
             with db_connection() as conn:
                 conn.execute('UPDATE admins SET password_hash=? WHERE username=?', (generate_password_hash(new_pw, method='pbkdf2:sha256'), admin_user))
@@ -2041,8 +2041,6 @@ def admin_login():
                     del admin_login_attempts[client_ip]
                 session['admin_logged_in'] = True
                 session['admin_username'] = username
-                if password == 'admin123':
-                    session['must_change_password'] = True
                 return redirect('/admin')
             else:
                 admin_login_attempts[client_ip][0] += 1

@@ -14,4 +14,9 @@
 5. **NIR Material Discrimination Reference:**
    - Empirical AS7263 calibration and spectroscopy research is archived in [`docs/AS7263_NIR_CALIBRATION_RESEARCH.md`](docs/AS7263_NIR_CALIBRATION_RESEARCH.md).
    - Empty air baseline is ~24.5 uW/cm², clear PET is 35–65 uW/cm², colored glass absorbs (<22 uW/cm²), and paper spikes (>220 uW/cm²).
+6. **Authoritative Admin Credentials (PERMANENT RULE):**
+   - **Default Username:** `admin`
+   - **Default Password:** `admin1234`
+   - AI agents must NEVER modify, overwrite, or randomize the default admin credentials in code, tests, scripts, or database under any circumstances.
+
 

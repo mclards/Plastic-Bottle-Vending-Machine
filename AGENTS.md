@@ -39,6 +39,10 @@
    - Always compute both **MD5** and **SHA-256** checksums after rebuilding.
 3. **Admin Panel Danger Confirmations:**
    - All kick, delete, reboot, and disconnect buttons in the Admin Panel must have explicit confirmation prompts before firing.
+4. **Authoritative Admin Credentials (PERMANENT RULE):**
+   - **Default Username:** `admin`
+   - **Default Password:** `admin1234`
+   - **STRICT PROHIBITION:** AI agents must NEVER change, overwrite, or randomize the default admin credentials in code, tests, scripts, or database under any circumstances.
 
 ---
 
