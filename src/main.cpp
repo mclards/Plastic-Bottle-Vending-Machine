@@ -544,17 +544,19 @@ void sensorTaskCode(void* parameter) {
             logDebug("AIRLOCK", "Entrance gate OPEN (Ch 0 -> %d deg). Waiting up to %u ms for bottle insertion...",
                      config.ent_open_angle, gateTimeoutMs);
 
+            // Phase 1: Wait for bottle to enter (break the Top IR beam)
             unsigned long lastWaitLog = millis();
             while (millis() - openTime < gateTimeoutMs) {
-                if (topIrTriggered || forceGateClose) {
-                    if (topIrTriggered) {
-                        dropped = true;
-                        logDebug("AIRLOCK", "Top IR triggered at +%lu ms!", millis() - openTime);
-                    }
-                    if (forceGateClose) {
-                        wasForced = true;
-                        logDebug("AIRLOCK", "Force gate close detected at +%lu ms!", millis() - openTime);
-                    }
+                if (forceGateClose) {
+                    wasForced = true;
+                    logDebug("AIRLOCK", "Force gate close detected at +%lu ms!", millis() - openTime);
+                    break;
+                }
+                // Check if top IR is triggered (either interrupt flag or direct LOW read)
+                if (topIrTriggered || digitalRead(PIN_IR_TOP) == LOW) {
+                    dropped = true;
+                    topIrTriggered = false;
+                    logDebug("AIRLOCK", "Top IR beam broken at +%lu ms! Bottle insertion detected.", millis() - openTime);
                     break;
                 }
                 if (millis() - lastWaitLog >= 5000) {
@@ -566,8 +568,49 @@ void sensorTaskCode(void* parameter) {
                 }
                 vTaskDelay(pdMS_TO_TICKS(20));
             }
-            
-            setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle); // Close entrance
+
+            // Phase 2: If a bottle was detected, WAIT for the bottle and hand to FULLY PASS through the entrance!
+            // Do NOT slam the gate shut immediately on the bottle body or user's fingers!
+            if (dropped && !wasForced) {
+                logDebug("AIRLOCK", "Bottle detected at gate. Waiting for bottle/hand to fully clear entrance doorway...");
+                unsigned long passageStart = millis();
+                const unsigned long PASSAGE_TIMEOUT_MS = 8000; // Up to 8 seconds for insertion
+                const unsigned long CLEAR_STABLE_MS = 500;     // Beam must be clear continuously for 500ms
+                unsigned long clearStartTime = 0;
+                bool passageCompleted = false;
+
+                while (millis() - passageStart < PASSAGE_TIMEOUT_MS) {
+                    if (forceGateClose) {
+                        wasForced = true;
+                        logDebug("AIRLOCK", "Force gate close during passage wait.");
+                        break;
+                    }
+
+                    int rawTopIr = digitalRead(PIN_IR_TOP);
+                    if (rawTopIr == HIGH) {
+                        // Doorway beam is unbroken
+                        if (clearStartTime == 0) {
+                            clearStartTime = millis();
+                        } else if (millis() - clearStartTime >= CLEAR_STABLE_MS) {
+                            passageCompleted = true;
+                            logDebug("AIRLOCK", "Entrance doorway clear & stable for %lu ms. Bottle safely in cradle.", CLEAR_STABLE_MS);
+                            break;
+                        }
+                    } else {
+                        // Object or hand still passing through entrance doorway
+                        clearStartTime = 0;
+                    }
+                    vTaskDelay(pdMS_TO_TICKS(30));
+                }
+
+                if (!passageCompleted && !wasForced) {
+                    logWarn("AIRLOCK", "Passage wait reached timeout (%lu ms). Closing gate safely.", PASSAGE_TIMEOUT_MS);
+                    buzz(150, 1); // Short audible warning before closing
+                    vTaskDelay(pdMS_TO_TICKS(250));
+                }
+            }
+
+            setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle); // Close entrance safely!
             gateStateEvent(false);
             forceGateClose = false;
             logDebug("AIRLOCK", "Entrance gate CLOSED (Ch 0 -> %d deg). Dropped=%d, WasForced=%d",
@@ -773,8 +816,9 @@ void sensorTaskCode(void* parameter) {
                 const uint32_t retrievalTimeoutMs = static_cast<uint32_t>(config.retrieval_timeout_s) * 1000UL;
                 unsigned long startWait = millis();
                 bool itemCleared = false;
+                bool userInteracted = false;
                 unsigned long clearStartTime = 0;
-                const unsigned long STABILIZE_MS = 400; // Continuous debounce time
+                const unsigned long STABILIZE_MS = 600; // Continuous debounce time
 
                 logDebug("RETRIEVAL", "Waiting up to %u ms for manual item removal...", retrievalTimeoutMs);
 
@@ -791,11 +835,18 @@ void sensorTaskCode(void* parameter) {
                         currentWt = scale.get_units(1);
                     }
 
-                    // Cradle is clear when:
-                    // - Inductive metal sensor is HIGH (no metal object)
-                    // - Top IR optical sensor is HIGH (beam unbroken, no hand or bottle in entrance)
-                    // - If scale is attached: weight is below 5 grams
-                    bool sensorsClear = (metalVal == HIGH) && (topIrVal == HIGH) && (!hx711Found || currentWt < 5.0f);
+                    // User must reach their hand into the entrance doorway to remove the object
+                    if (topIrVal == LOW) {
+                        userInteracted = true;
+                    }
+
+                    // Cradle is confirmed clear when:
+                    // - Inductive metal sensor is HIGH (no metal in cradle)
+                    // - Doorway beam is HIGH (unbroken, hand has withdrawn)
+                    // - If scale is attached: weight is below 5g
+                    // - If no scale: user must have actually reached in (or metal sensor was cleared)
+                    bool canClear = hx711Found ? (currentWt < 5.0f) : (userInteracted || (rejectReason == MSG_REJECT_TIN && metalVal == HIGH));
+                    bool sensorsClear = (metalVal == HIGH) && (topIrVal == HIGH) && canClear;
 
                     if (sensorsClear) {
                         if (clearStartTime == 0) {
