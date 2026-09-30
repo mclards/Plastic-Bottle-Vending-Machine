@@ -40,3 +40,8 @@ resources/pisofi_firmware_dump/
 scratch/
 portal_recovery.py
 commit_diff.txt
+
+# PyInstaller & Build Artifacts
+build/
+dist/
+*.spec
