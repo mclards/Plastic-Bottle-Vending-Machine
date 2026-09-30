@@ -6,12 +6,10 @@
 #include <cstdarg>
 #include <AS726X.h>
 #include <HX711.h>
-#include <WiFi.h>
-#include <WebServer.h>
-#include <DNSServer.h>
+#include <esp_wifi.h>
+#include <esp_bt.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
-#include "index_html.h"
 #include "machine_config.h"
 #include "release_version.h"
 
@@ -105,21 +103,11 @@ float lastMeasuredWeightG = 0.0f;
 MachineConfig config;
 MachineConfig desiredConfig; // UART task owns this; sensor task owns runtime config.
 QueueHandle_t configQueue;
-std::atomic<bool> configRestartRequested{false};
 std::atomic<int> requestedGateTimeout{60};
 std::atomic<bool> finishRequested{false};
 Preferences preferences;
 
-#define AP_SSID "ESP32 Vendo"
-#define AP_PASSWORD "admin1234"
 
-std::atomic<bool> apActive{false};
-std::atomic<int> apStations{0};
-SemaphoreHandle_t apMutex = nullptr;
-WebServer server(80);
-DNSServer dnsServer;
-TaskHandle_t apTaskHandle = NULL;
-unsigned long apLastDeviceConnectedTime = 0;
 
 
 std::atomic<bool> topIrTriggered{false};
@@ -438,252 +426,6 @@ void savePreferences() {
     logDebug("NVS", "Persisted hardware parameters (ts=%lu) to Flash.", config.config_timestamp);
 }
 
-// -----------------------------------------------------------------------------
-// WEB CONFIGURATION PORTAL HANDLERS
-// -----------------------------------------------------------------------------
-void handleRoot() {
-    apLastDeviceConnectedTime = millis();
-    logDebug("HTTP", "GET / served to %s", server.client().remoteIP().toString().c_str());
-    String html = index_html;
-
-    html.replace("%BIN_CM%", String(config.bin_full_threshold_cm));
-    html.replace("%ENT_TOUT%", String(config.entrance_gate_timeout));
-    html.replace("%STL_MS%", String(config.settle_time_ms));
-    html.replace("%SUC_TOUT%", String(config.success_drop_tout_ms));
-    html.replace("%RET_TOUT%", String(config.retrieval_timeout_s));
-    html.replace("%NIR_MIN%", String(config.pet_nir_w_min));
-    html.replace("%NIR_MAX%", String(config.pet_nir_w_max));
-    html.replace("%ENT_OPEN%", String(config.ent_open_angle));
-    html.replace("%ENT_CLOSE%", String(config.ent_close_angle));
-    html.replace("%SUC_OPEN%", String(config.suc_open_angle));
-    html.replace("%SUC_CLOSE%", String(config.suc_close_angle));
-    html.replace("%REQ_NIR%", String(config.require_nir_sensor));
-    html.replace("%REQ_WT%", String(config.require_weight_sensor));
-    html.replace("%MIN_WT%", String(config.min_bottle_weight_g));
-    html.replace("%MAX_WT%", String(config.max_bottle_weight_g));
-    html.replace("%WT_CAL%", String(config.weight_cal_factor));
-    server.send(200, "text/html", html);
-}
-
-void handleSave() {
-    apLastDeviceConnectedTime = millis();
-    logDebug("HTTP", "POST /save received from %s", server.client().remoteIP().toString().c_str());
-    const char* fields[] = {"bin_cm", "ent_tout", "stl_ms", "suc_tout", "ret_tout", "nir_min", "nir_max",
-        "ent_open", "ent_close", "suc_open", "suc_close", "req_nir",
-        "req_wt", "min_wt", "max_wt", "wt_cal"};
-    for (const char* field : fields) {
-        if (!server.hasArg(field)) continue;
-        String value = server.arg(field);
-        bool numeric = value.length() > 0 && value.length() <= 5;
-        for (size_t i = 0; i < value.length(); ++i) numeric = numeric && value[i] >= '0' && value[i] <= '9';
-        if (!numeric) {
-            logWarn("HTTP", "Invalid field format for '%s': '%s'", field, value.c_str());
-            server.send(400, "text/plain", "Invalid hardware settings");
-            return;
-        }
-    }
-    MachineConfig previous = config;
-    if (server.hasArg("bin_cm")) config.bin_full_threshold_cm = server.arg("bin_cm").toInt();
-    if (server.hasArg("ent_tout")) config.entrance_gate_timeout = server.arg("ent_tout").toInt();
-    if (server.hasArg("stl_ms")) config.settle_time_ms = server.arg("stl_ms").toInt();
-    if (server.hasArg("suc_tout")) config.success_drop_tout_ms = server.arg("suc_tout").toInt();
-    if (server.hasArg("ret_tout")) config.retrieval_timeout_s = server.arg("ret_tout").toInt();
-    if (server.hasArg("nir_min")) config.pet_nir_w_min = server.arg("nir_min").toInt();
-    if (server.hasArg("nir_max")) config.pet_nir_w_max = server.arg("nir_max").toInt();
-    if (server.hasArg("ent_open")) config.ent_open_angle = server.arg("ent_open").toInt();
-    if (server.hasArg("ent_close")) config.ent_close_angle = server.arg("ent_close").toInt();
-    if (server.hasArg("suc_open")) config.suc_open_angle = server.arg("suc_open").toInt();
-    if (server.hasArg("suc_close")) config.suc_close_angle = server.arg("suc_close").toInt();
-    if (server.hasArg("req_nir")) config.require_nir_sensor = server.arg("req_nir").toInt();
-    if (server.hasArg("req_wt")) config.require_weight_sensor = server.arg("req_wt").toInt();
-    if (server.hasArg("min_wt")) config.min_bottle_weight_g = server.arg("min_wt").toInt();
-    if (server.hasArg("req_bin")) config.require_bin_sensor = server.arg("req_bin").toInt();
-    if (server.hasArg("max_wt")) config.max_bottle_weight_g = server.arg("max_wt").toInt();
-    if (server.hasArg("wt_cal")) config.weight_cal_factor = server.arg("wt_cal").toInt();
-
-    if (!validMachineConfig(config)) {
-        logWarn("HTTP", "Machine configuration validation failed. Reverting.");
-        config = previous;
-        server.send(400, "text/plain", "Invalid hardware settings");
-        return;
-    }
-    if (config.config_timestamp > 0) {
-        config.config_timestamp++;
-    } else {
-        config.config_timestamp = (unsigned long)(millis() / 1000) + 1;
-    }
-    savePreferences();
-    logDebug("HTTP", "Configuration saved (ts=%lu). Snapping servos to closed positions to verify tuning.", config.config_timestamp);
-    
-    // Snap servos to new values immediately to visually test tuning
-    setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
-    setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
-
-    if (configQueue) {
-        xQueueOverwrite(configQueue, &config);
-    }
-    char saveBuf[96];
-    snprintf(saveBuf, sizeof(saveBuf), "{\"event\":\"CONFIG_SAVED\",\"cfg_ts\":%lu}", config.config_timestamp);
-    emitSerialLine(saveBuf);
-    
-    String html = "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1.0'><title>Configuration Saved</title>";
-    html += "<style>:root{--bg:#f8fafc;--card:#ffffff;--text:#0f172a;--muted:#64748b;--border:#e2e8f0;--btn:#0f172a;--btn-txt:#ffffff}@media(prefers-color-scheme:dark){:root{--bg:#090d16;--card:#111827;--text:#f9fafb;--muted:#9ca3af;--border:#1f2937;--btn:#2563eb;--btn-txt:#ffffff}}";
-    html += "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;padding:16px;}";
-    html += ".card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:28px 24px;max-width:380px;width:100%;text-align:center;box-sizing:border-box;}";
-    html += "h2{font-size:18px;margin:0 0 8px;font-weight:600;}p{color:var(--muted);font-size:13px;margin:0 0 20px;line-height:1.5;}";
-    html += "a{display:inline-block;text-decoration:none;background:var(--btn);color:var(--btn-txt);padding:10px 20px;border-radius:6px;font-size:14px;font-weight:600;}</style></head>";
-    html += "<body><div class='card'><h2>Configuration Saved</h2><p>Parameters saved to flash storage. Servos snapped to closed positions.</p><a href='/'>Back to Configuration</a></div></body></html>";
-    server.send(200, "text/html", html);
-}
-
-void handleStatus() {
-    apLastDeviceConnectedTime = millis();
-    JsonDocument doc;
-    doc["success"] = true;
-    
-    xSemaphoreTake(creditMutex, portMAX_DELAY);
-    doc["session"] = creditJournal.session[0] ? creditJournal.session : "None (Idle)";
-    doc["phase"] = creditJournal.phase;
-    xSemaphoreGive(creditMutex);
-
-    doc["session_bottles"] = currentSessionBottles.load();
-    doc["is_bin_full"] = isBinFull.load();
-    doc["pca9685"] = pca9685Found;
-    doc["spectrometer"] = spectrometerFound;
-    doc["require_nir_sensor"] = config.require_nir_sensor;
-    doc["hardware_ready"] = pca9685Found && (!config.require_nir_sensor || spectrometerFound);
-    doc["version"] = ECOVENDO_VERSION;
-    doc["ap_active"] = apActive.load();
-    doc["ap_stations"] = apStations.load();
-
-    String out;
-    serializeJson(doc, out);
-    server.send(200, "application/json", out);
-}
-
-void stopApMode() {
-    if (apMutex) xSemaphoreTakeRecursive(apMutex, portMAX_DELAY);
-    if (!apActive.load()) {
-        if (apMutex) xSemaphoreGiveRecursive(apMutex);
-        return;
-    }
-    apActive = false;
-    apStations.store(0);
-    server.stop();
-    dnsServer.stop();
-    WiFi.softAPdisconnect(true);
-    WiFi.mode(WIFI_OFF);
-    logDebug("CONFIG-AP", "SoftAP '%s' disabled.", AP_SSID);
-    emitSerialLine("{\"event\":\"AP_STATUS\",\"active\":false,\"stations\":0}");
-    if (apMutex) xSemaphoreGiveRecursive(apMutex);
-}
-
-void startWebServerRoutes();
-
-void startApMode() {
-    if (apMutex) xSemaphoreTakeRecursive(apMutex, portMAX_DELAY);
-    if (apActive.load()) {
-        apLastDeviceConnectedTime = millis();
-        if (apMutex) xSemaphoreGiveRecursive(apMutex);
-        return;
-    }
-    IPAddress apIP(192, 168, 4, 1);
-    IPAddress netMsk(255, 255, 255, 0);
-    WiFi.mode(WIFI_AP);
-    WiFi.softAPConfig(apIP, apIP, netMsk);
-    WiFi.softAP(AP_SSID, AP_PASSWORD);
-    dnsServer.start(53, "*", WiFi.softAPIP());
-    startWebServerRoutes();
-    apLastDeviceConnectedTime = millis();
-    apActive = true;
-    logDebug("CONFIG-AP", "SoftAP '%s' started at %s (Auto-off in 60s if no clients)",
-             AP_SSID, WiFi.softAPIP().toString().c_str());
-    char buf[128];
-    snprintf(buf, sizeof(buf), "{\"event\":\"AP_STATUS\",\"active\":true,\"stations\":0,\"ip\":\"%s\"}",
-             WiFi.softAPIP().toString().c_str());
-    emitSerialLine(buf);
-    if (apMutex) xSemaphoreGiveRecursive(apMutex);
-}
-
-void handleTestServo() {
-    apLastDeviceConnectedTime = millis();
-    int ch = server.hasArg("channel") ? server.arg("channel").toInt() : -1;
-    int ang = server.hasArg("angle") ? server.arg("angle").toInt() : -1;
-    if (pca9685Found && ch >= 0 && ch <= 1 && ang >= 0 && ang <= 180 && !depositCycleBusy) {
-        setServoAngle((uint8_t)ch, ang);
-        logDebug("HTTP", "TEST_SERVO HTTP: ch=%d, angle=%d", ch, ang);
-        server.send(200, "application/json", "{\"success\":true}");
-    } else {
-        server.send(400, "application/json", "{\"success\":false,\"error\":\"invalid_params\"}");
-    }
-}
-
-void handleReboot() {
-    logDebug("HTTP", "GET /reboot received. Disabling AP mode...");
-    server.send(200, "text/plain", "AP Mode Disabled. Stopping SoftAP...");
-    vTaskDelay(pdMS_TO_TICKS(500));
-    stopApMode();
-}
-
-void startWebServerRoutes() {
-    static bool routesConfigured = false;
-    if (!routesConfigured) {
-        server.on("/", handleRoot);
-        server.on("/save", handleSave);
-        server.on("/test_servo", handleTestServo);
-        server.on("/status", handleStatus);
-        server.on("/reboot", handleReboot);
-        server.on("/generate_204", handleRoot); // Captive Portal Android
-        server.on("/hotspot-detect.html", handleRoot); // Captive Portal iOS
-        server.onNotFound(handleRoot);
-        routesConfigured = true;
-        logDebug("CONFIG-AP", "Web server routes registered on port 80.");
-    }
-    server.begin();
-}
-
-void apTaskCode(void* parameter) {
-    (void)parameter;
-    logDebug("CONFIG-AP", "AP Task daemon active on Core %d", xPortGetCoreID());
-    unsigned long lastStatusLog = 0;
-
-    while (true) {
-        if (apActive.load()) {
-            if (apMutex) xSemaphoreTakeRecursive(apMutex, portMAX_DELAY);
-            if (apActive.load()) {
-                int stations = WiFi.softAPgetStationNum();
-                apStations.store(stations);
-                if (stations > 0) {
-                    apLastDeviceConnectedTime = millis();
-                }
-
-                if (millis() - lastStatusLog >= 15000) {
-                    lastStatusLog = millis();
-                    unsigned long idleTime = millis() - apLastDeviceConnectedTime;
-                    logDebug("CONFIG-AP", "Connected clients: %d | Idle elapsed: %lu / 60000 ms",
-                             stations, idleTime);
-                }
-
-                // Auto-off if no device connected for 1 minute (60 seconds)
-                if (millis() - apLastDeviceConnectedTime >= 60000) {
-                    logWarn("CONFIG-AP", "Config Portal Inactivity Timeout reached (60s without devices). Auto turning OFF AP...");
-                    stopApMode();
-                    if (apMutex) xSemaphoreGiveRecursive(apMutex);
-                    continue;
-                }
-
-                dnsServer.processNextRequest();
-                server.handleClient();
-            }
-            if (apMutex) xSemaphoreGiveRecursive(apMutex);
-            vTaskDelay(pdMS_TO_TICKS(10));
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(250));
-        }
-    }
-}
-
-// -----------------------------------------------------------------------------
 // SENSOR & MECHANICAL WORKFLOW TASK (CORE 0)
 // -----------------------------------------------------------------------------
 void sensorTaskCode(void* parameter) {
@@ -716,13 +458,7 @@ void sensorTaskCode(void* parameter) {
                 postEvent(MSG_BIN_OK);
             }
         }
-        if (configRestartRequested) {
-            logDebug("SENSOR", "Config restart requested. Closing entrance gate and restarting...");
-            entranceGateRequested = false;
-            setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
-            preferences.putBool("force_cfg", true);
-            ESP.restart();
-        }
+
 
         // 1. Check Bin Status (isolated non-blocking slice every 1500 ms)
         if (xTaskGetTickCount() - lastUltrasonicCheck >= pdMS_TO_TICKS(1500)) {
@@ -747,9 +483,8 @@ void sensorTaskCode(void* parameter) {
             lastTelemetryHeartbeat = xTaskGetTickCount();
             char hbBuf[384];
             bool hwReady = pca9685Found && (!config.require_nir_sensor || spectrometerFound) && (!config.require_weight_sensor || hx711Found) && (!config.require_bin_sensor || !isBinFull.load());
-            int stations = apStations.load();
             snprintf(hbBuf, sizeof(hbBuf),
-                     "{\"event\":\"HEARTBEAT\",\"bin_distance_cm\":%d,\"is_bin_full\":%s,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d,\"require_bin\":%d,\"gate_open\":%s,\"ap_active\":%s,\"ap_stations\":%d,\"cfg_ts\":%lu,\"protocol\":2}",
+                     "{\"event\":\"HEARTBEAT\",\"bin_distance_cm\":%d,\"is_bin_full\":%s,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d,\"require_bin\":%d,\"gate_open\":%s,\"ap_active\":false,\"ap_stations\":0,\"cfg_ts\":%lu,\"protocol\":2}",
                      cachedBinDistanceCm.load(),
                      isBinFull.load() ? "true" : "false",
                      pca9685Found ? "true" : "false",
@@ -760,8 +495,6 @@ void sensorTaskCode(void* parameter) {
                      config.require_weight_sensor,
                      config.require_bin_sensor,
                      depositCycleBusy.load() ? "true" : "false",
-                     apActive.load() ? "true" : "false",
-                     stations,
                      config.config_timestamp);
             emitSerialLine(hbBuf);
         }
@@ -776,7 +509,7 @@ void sensorTaskCode(void* parameter) {
             xSemaphoreTake(creditMutex, portMAX_DELAY);
             bool sensorReady = !config.require_nir_sensor || spectrometerFound;
             bool permitted = creditStorageOk && creditJournal.phase == 0 && creditJournal.session[0] &&
-                !finishRequested && !configRestartRequested && pca9685Found && sensorReady;
+                !finishRequested && pca9685Found && sensorReady;
             if (permitted) depositCycleBusy = true;
             char curSession[37];
             strlcpy(curSession, creditJournal.session, sizeof(curSession));
@@ -1241,6 +974,12 @@ void setup() {
     Serial.begin(115200);
     serialMutex = xSemaphoreCreateMutex();
 
+    // Decommission radio hardware completely to maximize 2-core real-time execution,
+    // eliminate interrupt jitter, reduce power, and prevent analog sensor EMI
+    esp_bt_controller_disable();
+    esp_wifi_stop();
+    esp_wifi_deinit();
+
     logDebug("BOOT", "==================================================");
     logDebug("BOOT", "       VMC ECO-VENDO Reverse Vending Machine ESP32       ");
     logDebug("BOOT", "       Firmware Version: %s", ECOVENDO_VERSION);
@@ -1355,19 +1094,7 @@ void setup() {
         while (true) delay(1000);
     }
 
-    bool forceConfig = preferences.getBool("force_cfg", false);
-    if (forceConfig) {
-        preferences.putBool("force_cfg", false);
-        logDebug("BOOT", "Force config flag was set in flash. Entering Config Mode.");
-    }
-    bool btnDown = (digitalRead(PIN_FINISH_BTN) == LOW);
-    logDebug("BOOT", "Finish Button (GPIO %d) on boot: %s", PIN_FINISH_BTN, btnDown ? "LOW (PRESSED)" : "HIGH (RELEASED)");
 
-    // Check for Config Mode Trigger
-    if (forceConfig || btnDown) {
-        logDebug("BOOT", ">>> STARTING WITH AP MODE ENABLED <<<");
-        startApMode();
-    }
 
     // Normal Vending Setup
     logDebug("BOOT", ">>> STARTING NORMAL VENDING MODE <<<");
@@ -1379,17 +1106,14 @@ void setup() {
     eventQueue = xQueueCreate(10, sizeof(QueuedEvent));
     configQueue = xQueueCreate(1, sizeof(MachineConfig));
     uiMutex = xSemaphoreCreateMutex();
-    apMutex = xSemaphoreCreateRecursiveMutex();
 
     BaseType_t commCreated = xTaskCreatePinnedToCore(commTaskCode, "CommTask", 6144, NULL, 1, NULL, 1);
     BaseType_t sensorCreated = xTaskCreatePinnedToCore(sensorTaskCode, "SensorTask", 6144, NULL, 2, &sensorTaskHandle, 0);
-    BaseType_t apCreated = xTaskCreatePinnedToCore(apTaskCode, "ApTask", 8192, NULL, 1, &apTaskHandle, 0);
 
     logDebug("BOOT", "CommTask (Core 1): %s", commCreated == pdPASS ? "OK" : "FAILED");
     logDebug("BOOT", "SensorTask (Core 0): %s", sensorCreated == pdPASS ? "OK" : "FAILED");
-    logDebug("BOOT", "ApTask (Core 0): %s", apCreated == pdPASS ? "OK" : "FAILED");
 
-    if (!eventQueue || !configQueue || !uiMutex || !apMutex || commCreated != pdPASS || sensorCreated != pdPASS || apCreated != pdPASS) {
+    if (!eventQueue || !configQueue || !uiMutex || commCreated != pdPASS || sensorCreated != pdPASS) {
         logError("BOOT", "CRITICAL: Failed to create FreeRTOS queues or worker tasks!");
         emitSerialLine("{\"event\":\"STARTUP_ERROR\"}");
         while (true) delay(1000);
@@ -1444,7 +1168,7 @@ void loop() {
                      sid, same, timeout, creditJournal.phase, depositCycleBusy.load());
             if (command["protocol"] == 2 && strlen(sid) > 0 && strlen(sid) <= 36 &&
                 creditStorageOk && creditJournal.phase == 0 && (!depositCycleBusy || same) &&
-                !finishRequested && !configRestartRequested && timeout >= 1 && timeout <= 600) {
+                !finishRequested && timeout >= 1 && timeout <= 600) {
                 if (!same) {
                     logDebug("CMD", "New session '%s' replacing previous '%s'. Resetting session bottle count.",
                              sid, creditJournal.session);
@@ -1495,17 +1219,9 @@ void loop() {
                 logDebug("CMD", "Forced gate close flag set.");
             }
             xSemaphoreGive(creditMutex);
-        } else if (strcmp(cmd, "SET_AP") == 0) {
-            bool enable = command["enable"] | true;
-            logDebug("CMD", "SET_AP received: enable=%d", enable);
-            if (enable) {
-                startApMode();
-            } else {
-                stopApMode();
-            }
-        } else if (strcmp(cmd, "TRIGGER_CONFIG") == 0) {
-            logDebug("CMD", "TRIGGER_CONFIG received! Enabling AP mode...");
-            startApMode();
+        } else if (strcmp(cmd, "SET_AP") == 0 || strcmp(cmd, "TRIGGER_CONFIG") == 0) {
+            logDebug("CMD", "%s received: AP portal is permanently decommissioned for dual-core performance.", cmd);
+            emitSerialLine("{\"event\":\"AP_STATUS\",\"active\":false,\"stations\":0}");
         } else if (strcmp(cmd, "FINISH_ACK") == 0) {
             xSemaphoreTake(creditMutex, portMAX_DELAY);
             logDebug("CMD", "FINISH_ACK received for session='%s'", sid);
@@ -1702,9 +1418,8 @@ void loop() {
         } else if (strcmp(cmd, "PING") == 0) {
             char pongBuf[384];
             bool hwReady = pca9685Found && (!desiredConfig.require_nir_sensor || spectrometerFound) && (!desiredConfig.require_weight_sensor || hx711Found) && (!desiredConfig.require_bin_sensor || !isBinFull.load());
-            int stations = apStations.load();
             snprintf(pongBuf, sizeof(pongBuf),
-                     "{\"event\":\"PONG\",\"firmware_version\":\"%s\",\"protocol\":2,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d,\"require_bin\":%d,\"ap_active\":%s,\"ap_stations\":%d,\"cfg_ts\":%lu}",
+                     "{\"event\":\"PONG\",\"firmware_version\":\"%s\",\"protocol\":2,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d,\"require_bin\":%d,\"ap_active\":false,\"ap_stations\":0,\"cfg_ts\":%lu}",
                      ECOVENDO_VERSION,
                      pca9685Found ? "true" : "false",
                      spectrometerFound ? "true" : "false",
@@ -1713,8 +1428,6 @@ void loop() {
                      desiredConfig.require_nir_sensor,
                      desiredConfig.require_weight_sensor,
                      desiredConfig.require_bin_sensor,
-                     apActive.load() ? "true" : "false",
-                     stations,
                      desiredConfig.config_timestamp);
             emitSerialLine(pongBuf);
             logDebug("CMD", "Responded to PING with PONG (cfg_ts=%lu).", desiredConfig.config_timestamp);
