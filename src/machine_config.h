@@ -21,6 +21,9 @@ struct MachineConfig {
     int require_nir_sensor = 1;      // 1 = Strict NIR polymer check required, 0 = Bench-test mode (servos only)
     int require_weight_sensor = 0;   // 1 = Strict HX711 weight check required, 0 = Bypassed (sensor optional)
     int require_bin_sensor = 0;      // 1 = Strict ultrasonic bin check required, 0 = Bypassed (sensor optional / disabled default)
+    int bin_sensor_orientation = 0;  // 0 = Overhead / Downward, 1 = Horizontal / Side-Mounted
+    int bin_empty_depth_cm = 60;     // Base-to-sensor empty depth in cm (Overhead mode)
+    int bin_debounce_s = 3;          // Continuous presence required in seconds before declaring full (Horizontal mode)
     int min_bottle_weight_g = 10;    // Minimum weight for empty plastic bottle (grams)
     int max_bottle_weight_g = 65;    // Maximum weight for empty plastic bottle (grams; rejects glass >250g)
     int weight_cal_factor = 420;     // HX711 pulses-per-gram calibration factor
@@ -30,6 +33,9 @@ struct MachineConfig {
 
 constexpr bool validMachineConfig(const MachineConfig& c) {
     return c.bin_full_threshold_cm >= 1 && c.bin_full_threshold_cm <= 400 &&
+        c.bin_sensor_orientation >= 0 && c.bin_sensor_orientation <= 1 &&
+        c.bin_empty_depth_cm >= 20 && c.bin_empty_depth_cm <= 250 &&
+        c.bin_debounce_s >= 1 && c.bin_debounce_s <= 30 &&
         c.pet_nir_w_min >= 0 && c.pet_nir_w_max > c.pet_nir_w_min && c.pet_nir_w_max <= 65535 &&
         c.entrance_gate_timeout >= 1 && c.entrance_gate_timeout <= 600 &&
         c.settle_time_ms >= 1 && c.settle_time_ms <= 30000 &&

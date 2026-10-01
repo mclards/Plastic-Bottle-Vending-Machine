@@ -376,6 +376,9 @@ int getBinDistanceCm() {
 void loadPreferences() {
     preferences.begin("ecovendo", false);
     config.bin_full_threshold_cm = preferences.getInt("bin_cm", 15);
+    config.bin_sensor_orientation = preferences.getInt("bin_orient", 0);
+    config.bin_empty_depth_cm = preferences.getInt("bin_empty", 60);
+    config.bin_debounce_s = preferences.getInt("bin_deb", 3);
     config.pet_nir_w_min = preferences.getInt("nir_min", 30);
     config.pet_nir_w_max = preferences.getInt("nir_max", 220);
     config.entrance_gate_timeout = preferences.getInt("ent_tout", 60);
@@ -395,7 +398,10 @@ void loadPreferences() {
     config.config_timestamp = preferences.getULong("cfg_ts", 0);
 
     logDebug("NVS", "Loaded Hardware Preferences:");
-    logDebug("NVS", "  Bin Full Threshold: %d cm", config.bin_full_threshold_cm);
+    logDebug("NVS", "  Bin: Thresh=%d cm, Orient=%s, EmptyDepth=%d cm, Debounce=%d s",
+             config.bin_full_threshold_cm,
+             config.bin_sensor_orientation == 1 ? "Horizontal" : "Overhead",
+             config.bin_empty_depth_cm, config.bin_debounce_s);
     logDebug("NVS", "  PET NIR Range: [%d - %d]", config.pet_nir_w_min, config.pet_nir_w_max);
     logDebug("NVS", "  Entrance Gate Timeout: %d s", config.entrance_gate_timeout);
     logDebug("NVS", "  Timings: Settle=%d ms, SuccessTout=%d ms, RetrievalTimeout=%d s",
@@ -412,6 +418,9 @@ void loadPreferences() {
 void savePreferences() {
     preferences.begin("ecovendo", false);
     preferences.putInt("bin_cm", config.bin_full_threshold_cm);
+    preferences.putInt("bin_orient", config.bin_sensor_orientation);
+    preferences.putInt("bin_empty", config.bin_empty_depth_cm);
+    preferences.putInt("bin_deb", config.bin_debounce_s);
     preferences.putInt("nir_min", config.pet_nir_w_min);
     preferences.putInt("nir_max", config.pet_nir_w_max);
     preferences.putInt("ent_tout", config.entrance_gate_timeout);
@@ -467,18 +476,45 @@ void sensorTaskCode(void* parameter) {
 
 
         // 1. Check Bin Status (isolated non-blocking slice every 1500 ms)
+        static unsigned long binDetectionStartMs = 0;
         if (xTaskGetTickCount() - lastUltrasonicCheck >= pdMS_TO_TICKS(1500)) {
             lastUltrasonicCheck = xTaskGetTickCount();
             int distance = getBinDistanceCm();
             cachedBinDistanceCm.store(distance);
-            bool currentlyFull = config.require_bin_sensor && (distance < config.bin_full_threshold_cm && distance > 0);
-            
+
+            bool inRange = (distance < config.bin_full_threshold_cm && distance > 0);
+            bool currentlyFull = false;
+
+            if (config.require_bin_sensor) {
+                if (config.bin_sensor_orientation == 1) {
+                    // Horizontal side-mounted tripwire: must persist continuously for bin_debounce_s seconds
+                    if (inRange) {
+                        if (binDetectionStartMs == 0) binDetectionStartMs = millis();
+                        if (millis() - binDetectionStartMs >= (unsigned long)(config.bin_debounce_s * 1000)) {
+                            currentlyFull = true;
+                        }
+                    } else {
+                        binDetectionStartMs = 0;
+                        currentlyFull = false;
+                    }
+                } else {
+                    // Overhead downward depth gauge: direct threshold comparison
+                    binDetectionStartMs = 0;
+                    currentlyFull = inRange;
+                }
+            } else {
+                binDetectionStartMs = 0;
+                currentlyFull = false;
+            }
+
             if (currentlyFull != lastBinState) {
                 isBinFull = currentlyFull;
                 lastBinState = currentlyFull;
                 EventMsg msg = currentlyFull ? MSG_BIN_FULL : MSG_BIN_OK;
-                logDebug("BIN", "Bin status changed -> %s (Measured: %d cm, Threshold: %d cm, Req: %d)",
-                         currentlyFull ? "FULL" : "OK", distance, config.bin_full_threshold_cm, config.require_bin_sensor);
+                logDebug("BIN", "Bin status changed -> %s (Orient: %s, Measured: %d cm, Thresh: %d cm, Req: %d)",
+                         currentlyFull ? "FULL" : "OK",
+                         config.bin_sensor_orientation == 1 ? "HORIZ" : "OVERHEAD",
+                         distance, config.bin_full_threshold_cm, config.require_bin_sensor);
                 postEvent(msg);
             }
         }
@@ -487,10 +523,10 @@ void sensorTaskCode(void* parameter) {
         static TickType_t lastTelemetryHeartbeat = 0;
         if (xTaskGetTickCount() - lastTelemetryHeartbeat >= pdMS_TO_TICKS(3000)) {
             lastTelemetryHeartbeat = xTaskGetTickCount();
-            char hbBuf[384];
+            char hbBuf[448];
             bool hwReady = pca9685Found && (!config.require_nir_sensor || spectrometerFound) && (!config.require_weight_sensor || hx711Found) && (!config.require_bin_sensor || !isBinFull.load());
             snprintf(hbBuf, sizeof(hbBuf),
-                     "{\"event\":\"HEARTBEAT\",\"bin_distance_cm\":%d,\"is_bin_full\":%s,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d,\"require_bin\":%d,\"gate_open\":%s,\"ap_active\":false,\"ap_stations\":0,\"cfg_ts\":%lu,\"protocol\":2}",
+                     "{\"event\":\"HEARTBEAT\",\"bin_distance_cm\":%d,\"is_bin_full\":%s,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d,\"require_bin\":%d,\"bin_orient\":%d,\"bin_empty\":%d,\"bin_deb\":%d,\"gate_open\":%s,\"ap_active\":false,\"ap_stations\":0,\"cfg_ts\":%lu,\"protocol\":2}",
                      cachedBinDistanceCm.load(),
                      isBinFull.load() ? "true" : "false",
                      pca9685Found ? "true" : "false",
@@ -500,6 +536,9 @@ void sensorTaskCode(void* parameter) {
                      config.require_nir_sensor,
                      config.require_weight_sensor,
                      config.require_bin_sensor,
+                     config.bin_sensor_orientation,
+                     config.bin_empty_depth_cm,
+                     config.bin_debounce_s,
                      depositCycleBusy.load() ? "true" : "false",
                      config.config_timestamp);
             emitSerialLine(hbBuf);
@@ -1449,6 +1488,18 @@ void loop() {
                 if (!command["require_bin_sensor"].is<int>()) fieldsValid = false;
                 else next.require_bin_sensor = command["require_bin_sensor"];
             }
+            if (!command["bin_sensor_orientation"].isNull()) {
+                if (!command["bin_sensor_orientation"].is<int>()) fieldsValid = false;
+                else next.bin_sensor_orientation = command["bin_sensor_orientation"];
+            }
+            if (!command["bin_empty_depth_cm"].isNull()) {
+                if (!command["bin_empty_depth_cm"].is<int>()) fieldsValid = false;
+                else next.bin_empty_depth_cm = command["bin_empty_depth_cm"];
+            }
+            if (!command["bin_debounce_s"].isNull()) {
+                if (!command["bin_debounce_s"].is<int>()) fieldsValid = false;
+                else next.bin_debounce_s = command["bin_debounce_s"];
+            }
             if (!command["weight_cal_factor"].isNull()) {
                 if (!command["weight_cal_factor"].is<int>()) fieldsValid = false;
                 else next.weight_cal_factor = command["weight_cal_factor"];
@@ -1584,10 +1635,10 @@ void loop() {
                 emitSerialLine("{\"event\":\"TARE_REJECTED\",\"success\":false}");
             }
         } else if (strcmp(cmd, "PING") == 0) {
-            char pongBuf[384];
+            char pongBuf[448];
             bool hwReady = pca9685Found && (!desiredConfig.require_nir_sensor || spectrometerFound) && (!desiredConfig.require_weight_sensor || hx711Found) && (!desiredConfig.require_bin_sensor || !isBinFull.load());
             snprintf(pongBuf, sizeof(pongBuf),
-                     "{\"event\":\"PONG\",\"firmware_version\":\"%s\",\"protocol\":2,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d,\"require_bin\":%d,\"ap_active\":false,\"ap_stations\":0,\"cfg_ts\":%lu}",
+                     "{\"event\":\"PONG\",\"firmware_version\":\"%s\",\"protocol\":2,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d,\"require_bin\":%d,\"bin_orient\":%d,\"bin_empty\":%d,\"bin_deb\":%d,\"ap_active\":false,\"ap_stations\":0,\"cfg_ts\":%lu}",
                      ECOVENDO_VERSION,
                      pca9685Found ? "true" : "false",
                      spectrometerFound ? "true" : "false",
@@ -1596,6 +1647,9 @@ void loop() {
                      desiredConfig.require_nir_sensor,
                      desiredConfig.require_weight_sensor,
                      desiredConfig.require_bin_sensor,
+                     desiredConfig.bin_sensor_orientation,
+                     desiredConfig.bin_empty_depth_cm,
+                     desiredConfig.bin_debounce_s,
                      desiredConfig.config_timestamp);
             emitSerialLine(pongBuf);
             logDebug("CMD", "Responded to PING with PONG (cfg_ts=%lu).", desiredConfig.config_timestamp);

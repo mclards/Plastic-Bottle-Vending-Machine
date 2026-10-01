@@ -11,7 +11,10 @@ HARDWARE_BOUNDS={
     'pet_nir_w_max':(1,65535,220),'entrance_gate_timeout':(1,600,60),
     'settle_time_ms':(1,30000,500),'success_drop_tout_ms':(1,30000,3000),
     'retrieval_timeout_s':(5,300,45),'require_nir_sensor':(0,1,1),
-    'require_weight_sensor':(0,1,0),'require_bin_sensor':(0,1,0),'min_bottle_weight_g':(1,1000,10),
+    'require_weight_sensor':(0,1,0),'require_bin_sensor':(0,1,0),
+    'bin_sensor_orientation':(0,1,0),'bin_empty_depth_cm':(20,250,60),
+    'bin_debounce_s':(1,30,3),
+    'min_bottle_weight_g':(1,1000,10),
     'max_bottle_weight_g':(1,2000,65),'weight_cal_factor':(1,50000,420)}
 for _prefix in ('ent','suc'):
     for _state,_default in (('open',90),('close',0)):
@@ -49,6 +52,9 @@ class ESP32Simulator:
         self.require_nir_sensor = 1
         self.require_weight_sensor = 0
         self.require_bin_sensor = 0
+        self.bin_sensor_orientation = 0
+        self.bin_empty_depth_cm = 60
+        self.bin_debounce_s = 3
         self.min_bottle_weight_g = 10
         self.max_bottle_weight_g = 65
         self.weight_cal_factor = 420
