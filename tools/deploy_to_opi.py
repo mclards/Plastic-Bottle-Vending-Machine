@@ -108,16 +108,20 @@ def main():
         execute(client, "chmod +x /opt/ecofi/portal.py /opt/ecofi/tools/flash_esp32.py /opt/ecofi/tools/stealth_enroll.sh")
         execute(client, "find /opt/ecofi/__pycache__ -name '*.pyc' -delete 2>/dev/null || true")
 
-        # Step 5: Flash ESP32 via GPIO harness flasher
-        print("[6/7] Flashing ESP32 via hardware GPIO flasher (/dev/ttyS3)...")
-        flash_cmd = "python3 /opt/ecofi/tools/flash_esp32.py flash /opt/ecofi/firmware/esp32_firmware.bin /dev/ttyS3"
-        code, flash_out, flash_err = execute(client, flash_cmd, timeout=120)
-        print("--- ESP32 Flasher Output ---")
-        for line in (flash_out + flash_err).splitlines():
-            print("  |", line)
-        print("----------------------------")
-        if code != 0:
-            print("WARNING: Flasher exited with code {}. Verifying portal service...".format(code))
+        # Step 5: Flash ESP32 via GPIO harness flasher (optional if --host-only)
+        skip_flash = ('--host-only' in sys.argv)
+        if not skip_flash:
+            print("[6/7] Flashing ESP32 via hardware GPIO flasher (/dev/ttyS3)...")
+            flash_cmd = "python3 /opt/ecofi/tools/flash_esp32.py flash /opt/ecofi/firmware/esp32_firmware.bin /dev/ttyS3"
+            code, flash_out, flash_err = execute(client, flash_cmd, timeout=120)
+            print("--- ESP32 Flasher Output ---")
+            for line in (flash_out + flash_err).splitlines():
+                print("  |", line)
+            print("----------------------------")
+            if code != 0:
+                print("WARNING: Flasher exited with code {}. Verifying portal service...".format(code))
+        else:
+            print("[6/7] Host-only mode: skipping ESP32 flashing (hardware already running latest build).")
 
         # Restart service
         print("[7/7] Restarting ecofi_portal.service and verifying health...")
