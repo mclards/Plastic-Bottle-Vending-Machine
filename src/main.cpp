@@ -189,9 +189,14 @@ bool saveCreditJournal() { // Caller holds creditMutex; NVS blob replacement is 
 }
 
 String receiptId() {
-    char value[64];
-    snprintf(value, sizeof(value), "%012llx:%llu", (unsigned long long)ESP.getEfuseMac(),
-             (unsigned long long)creditJournal.sequence);
+    char value[96];
+    if (creditJournal.session[0]) {
+        snprintf(value, sizeof(value), "%012llx:%s:%llu", (unsigned long long)ESP.getEfuseMac(),
+                 creditJournal.session, (unsigned long long)creditJournal.sequence);
+    } else {
+        snprintf(value, sizeof(value), "%012llx:%llu", (unsigned long long)ESP.getEfuseMac(),
+                 (unsigned long long)creditJournal.sequence);
+    }
     return String(value);
 }
 

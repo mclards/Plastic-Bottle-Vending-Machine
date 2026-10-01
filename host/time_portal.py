@@ -629,15 +629,20 @@ class TimePortal(object):
                 with self.p.db_connection() as conn:
                     deposit=engine.one(conn,'SELECT * FROM deposit_sessions WHERE id=?',(sid,)) if isinstance(sid,str) else None
                     valid=isinstance(event_id,str) and 0<len(event_id)<=160 and isinstance(bottles,int) and not isinstance(bottles,bool) and bottles==1
-                    previous=engine.one(conn,'SELECT * FROM deposit_events WHERE event_id=?',(event_id,)) if valid else None
+                    storage_event_id = event_id if (not valid or (isinstance(sid, str) and sid in event_id)) else (event_id + '@' + str(sid))
+                    previous = engine.one(conn, 'SELECT * FROM deposit_events WHERE event_id=?', (storage_event_id,)) if valid else None
+                    if not previous and valid:
+                        legacy_prev = engine.one(conn, 'SELECT * FROM deposit_events WHERE event_id=?', (event_id,))
+                        if legacy_prev and legacy_prev['session_id'] == sid:
+                            previous = legacy_prev
                     if previous:
                         if previous['session_id']!=sid or previous['bottles']!=bottles:raise ValueError('event_identity_conflict')
                     elif not valid or not deposit or deposit['status']=='FINALIZED':
-                        recovery_id=event_id if valid else 'legacy:'+hashlib.sha256(encoded.encode()).hexdigest()
+                        recovery_id=storage_event_id if valid else 'legacy:'+hashlib.sha256(encoded.encode()).hexdigest()
                         conn.execute('INSERT OR IGNORE INTO deposit_recovery(event_id,payload_json,reason,received_at) VALUES (?,?,?,?)',
                             (recovery_id,encoded,'unknown_or_late_deposit_event',now))
                     else:
-                        conn.execute('INSERT INTO deposit_events VALUES (?,?,?,?)',(event_id,sid,bottles,now))
+                        conn.execute('INSERT INTO deposit_events VALUES (?,?,?,?)',(storage_event_id,sid,bottles,now))
                         conn.execute('UPDATE deposit_sessions SET updated_at=? WHERE id=?',(now,sid))
                         day=datetime.fromtimestamp(now).strftime('%Y-%m-%d')
                         conn.execute('INSERT OR IGNORE INTO stats(date,total_bottles) VALUES (?,0)',(day,))
