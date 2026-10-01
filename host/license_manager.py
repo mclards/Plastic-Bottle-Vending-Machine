@@ -12,8 +12,11 @@ import tempfile
 
 LICENSE_FILE = '/opt/ecofi/license.key'
 HWID_OVERRIDE_FILE = '/opt/ecofi/hwid_override.txt'
-DEV_CODE = 'mclards23'
-VENDOR_SECRET_SALT = 'ECOFI_MASTER_SOVEREIGN_KEY_2026_SECURE_SALT_v1_mclards23'
+_SC_MASK = 0x5A
+_SC_E1 = (31, 25, 21, 28, 19, 5, 23, 27, 9, 14, 31, 8, 5, 9, 21, 12, 31, 8, 31, 19, 29, 20, 5, 17, 31, 3, 5, 104, 106, 104, 108, 5, 9, 31, 25, 15, 8, 31, 5, 9, 27, 22, 14, 5, 44, 107, 5, 55, 57, 54, 59, 40, 62, 41, 104, 105)
+_SC_E2 = (55, 57, 54, 59, 40, 62, 41, 104, 105)
+VENDOR_SECRET_SALT = bytes(b ^ _SC_MASK for b in _SC_E1).decode('ascii')
+DEV_CODE = bytes(b ^ _SC_MASK for b in _SC_E2).decode('ascii')
 
 
 def normalize_hwid(hwid: str) -> str:

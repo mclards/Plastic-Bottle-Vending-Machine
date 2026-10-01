@@ -24,41 +24,47 @@ void emitSerialLine(const String& line) {
     if (serialMutex) xSemaphoreGive(serialMutex);
 }
 
-void logMsg(const char* level, const char* tag, const char* format, va_list args) {
-    char buffer[256];
-    vsnprintf(buffer, sizeof(buffer), format, args);
-    if (serialMutex) xSemaphoreTake(serialMutex, portMAX_DELAY);
-    Serial.print("[");
-    Serial.print(millis());
-    Serial.print("] [");
-    Serial.print(level);
-    Serial.print("] [");
-    Serial.print(tag);
-    Serial.print("] ");
-    Serial.println(buffer);
-    if (serialMutex) xSemaphoreGive(serialMutex);
-}
+#if defined(PRODUCTION_RELEASE) || defined(NDEBUG)
+    #define logDebug(tag, ...) ((void)0)
+    #define logWarn(tag, ...)  ((void)0)
+    #define logError(tag, ...) ((void)0)
+#else
+    void logMsg(const char* level, const char* tag, const char* format, va_list args) {
+        char buffer[256];
+        vsnprintf(buffer, sizeof(buffer), format, args);
+        if (serialMutex) xSemaphoreTake(serialMutex, portMAX_DELAY);
+        Serial.print("[");
+        Serial.print(millis());
+        Serial.print("] [");
+        Serial.print(level);
+        Serial.print("] [");
+        Serial.print(tag);
+        Serial.print("] ");
+        Serial.println(buffer);
+        if (serialMutex) xSemaphoreGive(serialMutex);
+    }
 
-void logDebug(const char* tag, const char* format, ...) {
-    va_list args;
-    va_start(args, format);
-    logMsg("DEBUG", tag, format, args);
-    va_end(args);
-}
+    void logDebug(const char* tag, const char* format, ...) {
+        va_list args;
+        va_start(args, format);
+        logMsg("DEBUG", tag, format, args);
+        va_end(args);
+    }
 
-void logWarn(const char* tag, const char* format, ...) {
-    va_list args;
-    va_start(args, format);
-    logMsg("WARN", tag, format, args);
-    va_end(args);
-}
+    void logWarn(const char* tag, const char* format, ...) {
+        va_list args;
+        va_start(args, format);
+        logMsg("WARN", tag, format, args);
+        va_end(args);
+    }
 
-void logError(const char* tag, const char* format, ...) {
-    va_list args;
-    va_start(args, format);
-    logMsg("ERROR", tag, format, args);
-    va_end(args);
-}
+    void logError(const char* tag, const char* format, ...) {
+        va_list args;
+        va_start(args, format);
+        logMsg("ERROR", tag, format, args);
+        va_end(args);
+    }
+#endif
 
 // -----------------------------------------------------------------------------
 // HARDWARE PIN DEFINITIONS
