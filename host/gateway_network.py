@@ -132,6 +132,11 @@ def setup(lan='eth1', wan='eth0'):
         ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'tcp', '--dport', '5000', '-j', 'ACCEPT')
         ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'tcp', '--dport', '22', '-j', 'ACCEPT')
         ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'icmp', '--icmp-type', 'echo-request', '-j', 'ACCEPT')
+        # Fast reject unauthenticated HTTPS from LAN with tcp-reset (triggers captive assistant instantly, no 30s-60s hang)
+        ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'tcp', '--dport', '443', '-j', 'REJECT', '--reject-with', 'tcp-reset')
+        # Reject all other unhandled LAN TCP connections with tcp-reset and UDP with icmp-port-unreachable
+        ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'tcp', '-j', 'REJECT', '--reject-with', 'tcp-reset')
+        ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-p', 'udp', '-j', 'REJECT', '--reject-with', 'icmp-port-unreachable')
         ipt('-A', 'ECOFI_INPUT', '-i', LAN, '-j', 'DROP')
         # WAN protections: Allow rate-limited ping for ISP diagnostics, drop all unsolicited incoming
         ipt('-A', 'ECOFI_INPUT', '-i', WAN, '-p', 'icmp', '--icmp-type', 'echo-request',

@@ -228,20 +228,53 @@ dhcp-option=tag:ecofi_lan,3,10.0.0.1
 dhcp-option=tag:ecofi_lan,6,10.0.0.1
 
 # RFC 8910 & RFC 7710 Captive Portal Discovery for Android, iOS, and macOS
-dhcp-option=114,http://10.0.0.1/
-dhcp-option=160,http://10.0.0.1/
+dhcp-option=114,"http://10.0.0.1/"
+dhcp-option=160,"http://10.0.0.1/"
 
 address=/localhost/127.0.0.1
 address=/ecofi-vendo/10.0.0.1
 
-# Synthetic captive portal detection records (instant offline popup)
+# Synthetic captive portal detection records (instant offline popup across all OSes)
+# Apple iOS / iPadOS / macOS
 address=/captive.apple.com/10.0.0.1
+address=/appleiphonecell.com/10.0.0.1
+address=/itools.info/10.0.0.1
+address=/ibook.info/10.0.0.1
+address=/airport.us/10.0.0.1
+address=/thinkdifferent.us/10.0.0.1
+
+# Google / Android / Chrome OS
 address=/connectivitycheck.gstatic.com/10.0.0.1
 address=/connectivitycheck.android.com/10.0.0.1
 address=/clients3.google.com/10.0.0.1
+address=/clients1.google.com/10.0.0.1
+address=/play.googleapis.com/10.0.0.1
+
+# Microsoft Windows NCSI
+address=/msftconnecttest.com/10.0.0.1
 address=/www.msftconnecttest.com/10.0.0.1
+address=/msftncsi.com/10.0.0.1
 address=/www.msftncsi.com/10.0.0.1
+address=/ipv6.msftconnecttest.com/10.0.0.1
+
+# Mozilla Firefox
 address=/detectportal.firefox.com/10.0.0.1
+
+# Xiaomi / MIUI / HyperOS
+address=/connect.rom.miui.com/10.0.0.1
+
+# Huawei / Honor (EMUI / HarmonyOS)
+address=/connectivitycheck.platform.hicloud.com/10.0.0.1
+
+# Samsung OneUI
+address=/connectivity.samsung.com.cn/10.0.0.1
+
+# Vivo / IQOO
+address=/wifi.vivo.com.cn/10.0.0.1
+
+# Oppo / Realme (ColorOS / RealmeUI)
+address=/nearme.com.cn/10.0.0.1
+address=/coloros.com/10.0.0.1
 
 # Fast, redundant upstream DNS servers with all-servers querying
 server=1.1.1.1

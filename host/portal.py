@@ -501,13 +501,18 @@ def page_not_found(e):
         )
     return redirect('http://10.0.0.1/')
 
-# ── Windows NCSI probe ────────────────────────────────────────────────────────
+# ── Captive Portal Connectivity Probes ────────────────────────────────────────
 def check_client_online(client_ip):
-    if not license_valid() or not time_service.healthy():return False
+    if not license_valid() or not time_service.healthy():
+        return False
+    sess = ensure_client_session(client_ip)
+    # Fast path: unauthenticated / expired clients return False immediately
+    # without taking network locks or running full firewall reconciliation.
+    if not (sess.get('remaining_seconds', 0) > 0 and not sess.get('is_paused') and sess.get('desired_state') == 'ACTIVE'):
+        return False
     sync_client_firewall(client_ip)
-    sess=ensure_client_session(client_ip)
-    return bool(sess.get('remaining_seconds',0)>0 and not sess.get('is_paused') and
-                sess.get('desired_state')=='ACTIVE' and sess.get('applied_state')=='ACTIVE')
+    sess = ensure_client_session(client_ip)
+    return sess.get('applied_state') == 'ACTIVE'
 
 
 @app.route('/connecttest.txt')
@@ -524,6 +529,13 @@ def ncsi_txt():
         return Response('Microsoft NCSI', mimetype='text/plain', status=200)
     return redirect('http://10.0.0.1/')
 
+@app.route('/redirect')
+def ncsi_redirect():
+    client_ip = get_client_ip()
+    if check_client_online(client_ip):
+        return redirect('http://www.msftconnecttest.com/connecttest.txt')
+    return redirect('http://10.0.0.1/')
+
 # ── Android / Chrome OS connectivity probe ────────────────────────────────────
 @app.route('/generate_204')
 @app.route('/gen_204')
@@ -537,6 +549,7 @@ def generate_204():
 @app.route('/hotspot-detect.html')
 @app.route('/library/test/success.html')
 @app.route('/canonical.html')
+@app.route('/success.html')
 def apple_captive():
     client_ip = get_client_ip()
     if check_client_online(client_ip):
@@ -547,6 +560,23 @@ def apple_captive():
 # ── Firefox connectivity probe ────────────────────────────────────────────────
 @app.route('/success.txt')
 def firefox_success():
+    client_ip = get_client_ip()
+    if check_client_online(client_ip):
+        return Response('success', mimetype='text/plain', status=200)
+    return redirect('http://10.0.0.1/')
+
+# ── Linux / Ubuntu / NetworkManager probe ────────────────────────────────────
+@app.route('/check_network_status.txt')
+def linux_probe():
+    client_ip = get_client_ip()
+    if check_client_online(client_ip):
+        return Response('NetworkManager is online\n', mimetype='text/plain', status=200)
+    return redirect('http://10.0.0.1/')
+
+# ── Legacy / Mobile fallback probes ──────────────────────────────────────────
+@app.route('/mobile/status.php')
+@app.route('/blank.html')
+def legacy_probe():
     client_ip = get_client_ip()
     if check_client_online(client_ip):
         return Response('success', mimetype='text/plain', status=200)
