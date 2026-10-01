@@ -42,11 +42,13 @@ def main():
     ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     backup_dir = "/opt/ecofi_backups/backup_{}".format(ts)
 
-    print("[1/7] Connecting to Live OPi via SSH...")
+    host_only = '--host-only' in sys.argv
+
+    print("[1/7] Connecting to Live OPi via SSH...", flush=True)
     client = connect()
     try:
         # Step 1: Create remote backup directory and ensure target directories
-        print("[2/7] Creating remote backup directory at {}...".format(backup_dir))
+        print("[2/7] Creating remote backup directory at {}...".format(backup_dir), flush=True)
         code, out, err = execute(client, "mkdir -p {} /opt/ecofi/tools /opt/ecofi/firmware".format(backup_dir))
         if code != 0:
             raise RuntimeError("Failed to create backup dir: {}".format(err))
@@ -54,80 +56,86 @@ def main():
         sftp = client.open_sftp()
         try:
             # Backup existing files
-            print("  Backing up current remote files...")
+            print("  Backing up current remote files...", flush=True)
             for fname in FILES_TO_DEPLOY:
                 remote_path = "/opt/ecofi/{}".format(fname)
                 backup_path = "{}/{}".format(backup_dir, fname)
                 execute(client, "cp -p {} {} 2>/dev/null || true".format(remote_path, backup_path))
 
             # Step 2: SFTP upload host files
-            print("[3/7] Uploading updated host modules to /opt/ecofi/...")
+            print("[3/7] Uploading updated host modules to /opt/ecofi/...", flush=True)
             for fname in FILES_TO_DEPLOY:
                 local_path = HOST_DIR / fname
                 remote_path = "/opt/ecofi/{}".format(fname)
-                print("  -> Uploading {} ({:,} bytes)...".format(fname, local_path.stat().st_size))
+                print("  -> Uploading {} ({:,} bytes)...".format(fname, local_path.stat().st_size), flush=True)
                 sftp.put(str(local_path), remote_path)
 
             # Upload tools
-            print("  Uploading host tools to /opt/ecofi/tools/...")
+            print("  Uploading host tools to /opt/ecofi/tools/...", flush=True)
             for tname in TOOLS_TO_DEPLOY:
                 local_path = HOST_TOOLS_DIR / tname
                 remote_path = "/opt/ecofi/tools/{}".format(tname)
-                print("  -> Uploading tools/{} ({:,} bytes)...".format(tname, local_path.stat().st_size))
+                print("  -> Uploading tools/{} ({:,} bytes)...".format(tname, local_path.stat().st_size), flush=True)
                 sftp.put(str(local_path), remote_path)
 
             # Upload VERSION
             version_file = ROOT / 'VERSION'
             if version_file.exists():
-                print("  -> Uploading VERSION ({})".format(version_file.read_text().strip()))
+                print("  -> Uploading VERSION ({})".format(version_file.read_text().strip()), flush=True)
                 sftp.put(str(version_file), "/opt/ecofi/VERSION")
 
             # Step 3: SFTP upload latest ESP32 firmware binary
-            print("[4/7] Uploading latest ESP32 factory firmware binary...")
-            fw_local = RESOURCES_DIR / 'esp32_firmware_factory.bin'
-            if not fw_local.exists():
-                raise FileNotFoundError("Firmware binary not found: {}".format(fw_local))
-            fw_bytes = fw_local.read_bytes()
-            fw_sha256 = hashlib.sha256(fw_bytes).hexdigest()
-            print("  Firmware: {} ({:,} bytes)".format(fw_local.name, len(fw_bytes)))
-            print("  SHA-256:  {}".format(fw_sha256))
+            if not host_only:
+                print("[4/7] Uploading latest ESP32 factory firmware binary...", flush=True)
+                fw_local = RESOURCES_DIR / 'esp32_firmware_factory.bin'
+                if not fw_local.exists():
+                    raise FileNotFoundError("Firmware binary not found: {}".format(fw_local))
+                fw_bytes = fw_local.read_bytes()
+                fw_sha256 = hashlib.sha256(fw_bytes).hexdigest()
+                print("  Firmware: {} ({:,} bytes)".format(fw_local.name, len(fw_bytes)), flush=True)
+                print("  SHA-256:  {}".format(fw_sha256), flush=True)
 
-            remote_fw = "/opt/ecofi/firmware/esp32_firmware.bin"
-            remote_sha = "/opt/ecofi/firmware/esp32_firmware.sha256"
-            sftp.put(str(fw_local), remote_fw)
+                remote_fw = "/opt/ecofi/firmware/esp32_firmware.bin"
+                remote_sha = "/opt/ecofi/firmware/esp32_firmware.sha256"
+                sftp.put(str(fw_local), remote_fw)
 
-            # Write sha256 file
-            with sftp.open(remote_sha, 'w') as f_sha:
-                f_sha.write("{}  esp32_firmware.bin\n".format(fw_sha256))
+                # Write sha256 file
+                with sftp.open(remote_sha, 'w') as f_sha:
+                    f_sha.write("{}  esp32_firmware.bin\n".format(fw_sha256))
+            else:
+                print("[4/7] Skipping ESP32 firmware upload (--host-only mode active)", flush=True)
 
         finally:
             sftp.close()
 
         # Step 4: Fix permissions
-        print("[5/7] Configuring permissions & cleaning cache...")
+        print("[5/7] Configuring permissions & cleaning cache...", flush=True)
         execute(client, "chmod +x /opt/ecofi/portal.py /opt/ecofi/tools/flash_esp32.py /opt/ecofi/tools/stealth_enroll.sh")
         execute(client, "find /opt/ecofi/__pycache__ -name '*.pyc' -delete 2>/dev/null || true")
 
         # Step 5: Flash ESP32 via GPIO harness flasher
-        print("[6/7] Flashing ESP32 via hardware GPIO flasher (/dev/ttyS3)...")
-        flash_cmd = "python3 /opt/ecofi/tools/flash_esp32.py flash /opt/ecofi/firmware/esp32_firmware.bin /dev/ttyS3"
-        code, flash_out, flash_err = execute(client, flash_cmd, timeout=120)
-        print("--- ESP32 Flasher Output ---")
-        for line in (flash_out + flash_err).splitlines():
-            print("  |", line)
-        print("----------------------------")
-        if code != 0:
-            print("WARNING: Flasher exited with code {}. Verifying portal service...".format(code))
+        if not host_only:
+            print("[6/7] Flashing ESP32 via hardware GPIO flasher (/dev/ttyS3)...", flush=True)
+            flash_cmd = "python3 /opt/ecofi/tools/flash_esp32.py flash /opt/ecofi/firmware/esp32_firmware.bin /dev/ttyS3"
+            code, flash_out, flash_err = execute(client, flash_cmd, timeout=120)
+            print("--- ESP32 Flasher Output ---", flush=True)
+            for line in (flash_out + flash_err).splitlines():
+                print("  |", line, flush=True)
+            print("----------------------------", flush=True)
+            if code != 0:
+                print("WARNING: Flasher exited with code {}. Verifying portal service...".format(code), flush=True)
+        else:
+            print("[6/7] Skipping ESP32 flashing (--host-only mode active)", flush=True)
 
         # Restart service
-        print("[7/7] Restarting ecofi_portal.service and verifying health...")
+        print("[7/7] Restarting ecofi_portal.service and verifying health...", flush=True)
         execute(client, "systemctl restart ecofi_portal.service")
         time.sleep(6)
 
         # Verify service state
         code, status_out, _ = execute(client, "systemctl is-active ecofi_portal.service")
         status_str = status_out.strip()
-        print("  ecofi_portal.service: {}".format(status_str))
+        print("  ecofi_portal.service: {}".format(status_str), flush=True)
         if status_str != 'active':
             code, journal, _ = execute(client, "journalctl -u ecofi_portal.service -n 30 --no-pager")
             print("ERROR: Service not active! Journal:\n", journal)
