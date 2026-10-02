@@ -85,6 +85,11 @@ mkdir -p "$MOUNT_DIR/etc/nginx/sites-enabled"
 rm -f "$MOUNT_DIR/etc/nginx/sites-enabled/"* 2>/dev/null || true
 
 cat << 'EOF' > "$MOUNT_DIR/etc/nginx/sites-available/ecofi"
+upstream ecofi_backend {
+    server 127.0.0.1:5000;
+    keepalive 32;
+}
+
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
@@ -96,20 +101,24 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
 
-    # Static Assets Cache
+    # Static Assets Cache (Aggressive 30d browser caching for instant rendering)
     location /static/ {
         alias /opt/ecofi/static/;
-        expires 7d;
-        add_header Cache-Control "public, no-transform";
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        access_log off;
     }
 
-    # Proxy all traffic to VMC ECO-VENDO Python Web Engine
+    # Proxy all traffic to VMC ECO-VENDO Python Web Engine with persistent HTTP/1.1 keepalive
     location / {
-        proxy_pass http://127.0.0.1:5000;
+        proxy_pass http://ecofi_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
         proxy_connect_timeout 5s;
         proxy_read_timeout 60s;
     }

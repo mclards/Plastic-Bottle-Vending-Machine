@@ -44,6 +44,7 @@ Detailed domain-specific guides are archived in the `references/` directory:
 - [AS7263 NIR Spectroscopy Guide](./references/nir_spectroscopy_guide.md): 6-channel NIR calibration research, empirical thresholds (empty air ~24.5 uW/cm², clear PET 35-65 uW/cm², colored glass <22 uW/cm², paper >230 uW/cm²), and multimodal sensor fusion.
 - [Deployment & Image Pipeline](./references/deployment_and_image_pipeline.md): Pre-flight checks, automated deploy scripts, QEMU ARM static emulation testing, and WSL build pipeline.
 - [Database & Entitlement Schema](./references/database_and_entitlements.md): SQLite table definitions, wallet decommissioning, MAC session binding, time policy, and the 82 regression test suite.
+- [High-Speed Performance & Caching Engine](./references/performance_and_caching.md): Sub-150ms TTFB, 97.5% image payload reduction (<300 KB budget), template AST precompilation (220x speedup), kernel `/proc/net/arp` fast path, and Nginx persistent keepalive upstream.
 
 ---
 

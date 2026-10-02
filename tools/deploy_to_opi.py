@@ -84,6 +84,14 @@ def main():
                 print("  -> Uploading VERSION ({})".format(version_file.read_text().strip()), flush=True)
                 sftp.put(str(version_file), "/opt/ecofi/VERSION")
 
+            # Upload optimized static assets (images, scripts, CSS)
+            print("  Uploading optimized static assets to /opt/ecofi/static/...", flush=True)
+            static_dir = HOST_DIR / 'static'
+            for ext in ('*.jpg', '*.png', '*.js'):
+                for sfile in static_dir.glob(ext):
+                    print("  -> Uploading static/{} ({:,} bytes)...".format(sfile.name, sfile.stat().st_size), flush=True)
+                    sftp.put(str(sfile), "/opt/ecofi/static/{}".format(sfile.name))
+
             # Step 3: SFTP upload latest ESP32 firmware binary
             if not host_only:
                 print("[4/7] Uploading latest ESP32 factory firmware binary...", flush=True)
@@ -112,6 +120,59 @@ def main():
         print("[5/7] Configuring permissions & cleaning cache...", flush=True)
         execute(client, "chmod +x /opt/ecofi/portal.py /opt/ecofi/tools/flash_esp32.py /opt/ecofi/tools/stealth_enroll.sh")
         execute(client, "find /opt/ecofi/__pycache__ -name '*.pyc' -delete 2>/dev/null || true")
+
+        # Step 4.5: Update and reload Nginx configuration
+        print("  Updating Nginx reverse proxy configuration (/etc/nginx/sites-available/ecofi)...", flush=True)
+        nginx_conf = '''upstream ecofi_backend {
+    server 127.0.0.1:5000;
+    keepalive 32;
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    server_tokens off;
+
+    # Security Headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # Static Assets Cache (Aggressive 30d browser caching for instant rendering)
+    location /static/ {
+        alias /opt/ecofi/static/;
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+        access_log off;
+    }
+
+    # Proxy all traffic to VMC ECO-VENDO Python Web Engine with persistent HTTP/1.1 keepalive
+    location / {
+        proxy_pass http://ecofi_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;
+    }
+}
+'''
+        sftp = client.open_sftp()
+        try:
+            with sftp.open('/etc/nginx/sites-available/ecofi', 'w') as nf:
+                nf.write(nginx_conf)
+        finally:
+            sftp.close()
+        code, ntest_out, ntest_err = execute(client, "nginx -t && systemctl reload nginx")
+        if code != 0:
+            print("WARNING: nginx reload issue: {}".format(ntest_out + ntest_err))
+        else:
+            print("  Nginx reloaded successfully with persistent keepalive upstream!")
 
         # Step 5: Flash ESP32 via GPIO harness flasher
         if not host_only:
