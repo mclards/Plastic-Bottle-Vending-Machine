@@ -341,6 +341,16 @@ class ESP32Simulator:
             reject_display = 'Tin Can Detected    '
             reason = 'tin_can'
             desc = 'Tin Can Detected'
+        elif self.require_weight_sensor and not (self.min_bottle_weight_g <= self.measured_weight_g <= self.max_bottle_weight_g):
+            is_valid = False
+            if self.measured_weight_g > self.max_bottle_weight_g:
+                reject_display = 'Heavy Glass / Liquid'
+                reason = 'overweight_liquid'
+                desc = 'Heavy Glass / Liquid'
+            else:
+                reject_display = 'Underweight Object  '
+                reason = 'underweight_trash'
+                desc = 'Underweight Object'
         elif self.require_nir_sensor and not (self.pet_nir_w_min <= self.nir_spectrometer_val <= self.pet_nir_w_max):
             is_valid = False
             if self.nir_spectrometer_val < 22.0:
@@ -355,16 +365,6 @@ class ESP32Simulator:
                 reject_display = 'Invalid Material NIR'
                 reason = 'invalid_polymer'
                 desc = 'Invalid Material NIR'
-        elif self.require_weight_sensor and not (self.min_bottle_weight_g <= self.measured_weight_g <= self.max_bottle_weight_g):
-            is_valid = False
-            if self.measured_weight_g > self.max_bottle_weight_g:
-                reject_display = 'Heavy Glass / Liquid'
-                reason = 'overweight_liquid'
-                desc = 'Heavy Glass / Liquid'
-            else:
-                reject_display = 'Underweight Object  '
-                reason = 'underweight_trash'
-                desc = 'Underweight Object'
         if is_valid:
             self.led_green = True
             with self.lock:

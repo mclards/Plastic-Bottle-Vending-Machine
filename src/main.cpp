@@ -723,14 +723,44 @@ void sensorTaskCode(void* parameter) {
                 rejectReasonDesc = "Tin Can Detected";
                 logWarn("DECISION", "REJECT: %s", rejectReasonDesc);
             } 
-            else if (!spectrometerFound && config.require_nir_sensor) {
+            // 3b. HX711 Mass & Weight Discrimination (Sampled Unconditionally)
+            float weightG = 0.0f;
+            if (hx711Found) {
+                weightG = scale.get_units(5);
+                lastMeasuredWeightG = weightG;
+                logDebug("WEIGHT", "Measured Bottle Weight: %.1f g (Valid Range: [%d - %d g])",
+                         weightG, config.min_bottle_weight_g, config.max_bottle_weight_g);
+
+                if (isValid && config.require_weight_sensor) {
+                    if (weightG > config.max_bottle_weight_g) {
+                        isValid = false;
+                        rejectReason = MSG_REJECT_NON_PLASTIC;
+                        rejectReasonCode = "overweight";
+                        rejectReasonDesc = "Overweight Object (Glass / Heavy Item)";
+                        logWarn("DECISION", "REJECT WEIGHT: %s (Weight: %.1f g > %d g)",
+                                rejectReasonDesc, weightG, config.max_bottle_weight_g);
+                    } else if (config.min_bottle_weight_g > 0 && weightG < (float)config.min_bottle_weight_g) {
+                        isValid = false;
+                        rejectReason = MSG_REJECT_NON_PLASTIC;
+                        rejectReasonCode = "underweight";
+                        rejectReasonDesc = "Underweight Object";
+                        logWarn("DECISION", "REJECT WEIGHT: %s (Weight: %.1f g < %d g)",
+                                rejectReasonDesc, weightG, config.min_bottle_weight_g);
+                    } else {
+                        logDebug("WEIGHT", "Bottle weight within authentic bounds: %.1f g ([%d - %d g])",
+                                 weightG, config.min_bottle_weight_g, config.max_bottle_weight_g);
+                    }
+                }
+            } else if (isValid && config.require_weight_sensor) {
                 isValid = false;
-                rejectReason = MSG_REJECT_NIR;
-                rejectReasonCode = "spectrometer_offline";
-                rejectReasonDesc = "Spectrometer Offline";
+                rejectReason = MSG_REJECT_NON_PLASTIC;
+                rejectReasonCode = "scale_offline";
+                rejectReasonDesc = "Weight Sensor Offline";
                 logWarn("DECISION", "REJECT: %s", rejectReasonDesc);
             }
-            else {
+
+            // 3c. AS7263 NIR Optical Spectroscopy (Evaluated on Valid-Weight Items)
+            if (isValid) {
                 if (spectrometerFound) {
                     logDebug("NIR", "Triggering AS7263 NIR spectrometer measurements with illumination bulb...");
                     spectrometer.enableBulb();
@@ -769,43 +799,12 @@ void sensorTaskCode(void* parameter) {
                             logDebug("NIR", "NIR Multi-Spectral Match: PET Plastic Confirmed!");
                         }
                     }
-                }
-
-                // HX711 Mass & Weight Discrimination
-                if (isValid) {
-                    if (hx711Found) {
-                        float weightG = scale.get_units(5);
-                        lastMeasuredWeightG = weightG;
-                        logDebug("WEIGHT", "Measured Bottle Weight: %.1f g (Valid Range: [%d - %d g])",
-                                 weightG, config.min_bottle_weight_g, config.max_bottle_weight_g);
-
-                        if (config.require_weight_sensor) {
-                            if (weightG > config.max_bottle_weight_g) {
-                                isValid = false;
-                                rejectReason = MSG_REJECT_NON_PLASTIC;
-                                rejectReasonCode = "overweight";
-                                rejectReasonDesc = "Overweight Object";
-                                logWarn("DECISION", "REJECT: %s (Weight: %.1f g > %d g)",
-                                        rejectReasonDesc, weightG, config.max_bottle_weight_g);
-                            } else if (config.min_bottle_weight_g > 0 && weightG < (float)config.min_bottle_weight_g) {
-                                isValid = false;
-                                rejectReason = MSG_REJECT_NON_PLASTIC;
-                                rejectReasonCode = "underweight";
-                                rejectReasonDesc = "Underweight Object";
-                                logWarn("DECISION", "REJECT: %s (Weight: %.1f g < %d g)",
-                                        rejectReasonDesc, weightG, config.min_bottle_weight_g);
-                            } else {
-                                logDebug("WEIGHT", "Bottle weight within authentic bounds: %.1f g ([%d - %d g])",
-                                         weightG, config.min_bottle_weight_g, config.max_bottle_weight_g);
-                            }
-                        }
-                    } else if (config.require_weight_sensor) {
-                        isValid = false;
-                        rejectReason = MSG_REJECT_NON_PLASTIC;
-                        rejectReasonCode = "scale_offline";
-                        rejectReasonDesc = "Weight Sensor Offline";
-                        logWarn("DECISION", "REJECT: %s", rejectReasonDesc);
-                    }
+                } else if (config.require_nir_sensor) {
+                    isValid = false;
+                    rejectReason = MSG_REJECT_NIR;
+                    rejectReasonCode = "spectrometer_offline";
+                    rejectReasonDesc = "Spectrometer Offline";
+                    logWarn("DECISION", "REJECT: %s", rejectReasonDesc);
                 }
             }
 
