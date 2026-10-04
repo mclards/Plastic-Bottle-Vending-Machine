@@ -92,7 +92,7 @@ class ESP32Simulator:
         self.current_session_bottles = 0
         self.entrance_gate_requested = False
         self.force_gate_close = False
-        self.lcd_lines = ['=== VMC ECO-VENDO ==', 'Ready for Deposit   ', 'Rate: 1 Bottle = 10m', 'Session Bottles: 0  ']
+        self.lcd_lines = ['=== VMC ECO-VENDO ==', 'Ready for Deposit   ', 'Rate: 1 Bottle = 15m', 'Session Bottles: 0  ']
         self.oled_text = 'VMC ECO-VENDO Ready'
         self.serial_logs = deque(maxlen=100)
         self.lock = threading.RLock()
@@ -106,12 +106,28 @@ class ESP32Simulator:
         self.ap_active = False
         self.ap_stations = 0
         self.ap_started_at = 0
+        self.promo_rates = [
+            "Rate: 1 Bottle = 15m",
+            "Rate: 3 Btls = 45m  ",
+            "Rate: 5 Btls = 1h15m",
+            "Rate: 10 Btls = 3hrs"
+        ]
+        self.promo_index = 0
+        self.last_rate_cycle = time.time()
         self.running = True
         self.worker_thread = threading.Thread(target=self._run_loop, daemon=True)
         if start_worker:self.worker_thread.start()
 
     def stop(self):
         self.running = False
+
+    def set_rates(self, rates):
+        if rates and isinstance(rates, list):
+            with self.lock:
+                self.promo_rates = [str(r)[:20].ljust(20) for r in rates]
+                self.promo_index = 0
+                if self.pipe_item_stage == 'idle':
+                    self.lcd_lines[2] = self.promo_rates[0]
 
     def set_lcd(self, line0=None, line1=None, line2=None, line3=None):
         with self.lock:
@@ -185,9 +201,25 @@ class ESP32Simulator:
                 self.close_entrance_gate()
                 self.set_lcd(line0='=== VMC CONFIG ====',line1='WIFI: VMC-Config    ',line2='IP: 192.168.4.1     ',line3='Port: 80 / AP Active')
             elif cmd=='SET_CONFIG':
+                rates = data.get('rates')
+                if rates and isinstance(rates, list):
+                    with self.lock:
+                        self.promo_rates = [str(r)[:20].ljust(20) for r in rates]
+                        self.promo_index = 0
+                        if self.pipe_item_stage == 'idle':
+                            self.lcd_lines[2] = self.promo_rates[0]
                 with self.lock:
                     current=self.pending_config or {key:getattr(self,key) for key in HARDWARE_BOUNDS}
                     self.pending_config=validate_hardware_config(data,current)
+            elif cmd=='SET_RATES':
+                rates = data.get('rates')
+                if rates and isinstance(rates, list):
+                    with self.lock:
+                        self.promo_rates = [str(r)[:20].ljust(20) for r in rates]
+                        self.promo_index = 0
+                        if self.pipe_item_stage == 'idle':
+                            self.lcd_lines[2] = self.promo_rates[0]
+                self.send_uart({'event': 'RATES_UPDATED', 'success': True})
             elif cmd=='TEST_NIR':
                 is_pet = self.pet_nir_w_min <= self.nir_spectrometer_val <= self.pet_nir_w_max
                 self.send_uart({
@@ -288,7 +320,8 @@ class ESP32Simulator:
                         self.led_red = True
                         self.send_uart({'event': 'BIN_FULL'})
                     else:
-                        self.set_lcd(line0='=== VMC ECO-VENDO ==', line1='Ready for Deposit   ', line2='Rate: 1 Bottle = 10m', line3='Session Bottles: {:<3}'.format(self.current_session_bottles))
+                        rate_str = self.promo_rates[self.promo_index] if self.promo_rates else 'Rate: 1 Bottle = 15m'
+                        self.set_lcd(line0='=== VMC ECO-VENDO ==', line1='Ready for Deposit   ', line2=rate_str, line3='Session Bottles: {:<3}'.format(self.current_session_bottles))
                         self.led_red = False
                         self.send_uart({'event': 'BIN_OK'})
                 last_ultrasonic_check = now
@@ -298,6 +331,11 @@ class ESP32Simulator:
             if self.ap_active and self.ap_stations == 0 and self.ap_started_at and (now - self.ap_started_at >= 60.0):
                 self.ap_active = False
                 self.send_uart({'event': 'AP_STATUS', 'active': False, 'stations': 0})
+            if self.pipe_item_stage == 'idle' and not self.ap_active and not self.is_bin_full:
+                if now - self.last_rate_cycle >= 2.5 and self.promo_rates:
+                    self.last_rate_cycle = now
+                    self.promo_index = (self.promo_index + 1) % len(self.promo_rates)
+                    self.set_lcd(line2=self.promo_rates[self.promo_index])
             if self.entrance_gate_requested:
                 self.entrance_gate_requested = False
                 self._handle_entrance_cycle()
@@ -333,7 +371,8 @@ class ESP32Simulator:
                 self.entrance_servo_angle = self.ent_close_angle
                 self.led_green = False
                 self.led_red = False
-            self.set_lcd(line0='=== VMC ECO-VENDO ==', line1='Ready for Deposit   ', line2='Rate: 1 Bottle = 10m', line3='Session Bottles: {:<3}'.format(self.current_session_bottles))
+            rate_str = self.promo_rates[self.promo_index] if self.promo_rates else 'Rate: 1 Bottle = 15m'
+            self.set_lcd(line0='=== VMC ECO-VENDO ==', line1='Ready for Deposit   ', line2=rate_str, line3='Session Bottles: {:<3}'.format(self.current_session_bottles))
             if not was_forced:
                 self.send_uart({'event': 'TIMEOUT', 'session_id':self.journal['session_id'], 'protocol':2})
             return
@@ -407,7 +446,8 @@ class ESP32Simulator:
                 with self.lock:
                     self.pipe_item_stage = 'idle'
                     self.pipe_item_type = 'none'
-                self.set_lcd(line0='=== VMC ECO-VENDO ==', line1='Ready for Deposit   ', line2='Rate: 1 Bottle = 10m', line3='Session Bottles: {:<3}'.format(self.current_session_bottles))
+                rate_str = self.promo_rates[self.promo_index] if self.promo_rates else 'Rate: 1 Bottle = 15m'
+                self.set_lcd(line0='=== VMC ECO-VENDO ==', line1='Ready for Deposit   ', line2=rate_str, line3='Session Bottles: {:<3}'.format(self.current_session_bottles))
             else:
                 with self.lock:
                     self.pipe_item_stage = 'stuck_chute'
@@ -572,7 +612,8 @@ class ESP32Simulator:
             self.pipe_item_type = 'none'
             self.entrance_servo_angle = self.ent_close_angle
             self.success_servo_angle = self.suc_close_angle
-            self.set_lcd(line1='Ready for Deposit   ', line2='Rate: 1 Bottle = 10m', line3='Session Bottles: 0  ')
+            rate_str = self.promo_rates[self.promo_index] if self.promo_rates else 'Rate: 1 Bottle = 15m'
+            self.set_lcd(line1='Ready for Deposit   ', line2=rate_str, line3='Session Bottles: 0  ')
         self.send_uart({'event':'BOOT','protocol':2,'firmware_version':SIMULATOR_VERSION,'pca9685_ready':True,'spectrometer_ready':True,'hx711_ready':True,'cfg_ts':0})
 
     def get_state(self):

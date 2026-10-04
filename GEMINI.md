@@ -6,7 +6,7 @@
 2. **Python 3.5.3 Strictness:** Target platform is Python 3.5.3 on 32-bit ARM. Never use f-strings or modern Python 3.6+ features on target code in `host/`.
 3. **Database Integrity:**
    - Table `pause_budgets` does NOT have an `updated_at` column.
-   - Database operations must pass `test_entitlement_regressions.py` (all 66 tests).
+   - Database operations must pass `test_entitlement_regressions.py` (all 87 tests).
 4. **Live Deployment Reference:**
    - Live OPi is the debugging ground truth.
    - When deploying to `/opt/ecofi/`, restart `ecofi_portal.service` and verify status.
@@ -21,5 +21,12 @@
 7. **Authoritative Golden Release Baseline (PERMANENT RULE):**
    - **v2.3.18 is definitively confirmed as the stable release baseline** across both the Orange Pi gateway and ESP32 firmwares, embedding authoritative hardware & sensor calibration defaults (NIR W [10 - 120], Weight [20 - 90]g, HX711 cal factor 260, Horiz. bin 18cm @ 3s, Gate 65s, Settle 1000ms, Drop 3100ms, Retrieval 50s, servos 0°/90°).
    - All timing, retrieval state machines, chime synchronization, and scale routines originating from v2.3.17 (commit `87c7cb7`) are preserved. Never modify these core algorithms without benchmarking against `87c7cb7`.
+8. **Captive Portal CNA Auto-Popup Protocol (PERMANENT RULE):**
+   - DHCP Option 114 MUST point to RFC 8908 JSON API (`http://10.0.0.1/api/captive-portal`). Never return raw HTML to Option 114 queries.
+   - DNS MUST return `NXDOMAIN` for Apple iCloud Private Relay (`local=/mask.icloud.com/` and `local=/mask-h2.icloud.com/`).
+   - Standard WISPr 2.0 XML handshake must be embedded in `PORTAL_HTML` and served at `/hotspot.html`.
+9. **ESP32 20x4 LCD Buffer Invalidation (PERMANENT RULE):**
+   - In `src/main.cpp`, `currentLcdLines` must be initialized empty; call `invalidateLcdBuffer()` on screen clears or state changes to ensure Rows 1 & 2 are never dropped. Dynamic rates cycle on Rows 3 & 4 every 3.5s.
+
 
 

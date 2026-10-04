@@ -237,8 +237,12 @@ dhcp-option=tag:ecofi_lan,3,10.0.0.1
 dhcp-option=tag:ecofi_lan,6,10.0.0.1
 
 # RFC 8910 & RFC 7710 Captive Portal Discovery for Android, iOS, and macOS
-dhcp-option=114,"http://10.0.0.1/"
-dhcp-option=160,"http://10.0.0.1/"
+dhcp-option=114,"http://10.0.0.1/api/captive-portal"
+dhcp-option=160,"http://10.0.0.1/api/captive-portal"
+
+# Apple iCloud Private Relay prevention (RFC / Apple Spec for Captive Portals)
+local=/mask.icloud.com/
+local=/mask-h2.icloud.com/
 
 address=/localhost/127.0.0.1
 address=/ecofi-vendo/10.0.0.1

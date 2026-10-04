@@ -48,7 +48,7 @@ Managed via `host/time_policy.py`:
 ## 4. Regression Testing Suite (`test_entitlement_regressions.py`)
 
 - **Location:** `host/test_entitlement_regressions.py`.
-- **Test Count:** 82 test cases verifying:
+- **Test Count:** 87 test cases verifying:
   - Database migrations, schema constraints, and rollback safety.
   - Concurrent deposit transactions and race conditions.
   - Pause budget limits and zero-balance gating.

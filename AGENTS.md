@@ -64,6 +64,17 @@
 - Consequently, client `fetch('/api/client/pause')` calls often reject with a Network Error **even though the backend successfully granted access**.
 - **Rule:** The JavaScript `.catch()` block on captive portal resume/grant actions **must handle success redirection** and must never block the user on a false network error. Include a 1.5s fallback deadman timer and cache-busting timestamp (`t=Date.now()`) so Apple's Captive Network Assistant (CNA) re-evaluates connectivity.
 
+### Captive Portal Auto-Popup & Discovery Architecture
+- **RFC 8910 / DHCP Option 114 & RFC 8908:**
+  - Option 114 in `dnsmasq.conf` points to `http://10.0.0.1/api/captive-portal`.
+  - The endpoint MUST return `Content-Type: application/captive+json` with `{"captive": true/false, "user-portal-url": "http://10.0.0.1/"}`.
+  - Serving HTML to Option 114 queries causes iOS to reject RFC 8910 and silently suppress the CNA modal sheet.
+- **Apple iCloud Private Relay NXDOMAIN:**
+  - DNS MUST return `NXDOMAIN` for `mask.icloud.com` and `mask-h2.icloud.com` (`local=/mask.icloud.com/` in `dnsmasq.conf`) per Apple specifications to disable Private Relay on the captive network.
+- **WISPr 2.0 Protocol & `/hotspot.html`:**
+  - Apple CNA parses WISPr XML (`<WISPAccessGatewayParam>` with `<LoginURL>http://10.0.0.1/</LoginURL>`).
+  - Prepend WISPr XML to `PORTAL_HTML` and expose `/hotspot.html`. Probe requests to `captive.apple.com` must return HTTP 302 redirects to `/hotspot.html`.
+
 ---
 
 ## 4. Time Entitlement Engine & SQLite Database
@@ -143,4 +154,17 @@ Comprehensive empirical research data archived in [`docs/AS7263_NIR_CALIBRATION_
   - LJ12A3 Inductive: Rejects aluminum cans and glass bottles with metal crown caps.
   - AS7263 NIR: Verifies polymer presence, rejects colored glass and paper waste.
   - Dual IR (E18-D80NK): Confirms entrance and gravitational drop transit.
+
+---
+
+## 9. ESP32 Firmware, 20x4 LCD Pipeline & Scale Philosophy
+
+- **20x4 LCD Buffer Invalidation Rule:**
+  - `char currentLcdLines[4][21]` must be initialized empty (`{ "", "", "", "" }`). Never pre-populate default strings in the global buffer, or `strncmp` matches the blank hardware display and suppresses Rows 1 & 2 on boot.
+  - Call `invalidateLcdBuffer()` (`memset(currentLcdLines, 0, sizeof(currentLcdLines))`) on state transitions and `lcd.clear()`.
+- **Dynamic Multi-Rate Cycling:**
+  - Dynamic rates synced from `portal.py` are grouped into 2-tier pages on Rows 3 & 4 and cycled every 3.5 seconds (`RATE_CYCLE_INTERVAL_MS = 3500`), while Rows 1 & 2 remain fixed.
+- **HX711 Scale Calibration Philosophy:**
+  - The physical chute cannot freely suspend the entire bottle body.
+  - The calibration factor (`260.0`) and weight window (`[20.0 - 90.0]g`) are empirically tuned for operational reliability across commercial bottle shapes and weights, not strict gravimetric measurement. Scale and NIR together make the final determination.
 
