@@ -787,9 +787,16 @@ void sensorTaskCode(void* parameter) {
                                 rejectReasonDesc = "Overweight Object";
                                 logWarn("DECISION", "REJECT: %s (Weight: %.1f g > %d g)",
                                         rejectReasonDesc, weightG, config.max_bottle_weight_g);
+                            } else if (config.min_bottle_weight_g > 0 && weightG < (float)config.min_bottle_weight_g) {
+                                isValid = false;
+                                rejectReason = MSG_REJECT_NON_PLASTIC;
+                                rejectReasonCode = "underweight";
+                                rejectReasonDesc = "Underweight Object";
+                                logWarn("DECISION", "REJECT: %s (Weight: %.1f g < %d g)",
+                                        rejectReasonDesc, weightG, config.min_bottle_weight_g);
                             } else {
-                                logDebug("WEIGHT", "Bottle weight within authentic lightweight bounds: %.1f g <= %d g",
-                                         weightG, config.max_bottle_weight_g);
+                                logDebug("WEIGHT", "Bottle weight within authentic bounds: %.1f g ([%d - %d g])",
+                                         weightG, config.min_bottle_weight_g, config.max_bottle_weight_g);
                             }
                         }
                     } else if (config.require_weight_sensor) {
