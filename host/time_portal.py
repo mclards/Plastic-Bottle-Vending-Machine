@@ -523,11 +523,19 @@ class TimePortal(object):
 
     def policy(self):
         now,mono=self.now()
-        with self.p.db_connection() as conn:
-            self.require_ready(conn)
-            if request.method=='POST':
+        if request.method=='POST':
+            with self.p.db_connection() as conn:
+                self.require_ready(conn)
                 pid=engine.create_policy(conn,self.data(),now)
-            else:pid=storage.metadata(conn,'active_policy')
+                value=engine.one(conn,'SELECT * FROM time_policy_versions WHERE id=?',(pid,))
+                value['brackets']=json.loads(value.pop('brackets_json'))
+                if not value['brackets']:
+                    value['brackets']=list(time_policy.DEFAULT_VALIDITY_BRACKETS)
+            return jsonify(success=True,policy=value)
+        ctx = self.p.db_read() if hasattr(self.p, 'db_read') else self.p.db_connection()
+        with ctx as conn:
+            self.require_ready(conn)
+            pid=storage.metadata(conn,'active_policy')
             value=engine.one(conn,'SELECT * FROM time_policy_versions WHERE id=?',(pid,))
             value['brackets']=json.loads(value.pop('brackets_json'))
             if not value['brackets']:
@@ -535,7 +543,8 @@ class TimePortal(object):
         return jsonify(success=True,policy=value)
 
     def diagnostics(self):
-        with self.p.db_connection() as conn:
+        ctx = self.p.db_read() if hasattr(self.p, 'db_read') else self.p.db_connection()
+        with ctx as conn:
             bad=engine.all_rows(conn,'''SELECT a.id,a.balance_us,g.remaining_us FROM ledger_accounts a
                 JOIN time_grants g ON a.grant_id=g.id WHERE a.balance_us<>g.remaining_us''')
             journals=engine.all_rows(conn,'SELECT journal_id,SUM(delta_us) AS delta FROM time_ledger WHERE journal_id IS NOT NULL GROUP BY journal_id HAVING SUM(delta_us)<>0')

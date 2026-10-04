@@ -844,7 +844,7 @@ def index():
 def admin_api_vouchers_list():
     if not session.get('admin_logged_in'):
         return (jsonify({'error': 'unauthorized'}), 401)
-    with db_connection() as conn:
+    with db_read() as conn:
         c = conn.cursor()
         c.execute('SELECT code, minutes, is_used, created_at, used_by, note FROM vouchers ORDER BY created_at DESC LIMIT 50')
         rows = [{'code': r[0], 'minutes': r[1], 'is_used': r[2], 'created_at': r[3], 'used_by': r[4], 'note': r[5] or ''} for r in c.fetchall()]
@@ -1773,7 +1773,7 @@ def admin_api_esp32_save():
 def admin_api_esp32_materials():
     if not session.get('admin_logged_in'):
         return (jsonify({'error': 'unauthorized'}), 401)
-    with db_connection() as conn:
+    with db_read() as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute('SELECT * FROM material_profiles ORDER BY created_at ASC')
@@ -1870,7 +1870,7 @@ def admin_api_esp32_materials_delete():
 def admin_api_esp32_materials_apply():
     if not session.get('admin_logged_in'):
         return (jsonify({'error': 'unauthorized'}), 401)
-    with db_connection() as conn:
+    with db_read() as conn:
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         c.execute('SELECT * FROM material_profiles')
@@ -2210,7 +2210,7 @@ def validate_promo_rate_conflict(bottles, minutes, exclude_bottles=None):
 def admin_api_rates_list():
     if not session.get('admin_logged_in'):
         return (jsonify({'error': 'unauthorized'}), 401)
-    with db_connection() as conn:
+    with db_read() as conn:
         c = conn.cursor()
         c.execute('SELECT bottles, minutes, label, speed_profile FROM promo_rates ORDER BY bottles ASC')
         return jsonify([{'bottles': r[0], 'minutes': r[1], 'label': r[2], 'speed_profile': r[3] or ''} for r in c.fetchall()])
