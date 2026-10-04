@@ -190,7 +190,9 @@ def shape(ip, dl, ul):
 
 def kick_ap_client(mac, ip=None):
     if not mac or mac == '00:00:00:00:00:00':
-        return
+        if not ip:
+            return
+        mac = '00:00:00:00:00:00'
     kick_script = os.environ.get('ECOFI_AP_KICK_SCRIPT', '/opt/ecofi/tools/ap_kick.sh')
     if os.path.isfile(kick_script) and os.access(kick_script, os.X_OK):
         try:
@@ -199,12 +201,13 @@ def kick_ap_client(mac, ip=None):
             log.warning('kick_ap_client failed for {}: {}'.format(mac, e))
 
 
-def revoke(ip):
+def revoke(ip, mac=None):
     with lock:
         run(['ipset', 'del', 'ecofi_auth', ip, '-exist'])
-        mac = _pairs.pop(ip, None)
-        if mac:
-            run(['ipset', 'del', 'ecofi_pairs', ip + ',' + mac, '-exist'])
+        tracked_mac = _pairs.pop(ip, None)
+        effective_mac = mac or tracked_mac
+        if effective_mac:
+            run(['ipset', 'del', 'ecofi_pairs', ip + ',' + effective_mac, '-exist'])
         if ipaddress.ip_address(ip) in SUBNET:
             mark = 256 + (int(ipaddress.IPv4Address(ip)) & 8191)
             for device in [LAN, 'ifb0']:
@@ -214,8 +217,7 @@ def revoke(ip):
         if shutil.which('conntrack'):
             run(['conntrack', '-D', '-s', ip], check=False)
             run(['conntrack', '-D', '-d', ip], check=False)
-        if mac:
-            kick_ap_client(mac, ip)
+        kick_ap_client(effective_mac, ip)
 
 
 def grant(ip, mac, seconds, dl, ul):

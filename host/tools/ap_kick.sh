@@ -11,13 +11,17 @@
 MAC="$1"
 IP="$2"
 
-if [ -z "$MAC" ] || [ "$MAC" = "00:00:00:00:00:00" ]; then
-    exit 0
-fi
-
-# 1. Immediately drop the ARP neighbor entry on LAN interface
+# 1. Immediately drop the ARP neighbor entry and flush conntrack on LAN interface
 if [ -n "$IP" ]; then
     ip neigh del "$IP" dev eth1 2>/dev/null || true
+    which conntrack >/dev/null 2>&1 && {
+        conntrack -D -s "$IP" 2>/dev/null || true
+        conntrack -D -d "$IP" 2>/dev/null || true
+    }
+fi
+
+if [ -z "$MAC" ] || [ "$MAC" = "00:00:00:00:00:00" ]; then
+    exit 0
 fi
 
 # 2. Managed AP Kick Implementations (Optional / Configurable)

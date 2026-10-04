@@ -504,7 +504,8 @@ def _action(conn,cd,action,payload,op,now,mono):
                 _move(conn, 'grant:'+grant_rec['id'], 'external:correction', grant_rec['remaining_us'], 'admin_kick', now, op)
             conn.execute("UPDATE time_grants SET state='DEPLETED',updated_at=? WHERE id=?", (now, grant_rec['id']))
             
-        conn.execute('UPDATE connections SET admin_suspended=1,disconnect_paused=1 WHERE id=?',(cd['id'],))
+        conn.execute("UPDATE deposit_sessions SET status='CANCELLED', error='admin_kick', updated_at=? WHERE (connection_id=? OR owner_id=?) AND status IN ('OPEN','HOLD')", (now, cd['id'], cd['owner_id']))
+        conn.execute('UPDATE connections SET admin_suspended=1,disconnect_paused=1,selected_grant_id=NULL WHERE id=?',(cd['id'],))
     elif action=='ADMIN_ADD_TIME':
         amount=to_us(payload.get('seconds',0))
         if amount<=0:raise ValueError('invalid_seconds')

@@ -466,6 +466,9 @@ class TimePortal(object):
             result=self.operation('ADMIN_ADD_TIME',{'seconds':900 if action=='add15' else 3600},data,ip)
         elif action in mapped:
             result=self.operation(mapped[action],{},data,ip)
+            if action=='kick':
+                with self.p.active_clients_lock:
+                    self.p.active_clients.pop(ip, None)
         else:raise ValueError('unknown_admin_action')
         return jsonify(result)
 
@@ -853,7 +856,10 @@ class TimePortal(object):
                         engine.refresh_desired(conn,cd['id'],now,mono,True)
                 engine.refresh_desired(conn,cd['id'],now,mono)
                 if not cd['ip'].startswith('detached:'):
-                    projections.append((cd['ip'],self.project(conn,engine.connection(conn,cd['id']),now)))
+                    selected = engine.grant(conn, cd['selected_grant_id'])
+                    rem_us = selected['remaining_us'] if selected else 0
+                    if not (cd.get('admin_suspended') and rem_us <= 0):
+                        projections.append((cd['ip'],self.project(conn,engine.connection(conn,cd['id']),now)))
         self.last_success_mono=mono
         for ip,value in projections:
             self.publish(ip,value)
@@ -890,6 +896,13 @@ class TimePortal(object):
                 result=engine.apply_operation(conn,cd['owner_id'],cd,'ADMIN_DISCONNECT',{},
                     'disconnect:'+str(uuid.uuid4()),now,mono)
                 if not result['success']:raise ValueError(result['error'])
+        with self.p.active_clients_lock:
+            if ips:
+                for target_ip in ips:
+                    self.p.active_clients.pop(target_ip, None)
+            else:
+                for cd in clients:
+                    self.p.active_clients.pop(cd['ip'], None)
         self.restore_projections();self.reconcile()
         with self.p.db_connection() as conn:
             pending=any(conn.execute("SELECT 1 FROM network_intents WHERE connection_id=? AND version=(SELECT binding_version FROM connections WHERE id=?) AND status='PENDING' LIMIT 1",(cd['id'],cd['id'])).fetchone()
