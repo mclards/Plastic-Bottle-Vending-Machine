@@ -223,17 +223,36 @@ struct NirEvaluation {
     float tw_ratio;
 };
 
-inline NirEvaluation evaluateNirSpectrum(int r, int s, int t, int u, int v, int w, float cal_w, int nir_min, int nir_max) {
+inline NirEvaluation evaluateNirSpectrum(int r, int s, int t, int u, int v, int w, float cal_w, int nir_min, int nir_max, float weightG = 0.0f, bool weightKnown = false) {
     NirEvaluation res;
     res.wv_ratio = (v > 0) ? ((float)w / (float)v) : 0.0f;
     res.sr_ratio = (r > 0) ? ((float)s / (float)r) : 0.0f;
     res.tw_ratio = (w > 0) ? ((float)t / (float)w) : 0.0f;
 
-    // 1. Absolute calibrated irradiance bounds [nir_min - nir_max]
+    // 1. Empty Chute Baseline (cal_w <= 8.0 uW/cm2)
+    // Minimal background reflection when the chute is empty or black matte.
+    if (cal_w <= 8.0f) {
+        res.is_pet = false;
+        res.reason_code = "empty_chute";
+        res.reason_desc = "Empty Chute / No Object";
+        return res;
+    }
+
+    // 2. Weight Discrimination:
+    // If physical weight is verified within lightweight plastic bottle bounds (e.g. 10g - 65g),
+    // this container physically CANNOT be a glass bottle (glass bottles weigh > 150g).
+    bool isAuthenticPlasticWeight = (weightKnown && weightG >= 10.0f && weightG <= 65.0f);
+
+    // 3. Absolute calibrated irradiance bounds [nir_min - nir_max]
     if (cal_w < (float)nir_min) {
         res.is_pet = false;
-        res.reason_code = (cal_w < 22.0f) ? "colored_glass" : "nir_low_absorption";
-        res.reason_desc = (cal_w < 22.0f) ? "Colored Glass Detected" : "Optical Signal Too Weak";
+        if (isAuthenticPlasticWeight) {
+            res.reason_code = "nir_low_absorption";
+            res.reason_desc = "Optical Signal Too Weak / Dark Tint";
+        } else {
+            res.reason_code = (cal_w < 22.0f) ? "colored_glass" : "nir_low_absorption";
+            res.reason_desc = (cal_w < 22.0f) ? "Colored Glass Detected" : "Optical Signal Too Weak";
+        }
         return res;
     }
     if (cal_w > (float)nir_max) {
@@ -243,7 +262,7 @@ inline NirEvaluation evaluateNirSpectrum(int r, int s, int t, int u, int v, int 
         return res;
     }
 
-    // 2. Minimum channel noise floor
+    // 4. Minimum channel noise floor
     if (r < 100 || s < 50 || v < 15 || w < 10) {
         res.is_pet = false;
         res.reason_code = "nir_signal_noise";
@@ -782,7 +801,7 @@ void sensorTaskCode(void* parameter) {
                     logDebug("NIR", "Calibrated W Channel: %.2f (PET Range: [%d - %d])",
                              nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max);
 
-                    NirEvaluation eval = evaluateNirSpectrum(r, s, t, u, v, w, nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max);
+                    NirEvaluation eval = evaluateNirSpectrum(r, s, t, u, v, w, nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max, weightG, hx711Found);
                     logDebug("NIR", "Ratios: W/V=%.2f, S/R=%.2f, T/W=%.2f | Cal-W: %.2f | Verdict: %s (%s)",
                              eval.wv_ratio, eval.sr_ratio, eval.tw_ratio, nirAbsorption,
                              eval.is_pet ? "ACCEPT" : "REJECT", eval.reason_desc);
@@ -1606,7 +1625,7 @@ void loop() {
                 int v = spectrometer.getV();
                 int w = spectrometer.getW();
                 int tempC = spectrometer.getTemperature();
-                NirEvaluation eval = evaluateNirSpectrum(r, s, t, u, v, w, nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max);
+                NirEvaluation eval = evaluateNirSpectrum(r, s, t, u, v, w, nirAbsorption, config.pet_nir_w_min, config.pet_nir_w_max, lastMeasuredWeightG, hx711Found);
 
                 // 2. Only close gate if explicitly requested. In Teach mode, gate stays open until operator clicks OK!
                 if (autoClose && pca9685Found) {

@@ -351,20 +351,25 @@ class ESP32Simulator:
                 reject_display = 'Underweight Object  '
                 reason = 'underweight_trash'
                 desc = 'Underweight Object'
+        elif self.nir_spectrometer_val <= 8.0:
+            is_valid = False
+            reject_display = 'Empty Chute / No Obj'
+            reason = 'empty_chute'
+            desc = 'Empty Chute / No Object'
         elif self.require_nir_sensor and not (self.pet_nir_w_min <= self.nir_spectrometer_val <= self.pet_nir_w_max):
             is_valid = False
-            if self.nir_spectrometer_val < 22.0:
-                reject_display = 'Colored Glass Bottle'
-                reason = 'colored_glass'
-                desc = 'Colored Glass Bottle'
+            if self.min_bottle_weight_g <= self.measured_weight_g <= self.max_bottle_weight_g:
+                reject_display = 'Signal Weak / Tint  '
+                reason = 'nir_low_absorption'
+                desc = 'Optical Signal Too Weak / Dark Tint'
             elif self.nir_spectrometer_val > 220.0:
                 reject_display = 'Cardboard / Paper   '
                 reason = 'paper_cup'
                 desc = 'Paper / Cardboard Waste'
             else:
-                reject_display = 'Invalid Material NIR'
-                reason = 'invalid_polymer'
-                desc = 'Invalid Material NIR'
+                reject_display = 'Colored Glass Bottle'
+                reason = 'colored_glass'
+                desc = 'Colored Glass Bottle'
         if is_valid:
             self.led_green = True
             with self.lock:
