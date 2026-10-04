@@ -558,7 +558,10 @@ class ESP32Simulator:
                 self.current_session_bottles = self.journal['total']
             self.pipe_item_stage = 'idle'
             self.pipe_item_type = 'none'
-            self.set_lcd(line3='Session Bottles: 0  ')
+            self.entrance_servo_angle = self.ent_close_angle
+            self.success_servo_angle = self.suc_close_angle
+            self.set_lcd(line1='Ready for Deposit   ', line2='Rate: 1 Bottle = 10m', line3='Session Bottles: 0  ')
+        self.send_uart({'event':'BOOT','protocol':2,'firmware_version':'v2.3.17','pca9685_ready':True,'spectrometer_ready':True,'hx711_ready':True,'cfg_ts':0})
 
     def get_state(self):
         with self.lock:

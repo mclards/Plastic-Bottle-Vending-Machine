@@ -1174,6 +1174,38 @@ class PortalRegression(unittest.TestCase):
         st = self.request('/api/vendo/status', get=True).get_json()
         self.assertEqual(st.get('client_time_remaining', 0), 0)
 
+    def test_esp32_boot_event_recovers_open_session_and_clears_active_depositor(self):
+        opened = self.request('/api/vendo/open_gate').get_json()
+        self.assertTrue(opened['success'], opened)
+        sid = opened['deposit_session_id']
+        self.assertTrue(self.p.is_deposit_session_active())
+
+        # ESP32 reboots and emits BOOT packet
+        boot_pkt = {
+            'event': 'BOOT',
+            'protocol': 2,
+            'firmware_version': 'v2.3.17',
+            'pca9685_ready': True,
+            'spectrometer_ready': True,
+            'hx711_ready': True,
+            'cfg_ts': 0
+        }
+        self.p.handle_physical_esp32_packet(boot_pkt)
+        self.p.on_esp32_uart_output(json.dumps(boot_pkt))
+
+        # Stale open session must be marked HOLD, active depositor cleared, and machine ready
+        with self.p.db_connection() as conn:
+            row = conn.execute('SELECT status, error FROM deposit_sessions WHERE id=?', (sid,)).fetchone()
+            self.assertEqual(row[0], 'HOLD')
+            self.assertEqual(row[1], 'boot')
+
+        self.assertFalse(self.p.is_deposit_session_active())
+        self.assertIsNone(self.p.active_depositor_ip)
+
+        # Subsequent open_gate call succeeds immediately without lockouts
+        next_open = self.request('/api/vendo/open_gate').get_json()
+        self.assertTrue(next_open['success'], next_open)
+
 
 
 def uuid_token():

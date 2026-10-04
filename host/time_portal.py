@@ -755,7 +755,7 @@ class TimePortal(object):
                 self.p.active_depositor_last_seen=0;self.p.active_depositor_timeout=0
                 self.p.active_deposit_rejection=None
                 self.restore_projections();self.reconcile()
-            elif event in ('TIMEOUT','DEPOSIT_ABORT','SESSION_HOLD'):
+            elif event in ('TIMEOUT','DEPOSIT_ABORT','SESSION_HOLD','BOOT'):
                 with self.p.db_connection() as conn:
                     self.require_ready(conn)
                     sid = data.get('session_id') or getattr(self.p, 'active_depositor_sid', None)

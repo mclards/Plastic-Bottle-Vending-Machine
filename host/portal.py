@@ -1402,8 +1402,17 @@ def handle_physical_esp32_packet(data):
         physical_esp32_state['connected'] = True
         physical_esp32_state['sensor_bus_status'] = 'Nominal (FW {})'.format(fw)
     elif ev == 'BOOT':
+        global active_depositor_ip, active_depositor_mac, active_depositor_sid, active_depositor_last_seen, active_depositor_timeout, active_deposit_rejection
         physical_esp32_state['connected'] = True
-        physical_esp32_state['sensor_bus_status'] = 'Booting'
+        physical_esp32_state['gate_open'] = False
+        physical_esp32_state['sensor_bus_status'] = 'Nominal'
+        physical_esp32_state['last_event'] = 'ESP32 Booted'
+        active_depositor_ip = None
+        active_depositor_mac = None
+        active_depositor_sid = None
+        active_depositor_last_seen = 0
+        active_depositor_timeout = 0
+        active_deposit_rejection = None
     elif ev == 'HARDWARE_ALERT':
         reason = data.get('reason', 'offline')
         physical_esp32_state['sensor_bus_status'] = 'Hardware Alert ({})'.format(reason)

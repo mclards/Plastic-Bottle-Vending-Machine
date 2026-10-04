@@ -635,6 +635,7 @@ void sensorTaskCode(void* parameter) {
 
             // Phase 1: Wait for bottle to enter (break the Top IR beam)
             unsigned long lastWaitLog = millis();
+            unsigned long lastIntakeHb = millis();
             while (millis() - openTime < gateTimeoutMs) {
                 if (forceGateClose) {
                     wasForced = true;
@@ -647,6 +648,28 @@ void sensorTaskCode(void* parameter) {
                     topIrTriggered = false;
                     logDebug("AIRLOCK", "Top IR beam broken at +%lu ms! Bottle insertion detected.", millis() - openTime);
                     break;
+                }
+                // Heartbeat to prevent Linux host watchdog timeout (>15s) while entrance gate is open
+                if (millis() - lastIntakeHb >= 2500) {
+                    lastIntakeHb = millis();
+                    char hbBuf[448];
+                    bool hwReady = pca9685Found && (!config.require_nir_sensor || spectrometerFound) && (!config.require_weight_sensor || hx711Found) && (!config.require_bin_sensor || !isBinFull.load());
+                    snprintf(hbBuf, sizeof(hbBuf),
+                             "{\"event\":\"HEARTBEAT\",\"bin_distance_cm\":%d,\"is_bin_full\":%s,\"pca9685_ready\":%s,\"spectrometer_ready\":%s,\"hx711_ready\":%s,\"hardware_ready\":%s,\"require_nir\":%d,\"require_weight\":%d,\"require_bin\":%d,\"bin_orient\":%d,\"bin_empty\":%d,\"bin_deb\":%d,\"gate_open\":true,\"ap_active\":false,\"ap_stations\":0,\"cfg_ts\":%lu,\"protocol\":2}",
+                             cachedBinDistanceCm.load(),
+                             isBinFull.load() ? "true" : "false",
+                             pca9685Found ? "true" : "false",
+                             spectrometerFound ? "true" : "false",
+                             hx711Found ? "true" : "false",
+                             hwReady ? "true" : "false",
+                             config.require_nir_sensor,
+                             config.require_weight_sensor,
+                             config.require_bin_sensor,
+                             config.bin_sensor_orientation,
+                             config.bin_empty_depth_cm,
+                             config.bin_debounce_s,
+                             config.config_timestamp);
+                    emitSerialLine(hbBuf);
                 }
                 if (millis() - lastWaitLog >= 5000) {
                     lastWaitLog = millis();
@@ -710,6 +733,7 @@ void sensorTaskCode(void* parameter) {
                     logDebug("AIRLOCK", "Intake timeout reached (%u ms). No bottle inserted.", gateTimeoutMs);
                     EventMsg timeoutMsg = MSG_GATE_TIMEOUT;
                     postEvent(timeoutMsg);
+                    scopedEvent("TIMEOUT", curSession);
                 }
 
                 // Tare to 0 as well when inserting is done and entrance gate closed safely
