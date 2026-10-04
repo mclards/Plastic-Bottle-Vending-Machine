@@ -123,6 +123,7 @@ std::atomic<bool> isBinFull{false};
 std::atomic<int> currentSessionBottles{0};
 std::atomic<bool> entranceGateRequested{false};
 std::atomic<bool> forceGateClose{false};
+std::atomic<bool> manualGateTestOpen{false};
 
 QueueHandle_t eventQueue;
 SemaphoreHandle_t uiMutex;
@@ -485,7 +486,9 @@ void sensorTaskCode(void* parameter) {
         if (xQueueReceive(configQueue, &pending, 0) == pdTRUE) {
             config = pending;
             savePreferences();
-            setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
+            if (!manualGateTestOpen.load() && !depositCycleBusy.load()) {
+                setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
+            }
             setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
             logDebug("SENSOR", "Applied pending config and saved to Flash (ts=%lu).", config.config_timestamp);
             char saveBuf[96];
@@ -606,6 +609,7 @@ void sensorTaskCode(void* parameter) {
             }
 
             logDebug("CYCLE", "Starting deposit cycle for session '%s'...", curSession);
+            manualGateTestOpen = false;
             setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle); // Ensure drop flap is locked closed before entrance opens
             setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_open_angle); // Open entrance
             gateStateEvent(true);
@@ -1409,6 +1413,7 @@ void loop() {
                     saveCreditJournal();
                 }
                 if (creditStorageOk) {
+                    manualGateTestOpen = false;
                     if (!depositCycleBusy) forceGateClose = false;
                     requestedGateTimeout = timeout;
                     entranceGateRequested = true;
@@ -1449,7 +1454,7 @@ void loop() {
                 forceGateClose = true;
                 logDebug("CMD", "Forced gate close flag set.");
             }
-            if (pca9685Found && !depositCycleBusy) {
+            if (pca9685Found && !depositCycleBusy && !manualGateTestOpen.load()) {
                 setServoAngle(PCA_CHANNEL_ENTRANCE, desiredConfig.ent_close_angle);
                 setServoAngle(PCA_CHANNEL_SUCCESS, desiredConfig.suc_close_angle);
                 gateStateEvent(false);
@@ -1578,14 +1583,19 @@ void loop() {
             int holdMs = command["hold_ms"] | 1500;
             if (pca9685Found && channel >= 0 && channel <= 1 && angle >= 0 && angle <= 180 && !depositCycleBusy) {
                 setServoAngle(channel, angle);
-                logDebug("CMD", "TEST_SERVO: channel %d moved to %d deg (hold %d ms)", channel, angle, holdMs);
+                if (channel == PCA_CHANNEL_ENTRANCE) {
+                    manualGateTestOpen = (angle != config.ent_close_angle);
+                    gateStateEvent(manualGateTestOpen.load());
+                }
+                logDebug("CMD", "TEST_SERVO: channel %d moved to %d deg (hold %d ms, manualTestOpen=%d)",
+                         channel, angle, holdMs, manualGateTestOpen.load());
                 char resBuf[128];
                 snprintf(resBuf, sizeof(resBuf),
                          "{\"event\":\"SERVO_TEST_OK\",\"channel\":%d,\"angle\":%d}", channel, angle);
                 emitSerialLine(resBuf);
             } else {
                 logWarn("CMD", "TEST_SERVO rejected: pcaReady=%d, channel=%d, angle=%d, busy=%d",
-                        pca9685Found, channel, angle, depositCycleBusy.load());
+                         pca9685Found, channel, angle, depositCycleBusy.load());
                 emitSerialLine("{\"event\":\"SERVO_TEST_REJECTED\"}");
             }
         } else if (strcmp(cmd, "TEST_NIR") == 0) {
@@ -1610,6 +1620,7 @@ void loop() {
                 if (openGate && pca9685Found) {
                     setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_open_angle);
                     gateStateEvent(true);
+                    manualGateTestOpen = true;
                     delay(500); // Allow servo to travel to open position
                 }
 
@@ -1632,6 +1643,7 @@ void loop() {
                     delay(250);
                     setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
                     gateStateEvent(false);
+                    manualGateTestOpen = false;
                 }
 
                 logDebug("NIR", "Spectral Channels: R(610nm)=%d, S(680nm)=%d, T(730nm)=%d, U(760nm)=%d, V(810nm)=%d, W(860nm)=%d | Sensor Temp=%d C",
