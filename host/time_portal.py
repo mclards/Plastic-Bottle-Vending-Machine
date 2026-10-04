@@ -686,7 +686,10 @@ class TimePortal(object):
                 # ACK only after durable receipt (or durable quarantine) commits.
                 if isinstance(event_id,str):self.p.transmit_to_esp32({'cmd':'CREDIT_ACK','event_id':event_id,'session_id':sid,'protocol':2})
                 if valid and deposit and deposit['status']=='OPEN' and self.p.license_valid():
-                    self.p.transmit_to_esp32({'cmd':'OPEN_GATE','session_id':sid,'protocol':2,'timeout':int(self.p.get_config('drop_timeout','60'))})
+                    drop_tout = int(self.p.get_config('drop_timeout', '60'))
+                    self.p.active_depositor_timeout = now + drop_tout + 5
+                    self.p.active_depositor_last_seen = now
+                    self.p.transmit_to_esp32({'cmd':'OPEN_GATE','session_id':sid,'protocol':2,'timeout':drop_tout})
                 self.p.active_deposit_rejection=None
                 self.restore_projections()
             elif event=='DEPOSIT_RECOVERY':
@@ -802,9 +805,13 @@ class TimePortal(object):
             if timed_out:
                 self.p.log.info('Active deposit session timed out; closing gate')
                 self.abort_active_deposit(reason='deposit_timeout')
-            elif (not_in_arp and silence >= 3) or (silence >= 6):
-                self.p.log.info('Active depositor %s disconnected or exited (silence=%ds, in_arp=%s); closing gate',
-                               self.p.active_depositor_ip, silence, not not_in_arp)
+            elif not_in_arp and silence >= 4:
+                self.p.log.info('Active depositor %s disconnected from AP (not in ARP, silence=%ds); closing gate',
+                               self.p.active_depositor_ip, silence)
+                self.abort_active_deposit(reason='client_disconnected')
+            elif silence >= 45:
+                self.p.log.info('Active depositor %s prolonged silence (%ds); closing gate',
+                               self.p.active_depositor_ip, silence)
                 self.abort_active_deposit(reason='client_disconnected')
         with self.p.db_connection() as conn:
             if storage.metadata(conn,'ready','0')!='1':

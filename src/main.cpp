@@ -555,12 +555,19 @@ void sensorTaskCode(void* parameter) {
         }
 
         // 2. Await Entrance Request
-        if (entranceGateRequested.exchange(false)) {
+        if (entranceGateRequested.load()) {
             xSemaphoreTake(creditMutex, portMAX_DELAY);
             bool sensorReady = !config.require_nir_sensor || spectrometerFound;
-            bool permitted = creditStorageOk && creditJournal.phase == 0 && creditJournal.session[0] &&
-                !finishRequested && pca9685Found && sensorReady;
-            if (permitted) depositCycleBusy = true;
+            bool permitted = creditStorageOk && (creditJournal.phase == 0 || creditJournal.phase == 2) &&
+                creditJournal.session[0] && !finishRequested && pca9685Found && sensorReady;
+            if (permitted) {
+                if (creditJournal.phase == 2) {
+                    creditJournal.phase = 0;
+                    saveCreditJournal();
+                }
+                entranceGateRequested = false;
+                depositCycleBusy = true;
+            }
             char curSession[37];
             strlcpy(curSession, creditJournal.session, sizeof(curSession));
             uint8_t curPhase = creditJournal.phase;
@@ -570,13 +577,8 @@ void sensorTaskCode(void* parameter) {
                      permitted, creditStorageOk.load(), curPhase, curSession, finishRequested.load(), pca9685Found, spectrometerFound, config.require_nir_sensor);
 
             if (!permitted) {
-                logWarn("CYCLE", "Deposit cycle not permitted! Bypassing entrance request.");
-                if (!pca9685Found) {
-                    emitSerialLine("{\"event\":\"HARDWARE_ALERT\",\"reason\":\"actuators_offline\"}");
-                } else if (config.require_nir_sensor && !spectrometerFound) {
-                    emitSerialLine("{\"event\":\"HARDWARE_ALERT\",\"reason\":\"spectrometer_offline\"}");
-                }
-                vTaskDelay(pdMS_TO_TICKS(20));
+                logWarn("CYCLE", "Deposit cycle not permitted yet (phase=%d, req=%d). Retrying...", curPhase, entranceGateRequested.load());
+                vTaskDelay(pdMS_TO_TICKS(50));
                 continue;
             }
 
@@ -1369,11 +1371,16 @@ void loop() {
             int timeout = command["timeout"] | desiredConfig.entrance_gate_timeout;
             xSemaphoreTake(creditMutex, portMAX_DELAY);
             bool same = strcmp(sid, creditJournal.session) == 0;
-            logDebug("CMD", "OPEN_GATE received. session='%s' (same=%d), timeout=%d, phase=%d, busy=%d",
-                     sid, same, timeout, creditJournal.phase, depositCycleBusy.load());
+            bool phaseOk = (creditJournal.phase == 0) || (same && creditJournal.phase == 2);
+            logDebug("CMD", "OPEN_GATE received. session='%s' (same=%d, phaseOk=%d), timeout=%d, phase=%d, busy=%d",
+                     sid, same, phaseOk, timeout, creditJournal.phase, depositCycleBusy.load());
             if (command["protocol"] == 2 && strlen(sid) > 0 && strlen(sid) <= 36 &&
-                creditStorageOk && creditJournal.phase == 0 && (!depositCycleBusy || same) &&
+                creditStorageOk && phaseOk && (!depositCycleBusy || same) &&
                 !finishRequested && timeout >= 1 && timeout <= 600) {
+                if (creditJournal.phase == 2) {
+                    creditJournal.phase = 0;
+                    saveCreditJournal();
+                }
                 if (!same) {
                     logDebug("CMD", "New session '%s' replacing previous '%s'. Resetting session bottle count.",
                              sid, creditJournal.session);
