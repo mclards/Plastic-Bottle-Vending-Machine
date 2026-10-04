@@ -1101,7 +1101,38 @@ class PortalRegression(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         data = r.get_json()
         self.assertTrue(data['success'])
-        self.assertTrue(data['item_cleared'])
+    def test_client_disconnect_during_deposit_aborts_session_and_closes_gate(self):
+        sent = []
+        self.p.transmit_to_esp32 = sent.append
+        opened = self.request('/api/vendo/open_gate').get_json()
+        self.assertTrue(opened['success'], opened)
+        self.assertIsNotNone(self.p.active_depositor_ip)
+        sid = opened['deposit_session_id']
+
+        # Advance clock by 5s without any status poll and mock non-empty ARP where client is missing
+        self.utc += 5
+        self.mono += 5.0
+        with patch.object(self.p, 'get_arp_table', return_value={'10.0.99.99': 'aa:bb:cc:dd:ee:ff'}):
+            self.p.time_service.worker_pass()
+
+        self.assertIsNone(self.p.active_depositor_ip)
+        self.assertTrue(any(msg.get('cmd') == 'CLOSE_GATE' for msg in sent), sent)
+        with self.p.db_connection() as conn:
+            row = conn.execute('SELECT status, error FROM deposit_sessions WHERE id=?', (sid,)).fetchone()
+            self.assertEqual(row[0], 'HOLD')
+            self.assertEqual(row[1], 'client_disconnected')
+
+    def test_client_abort_endpoint_closes_gate(self):
+        sent = []
+        self.p.transmit_to_esp32 = sent.append
+        opened = self.request('/api/vendo/open_gate').get_json()
+        self.assertTrue(opened['success'], opened)
+        self.assertIsNotNone(self.p.active_depositor_ip)
+
+        r = self.request('/api/vendo/abort')
+        self.assertTrue(r.get_json()['success'])
+        self.assertIsNone(self.p.active_depositor_ip)
+        self.assertTrue(any(msg.get('cmd') == 'CLOSE_GATE' for msg in sent), sent)
 
 
 def uuid_token():

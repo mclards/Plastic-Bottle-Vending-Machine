@@ -43,6 +43,8 @@ class TimePortal(object):
             ('/api/vendo/open_gate','api_open_gate',self.open_gate,['POST']),
             ('/api/open_gate','api_open_gate',self.open_gate,['POST']),
             ('/api/vendo/done','api_vendo_done',self.done,['POST']),
+            ('/api/vendo/abort','api_vendo_abort',self.abort,['POST','GET']),
+            ('/api/vendo/cancel','api_vendo_cancel',self.abort,['POST','GET']),
             ('/api/client/pause','api_client_pause',self.pause,['POST']),
             ('/api/voucher/redeem','api_voucher_redeem',self.voucher,['POST']),
             ('/api/vendo/client_time','api_vendo_client_time',self.sync_client_time,['POST']),
@@ -331,6 +333,8 @@ class TimePortal(object):
         active_sid = value.get('deposit_session_id') or session.get('deposit_session_id')
         client_ip = self.p.get_client_ip()
         is_active_depositor = (self.p.active_depositor_ip == client_ip)
+        if is_active_depositor:
+            self.p.active_depositor_last_seen = now
         if rejection and rejection.get('active') and (not active_sid or rejection.get('session_id') == active_sid or is_active_depositor):
             value['rejection_alert'] = {
                 'active': True,
@@ -567,12 +571,14 @@ class TimePortal(object):
                 conn.execute('''INSERT INTO deposit_sessions(id,owner_id,connection_id,status,pricing_json,created_at,updated_at)
                     VALUES (?,?,?,'OPEN',?,?,?)''',(sid,cd['owner_id'],cd['id'],json.dumps(pricing),now,now))
         session['deposit_session_id']=sid
-        self.p.active_depositor_ip=ip;self.p.active_depositor_timeout=now+timeout+5
+        self.p.active_depositor_ip=ip;self.p.active_depositor_mac=mac;self.p.active_depositor_sid=sid
+        self.p.active_depositor_last_seen=now;self.p.active_depositor_timeout=now+timeout+5
         self.p.active_deposit_rejection=None
         if self.p.transmit_to_esp32({'cmd':'OPEN_GATE','timeout':timeout,'session_id':sid,'protocol':2}) is False:
             with self.p.db_connection() as conn:
                 conn.execute("UPDATE deposit_sessions SET status='HOLD',error='Hardware unavailable' WHERE id=?",(sid,))
-            self.p.active_depositor_ip=None;self.p.active_depositor_timeout=0
+            self.p.active_depositor_ip=None;self.p.active_depositor_mac=None;self.p.active_depositor_sid=None
+            self.p.active_depositor_last_seen=0;self.p.active_depositor_timeout=0
             session.pop('deposit_session_id',None)
             raise ValueError('hardware_unavailable')
         return jsonify(success=True,timeout=timeout,deposit_session_id=sid)
@@ -611,11 +617,41 @@ class TimePortal(object):
             if not deposit or deposit['owner_id']!=cd['owner_id']:raise ValueError('no_owned_deposit')
             result=self.finalize(conn,deposit,now,mono)
         session.pop('deposit_session_id',None)
-        self.p.active_depositor_ip=None;self.p.active_depositor_timeout=0
+        self.p.active_depositor_ip=None;self.p.active_depositor_mac=None;self.p.active_depositor_sid=None
+        self.p.active_depositor_last_seen=0;self.p.active_depositor_timeout=0
         self.p.active_deposit_rejection=None
         self.p.transmit_to_esp32({'cmd':'CLOSE_GATE','session_id':deposit['id'],'protocol':2})
         self.restore_projections();self.reconcile()
         return jsonify(result)
+
+    def abort_active_deposit(self, reason='client_disconnected'):
+        dep_ip = getattr(self.p, 'active_depositor_ip', None)
+        dep_sid = getattr(self.p, 'active_depositor_sid', None)
+        now, mono = self.now()
+        sid_to_close = dep_sid or ''
+        with self.p.db_connection() as conn:
+            self.require_ready(conn)
+            deposit = engine.one(conn, "SELECT * FROM deposit_sessions WHERE status='OPEN' ORDER BY created_at DESC LIMIT 1")
+            if deposit:
+                sid_to_close = deposit['id']
+                bottles = conn.execute('SELECT COALESCE(SUM(bottles),0) FROM deposit_events WHERE session_id=?', (deposit['id'],)).fetchone()[0]
+                if bottles > 0:
+                    self.finalize(conn, deposit, now, mono)
+                else:
+                    conn.execute("UPDATE deposit_sessions SET status='HOLD', error=?, updated_at=? WHERE id=?", (reason, now, deposit['id']))
+        self.p.active_depositor_ip = None
+        self.p.active_depositor_mac = None
+        self.p.active_depositor_sid = None
+        self.p.active_depositor_last_seen = 0
+        self.p.active_depositor_timeout = 0
+        self.p.active_deposit_rejection = None
+        self.p.transmit_to_esp32({'cmd': 'CLOSE_GATE', 'session_id': sid_to_close, 'protocol': 2})
+        self.restore_projections()
+        self.reconcile()
+
+    def abort(self):
+        self.abort_active_deposit(reason='client_cancelled')
+        return jsonify(success=True)
 
     def on_event(self,raw,source=None):
         simulated=self.p.get_config('simulator_enabled','0')=='1'
@@ -689,7 +725,8 @@ class TimePortal(object):
                 rejection=getattr(self.p,'active_deposit_rejection',None)
                 if rejection:
                     self.p.active_deposit_rejection['active']=False
-                self.p.active_depositor_ip=None;self.p.active_depositor_timeout=0
+                self.p.active_depositor_ip=None;self.p.active_depositor_mac=None;self.p.active_depositor_sid=None
+                self.p.active_depositor_last_seen=0;self.p.active_depositor_timeout=0
             elif event=='FINISH':
                 sid=data.get('session_id')
                 if data.get('protocol')!=2 or not isinstance(sid,str):raise ValueError('invalid_finish')
@@ -699,14 +736,16 @@ class TimePortal(object):
                     if not deposit:raise ValueError('unknown_deposit')
                     self.finalize(conn,deposit,now,mono)
                 self.p.transmit_to_esp32({'cmd':'FINISH_ACK','session_id':sid,'protocol':2})
-                self.p.active_depositor_ip=None;self.p.active_depositor_timeout=0
+                self.p.active_depositor_ip=None;self.p.active_depositor_mac=None;self.p.active_depositor_sid=None
+                self.p.active_depositor_last_seen=0;self.p.active_depositor_timeout=0
                 self.p.active_deposit_rejection=None
                 self.restore_projections();self.reconcile()
             elif event in ('TIMEOUT','DEPOSIT_ABORT','SESSION_HOLD'):
                 with self.p.db_connection() as conn:
                     sid=data.get('session_id')
                     if sid:conn.execute("UPDATE deposit_sessions SET status='HOLD' WHERE id=? AND status='OPEN'",(sid,))
-                self.p.active_depositor_ip=None;self.p.active_depositor_timeout=0
+                self.p.active_depositor_ip=None;self.p.active_depositor_mac=None;self.p.active_depositor_sid=None
+                self.p.active_depositor_last_seen=0;self.p.active_depositor_timeout=0
                 self.p.active_deposit_rejection=None
             elif event=='BIN_FULL':
                 if self.p.get_config('esp_require_bin_sensor', '0') == '1':
@@ -755,6 +794,18 @@ class TimePortal(object):
             except Exception:
                 pass
         arp=self.p.get_arp_table(); projections=[]
+        if self.p.active_depositor_ip:
+            last_seen = getattr(self.p, 'active_depositor_last_seen', now)
+            silence = now - last_seen
+            timed_out = (now > self.p.active_depositor_timeout)
+            not_in_arp = bool(arp) and (self.p.active_depositor_ip not in arp)
+            if timed_out:
+                self.p.log.info('Active deposit session timed out; closing gate')
+                self.abort_active_deposit(reason='deposit_timeout')
+            elif (not_in_arp and silence >= 3) or (silence >= 6):
+                self.p.log.info('Active depositor %s disconnected or exited (silence=%ds, in_arp=%s); closing gate',
+                               self.p.active_depositor_ip, silence, not not_in_arp)
+                self.abort_active_deposit(reason='client_disconnected')
         with self.p.db_connection() as conn:
             if storage.metadata(conn,'ready','0')!='1':
                 self.last_success_mono=None;return False

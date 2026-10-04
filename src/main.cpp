@@ -676,12 +676,22 @@ void sensorTaskCode(void* parameter) {
             logDebug("AIRLOCK", "Entrance gate CLOSED (Ch 0 -> %d deg). Dropped=%d, WasForced=%d",
                      config.ent_close_angle, dropped, wasForced);
             
-            if (!dropped) {
-                if (!wasForced) {
-                    logDebug("AIRLOCK", "Intake timeout reached (%u ms). No bottle inserted.", gateTimeoutMs);
-                    EventMsg timeoutMsg = MSG_GATE_TIMEOUT;
-                    postEvent(timeoutMsg);
+            if (wasForced) {
+                logDebug("AIRLOCK", "Deposit cycle aborted via force close. Resetting to idle cleanly.");
+                vTaskDelay(pdMS_TO_TICKS(150));
+                if (hx711Found && scale.wait_ready_timeout(200)) {
+                    scale.tare(3);
+                    lastMeasuredWeightG = 0.0f;
+                    logDebug("SCALE", "Scale tared cleanly after forced abort.");
                 }
+                depositCycleBusy = false;
+                continue;
+            }
+
+            if (!dropped) {
+                logDebug("AIRLOCK", "Intake timeout reached (%u ms). No bottle inserted.", gateTimeoutMs);
+                EventMsg timeoutMsg = MSG_GATE_TIMEOUT;
+                postEvent(timeoutMsg);
 
                 // Tare to 0 as well when inserting is done and entrance gate closed safely
                 vTaskDelay(pdMS_TO_TICKS(150)); // Allow entrance servo physical travel to settle
@@ -1408,10 +1418,15 @@ void loop() {
         } else if (strcmp(cmd, "CLOSE_GATE") == 0) {
             xSemaphoreTake(creditMutex, portMAX_DELAY);
             logDebug("CMD", "CLOSE_GATE received for session='%s'", sid);
-            if (strcmp(sid, creditJournal.session) == 0) {
+            if (sid[0] == '\0' || strcmp(sid, creditJournal.session) == 0) {
                 entranceGateRequested = false;
                 forceGateClose = true;
                 logDebug("CMD", "Forced gate close flag set.");
+            }
+            if (pca9685Found && !depositCycleBusy) {
+                setServoAngle(PCA_CHANNEL_ENTRANCE, desiredConfig.ent_close_angle);
+                setServoAngle(PCA_CHANNEL_SUCCESS, desiredConfig.suc_close_angle);
+                gateStateEvent(false);
             }
             xSemaphoreGive(creditMutex);
         } else if (strcmp(cmd, "SET_AP") == 0 || strcmp(cmd, "TRIGGER_CONFIG") == 0) {

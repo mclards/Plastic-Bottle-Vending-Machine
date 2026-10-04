@@ -314,8 +314,7 @@ class ESP32Simulator:
         with self.lock:
             self.entrance_servo_angle = self.ent_close_angle
             self.force_gate_close = False
-            self.pipe_item_stage = 'airlock' if dropped else 'idle'
-        if not dropped:
+        if was_forced or not dropped:
             with self.lock:
                 self.pipe_item_stage = 'idle'
                 self.pipe_item_type = 'none'
