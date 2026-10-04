@@ -6,6 +6,7 @@ Compatible with the image's Python 3.5 and iptables 1.6.
 """
 import ipaddress
 import logging
+import os
 import shutil
 import subprocess
 import threading
@@ -115,8 +116,10 @@ def setup(lan='eth1', wan='eth0'):
         ipt('-A', 'ECOFI_FORWARD', '-i', LAN, '-o', WAN, '-m', 'set', '--match-set', 'ecofi_garden', 'dst', '-j', 'ACCEPT')
         ipt('-A', 'ECOFI_FORWARD', '-i', WAN, '-o', LAN, '-m', 'set', '--match-set', 'ecofi_garden', 'src',
             '-m', 'conntrack', '--ctstate', 'ESTABLISHED,RELATED', '-j', 'ACCEPT')
-        # Fast reject unauthenticated HTTPS from LAN with tcp-reset (triggers captive assistant instantly, no 30s hang)
-        ipt('-A', 'ECOFI_FORWARD', '-i', LAN, '-p', 'tcp', '--dport', '443', '-j', 'REJECT', '--reject-with', 'tcp-reset')
+        # Fast reject unauthenticated LAN TCP with tcp-reset and UDP with icmp-port-unreachable
+        # (terminates active client sockets instantly, forcing Android/iOS/Windows to immediately re-probe captive portal)
+        ipt('-A', 'ECOFI_FORWARD', '-i', LAN, '-p', 'tcp', '-j', 'REJECT', '--reject-with', 'tcp-reset')
+        ipt('-A', 'ECOFI_FORWARD', '-i', LAN, '-p', 'udp', '-j', 'REJECT', '--reject-with', 'icmp-port-unreachable')
         ipt('-A', 'ECOFI_FORWARD', '-j', 'DROP')
         ipt('-D', 'ECOFI_FORWARD', '1')
 
@@ -185,6 +188,17 @@ def shape(ip, dl, ul):
     _shaped[ip] = values
 
 
+def kick_ap_client(mac, ip=None):
+    if not mac or mac == '00:00:00:00:00:00':
+        return
+    kick_script = os.environ.get('ECOFI_AP_KICK_SCRIPT', '/opt/ecofi/tools/ap_kick.sh')
+    if os.path.isfile(kick_script) and os.access(kick_script, os.X_OK):
+        try:
+            subprocess.run([kick_script, mac, ip or ''], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=5)
+        except Exception as e:
+            log.warning('kick_ap_client failed for {}: {}'.format(mac, e))
+
+
 def revoke(ip):
     with lock:
         run(['ipset', 'del', 'ecofi_auth', ip, '-exist'])
@@ -197,6 +211,11 @@ def revoke(ip):
                 run(['tc', 'filter', 'del', 'dev', device, 'protocol', 'ip', 'parent', '1:', 'prio', str(mark)], check=False)
                 run(['tc', 'class', 'del', 'dev', device, 'classid', '1:{:x}'.format(mark)], check=False)
             _shaped.pop(ip, None)
+        if shutil.which('conntrack'):
+            run(['conntrack', '-D', '-s', ip], check=False)
+            run(['conntrack', '-D', '-d', ip], check=False)
+        if mac:
+            kick_ap_client(mac, ip)
 
 
 def grant(ip, mac, seconds, dl, ul):

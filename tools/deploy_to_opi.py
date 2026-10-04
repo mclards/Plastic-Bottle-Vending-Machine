@@ -33,6 +33,7 @@ FILES_TO_DEPLOY = [
 TOOLS_TO_DEPLOY = [
     'flash_esp32.py',
     'stealth_enroll.sh',
+    'ap_kick.sh',
 ]
 
 def main():
@@ -118,7 +119,7 @@ def main():
 
         # Step 4: Fix permissions
         print("[5/7] Configuring permissions & cleaning cache...", flush=True)
-        execute(client, "chmod +x /opt/ecofi/portal.py /opt/ecofi/tools/flash_esp32.py /opt/ecofi/tools/stealth_enroll.sh")
+        execute(client, "chmod +x /opt/ecofi/portal.py /opt/ecofi/tools/flash_esp32.py /opt/ecofi/tools/stealth_enroll.sh /opt/ecofi/tools/ap_kick.sh")
         execute(client, "find /opt/ecofi/__pycache__ -name '*.pyc' -delete 2>/dev/null || true")
 
         # Step 4.5: Update and reload Nginx configuration

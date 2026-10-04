@@ -370,9 +370,12 @@ fi
 # Inject ipset binary and shared library
 DEBS_DIR="$ROOT_DIR/resources/debs"
 if [ -d "$DEBS_DIR" ]; then
-    echo "Injecting ipset & libipset3 packages into rootfs..."
+    echo "Injecting ipset, libipset3 & conntrack packages into rootfs..."
     dpkg-deb -x "$DEBS_DIR/libipset3_6.30-2_armhf.deb" "$MOUNT_DIR"
     dpkg-deb -x "$DEBS_DIR/ipset_6.30-2_armhf.deb" "$MOUNT_DIR"
+    if [ -f "$DEBS_DIR/conntrack_1.4.4_armhf.deb" ]; then
+        dpkg-deb -x "$DEBS_DIR/conntrack_1.4.4_armhf.deb" "$MOUNT_DIR"
+    fi
 fi
 
 echo "[5/6.5] Injecting VMC ECO-VENDO software stack into /opt/ecofi..."
@@ -381,6 +384,12 @@ for module in portal.py license_manager.py esp32_simulator.py gateway_network.py
     cp "$SOURCE_HOST/$module" "$MOUNT_DIR/opt/ecofi/"
 done
 if [ -d "$SOURCE_HOST/templates" ]; then cp -r "$SOURCE_HOST/templates" "$MOUNT_DIR/opt/ecofi/"; fi
+if [ -d "$SOURCE_HOST/tools" ]; then
+    mkdir -p "$MOUNT_DIR/opt/ecofi/tools"
+    cp -r "$SOURCE_HOST/tools/"* "$MOUNT_DIR/opt/ecofi/tools/"
+    chmod 755 "$MOUNT_DIR/opt/ecofi/tools"
+    chmod +x "$MOUNT_DIR/opt/ecofi/tools/"* 2>/dev/null || true
+fi
 if [ -d "$SOURCE_HOST/static" ]; then
     [[ ! -L "$MOUNT_DIR/opt/ecofi/static" ]] || exit 1
     rm -rf -- "$MOUNT_DIR/opt/ecofi/static"
