@@ -745,11 +745,27 @@ class TimePortal(object):
                 self.restore_projections();self.reconcile()
             elif event in ('TIMEOUT','DEPOSIT_ABORT','SESSION_HOLD'):
                 with self.p.db_connection() as conn:
-                    sid=data.get('session_id')
-                    if sid:conn.execute("UPDATE deposit_sessions SET status='HOLD' WHERE id=? AND status='OPEN'",(sid,))
-                self.p.active_depositor_ip=None;self.p.active_depositor_mac=None;self.p.active_depositor_sid=None
-                self.p.active_depositor_last_seen=0;self.p.active_depositor_timeout=0
-                self.p.active_deposit_rejection=None
+                    self.require_ready(conn)
+                    sid = data.get('session_id') or getattr(self.p, 'active_depositor_sid', None)
+                    deposit = None
+                    if sid:
+                        deposit = engine.one(conn, "SELECT * FROM deposit_sessions WHERE id=?", (sid,))
+                    if not deposit:
+                        deposit = engine.one(conn, "SELECT * FROM deposit_sessions WHERE status='OPEN' ORDER BY created_at DESC LIMIT 1")
+                    if deposit and deposit['status'] == 'OPEN':
+                        bottles = conn.execute('SELECT COALESCE(SUM(bottles),0) FROM deposit_events WHERE session_id=?', (deposit['id'],)).fetchone()[0]
+                        if bottles > 0:
+                            self.finalize(conn, deposit, now, mono)
+                        else:
+                            conn.execute("UPDATE deposit_sessions SET status='HOLD', error=?, updated_at=? WHERE id=?", (event.lower(), now, deposit['id']))
+                self.p.active_depositor_ip = None
+                self.p.active_depositor_mac = None
+                self.p.active_depositor_sid = None
+                self.p.active_depositor_last_seen = 0
+                self.p.active_depositor_timeout = 0
+                self.p.active_deposit_rejection = None
+                self.restore_projections()
+                self.reconcile()
             elif event=='BIN_FULL':
                 if self.p.get_config('esp_require_bin_sensor', '0') == '1':
                     self.p.set_config('hw_bin_full','1')

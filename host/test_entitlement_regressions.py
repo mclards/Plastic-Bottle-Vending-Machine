@@ -1134,6 +1134,47 @@ class PortalRegression(unittest.TestCase):
         self.assertIsNone(self.p.active_depositor_ip)
         self.assertTrue(any(msg.get('cmd') == 'CLOSE_GATE' for msg in sent), sent)
 
+    def test_timeout_event_with_bottles_finalizes_and_grants_internet(self):
+        opened = self.request('/api/vendo/open_gate').get_json()
+        self.assertTrue(opened['success'], opened)
+        sid = opened['deposit_session_id']
+        self.p.on_esp32_uart_output(json.dumps({'event':'CREDIT_ADD','event_id':'tout:1','session_id':sid,'bottles':1,'protocol':2}))
+
+        # When ESP32 gate timeout occurs, it sends TIMEOUT
+        self.p.on_esp32_uart_output(json.dumps({'event':'TIMEOUT','session_id':sid,'protocol':2}))
+
+        # Verify deposit session is finalized and NOT held
+        with self.p.db_connection() as conn:
+            row = conn.execute('SELECT status FROM deposit_sessions WHERE id=?', (sid,)).fetchone()
+            self.assertEqual(row[0], 'FINALIZED')
+        self.assertEqual(self.scalar('SELECT SUM(issued_us) FROM time_grants'), 600000000)
+
+        # Worker pass applies network reconciliation
+        self.p.time_service.worker_pass()
+
+        # Status should show active internet connection
+        st = self.request('/api/vendo/status', get=True).get_json()
+        self.assertGreater(st.get('client_time_remaining', 0), 0)
+        self.assertEqual(st.get('applied_state'), 'ACTIVE')
+
+    def test_timeout_event_with_zero_bottles_transitions_to_hold(self):
+        opened = self.request('/api/vendo/open_gate').get_json()
+        self.assertTrue(opened['success'], opened)
+        sid = opened['deposit_session_id']
+
+        # Gate timeout without any bottle inserted
+        self.p.on_esp32_uart_output(json.dumps({'event':'TIMEOUT','session_id':sid,'protocol':2}))
+
+        with self.p.db_connection() as conn:
+            row = conn.execute('SELECT status, error FROM deposit_sessions WHERE id=?', (sid,)).fetchone()
+            self.assertEqual(row[0], 'HOLD')
+            self.assertEqual(row[1], 'timeout')
+        self.assertIsNone(self.scalar('SELECT SUM(issued_us) FROM time_grants'))
+
+        st = self.request('/api/vendo/status', get=True).get_json()
+        self.assertEqual(st.get('client_time_remaining', 0), 0)
+
+
 
 def uuid_token():
     import uuid
