@@ -5,17 +5,29 @@ import threading
 import json
 from collections import deque
 
+def _read_release_version():
+    try:
+        p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'VERSION')
+        if os.path.exists(p):
+            with open(p, 'r') as f:
+                return f.read().strip()
+    except Exception:
+        pass
+    return '2.3.18'
+
+SIMULATOR_VERSION = 'v' + _read_release_version()
+
 # Keep these physical bounds aligned with src/machine_config.h.
 HARDWARE_BOUNDS={
-    'bin_full_threshold_cm':(1,400,15),'pet_nir_w_min':(0,65535,30),
-    'pet_nir_w_max':(1,65535,220),'entrance_gate_timeout':(1,600,60),
-    'settle_time_ms':(1,30000,500),'success_drop_tout_ms':(1,30000,3000),
-    'retrieval_timeout_s':(5,300,45),'require_nir_sensor':(0,1,1),
-    'require_weight_sensor':(0,1,0),'require_bin_sensor':(0,1,0),
-    'bin_sensor_orientation':(0,1,0),'bin_empty_depth_cm':(20,250,60),
+    'bin_full_threshold_cm':(1,400,18),'pet_nir_w_min':(0,65535,10),
+    'pet_nir_w_max':(1,65535,120),'entrance_gate_timeout':(1,600,65),
+    'settle_time_ms':(1,30000,1000),'success_drop_tout_ms':(1,30000,3100),
+    'retrieval_timeout_s':(5,300,50),'require_nir_sensor':(0,1,1),
+    'require_weight_sensor':(0,1,1),'require_bin_sensor':(0,1,0),
+    'bin_sensor_orientation':(0,1,1),'bin_empty_depth_cm':(20,250,60),
     'bin_debounce_s':(1,30,3),
-    'min_bottle_weight_g':(1,1000,10),
-    'max_bottle_weight_g':(1,2000,65),'weight_cal_factor':(1,50000,420)}
+    'min_bottle_weight_g':(1,1000,20),
+    'max_bottle_weight_g':(1,2000,90),'weight_cal_factor':(1,50000,260)}
 for _prefix in ('ent','suc'):
     for _state,_default in (('open',90),('close',0)):
         HARDWARE_BOUNDS[_prefix+'_'+_state+'_angle']=(0,180,_default)
@@ -42,22 +54,22 @@ class ESP32Simulator:
 
     def __init__(self, on_serial_output_callback=None, journal_path=None, start_worker=True):
         self.on_serial_output_callback = on_serial_output_callback
-        self.bin_full_threshold_cm = 15
-        self.pet_nir_w_min = 30
-        self.pet_nir_w_max = 220
-        self.entrance_gate_timeout = 60
-        self.settle_time_ms = 500
-        self.success_drop_tout_ms = 3000
-        self.retrieval_timeout_s = 45
+        self.bin_full_threshold_cm = 18
+        self.pet_nir_w_min = 10
+        self.pet_nir_w_max = 120
+        self.entrance_gate_timeout = 65
+        self.settle_time_ms = 1000
+        self.success_drop_tout_ms = 3100
+        self.retrieval_timeout_s = 50
         self.require_nir_sensor = 1
-        self.require_weight_sensor = 0
+        self.require_weight_sensor = 1
         self.require_bin_sensor = 0
-        self.bin_sensor_orientation = 0
+        self.bin_sensor_orientation = 1
         self.bin_empty_depth_cm = 60
         self.bin_debounce_s = 3
-        self.min_bottle_weight_g = 10
-        self.max_bottle_weight_g = 65
-        self.weight_cal_factor = 420
+        self.min_bottle_weight_g = 20
+        self.max_bottle_weight_g = 90
+        self.weight_cal_factor = 260
         self.measured_weight_g = 22.0
         self.ent_open_angle = 90
         self.ent_close_angle = 0
@@ -561,7 +573,7 @@ class ESP32Simulator:
             self.entrance_servo_angle = self.ent_close_angle
             self.success_servo_angle = self.suc_close_angle
             self.set_lcd(line1='Ready for Deposit   ', line2='Rate: 1 Bottle = 10m', line3='Session Bottles: 0  ')
-        self.send_uart({'event':'BOOT','protocol':2,'firmware_version':'v2.3.17','pca9685_ready':True,'spectrometer_ready':True,'hx711_ready':True,'cfg_ts':0})
+        self.send_uart({'event':'BOOT','protocol':2,'firmware_version':SIMULATOR_VERSION,'pca9685_ready':True,'spectrometer_ready':True,'hx711_ready':True,'cfg_ts':0})
 
     def get_state(self):
         with self.lock:

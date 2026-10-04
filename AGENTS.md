@@ -45,8 +45,8 @@
    - **Forced Password Change:** The forced password change on first login with default `admin1234` is an intentional security design and MUST be preserved.
    - **STRICT PROHIBITION:** AI agents must NEVER change, overwrite, or randomize the default admin credentials in code, tests, scripts, or database under any circumstances.
 5. **Authoritative Stable Version (PERMANENT MEMORY RULE):**
-   - **v2.3.17 (commit `87c7cb7`) is definitively confirmed as the most stable release baseline** across both the Orange Pi gateway and ESP32 firmwares.
-   - All timing, retrieval state machines, chime synchronization, and scale routines from v2.3.17 are authoritative and must be preserved as the golden standard.
+   - **v2.3.18 is definitively confirmed as the stable release baseline** across both the Orange Pi gateway and ESP32 firmwares, embedding authoritative hardware & sensor calibration defaults (NIR W [10 - 120], Weight [20 - 90]g, HX711 cal factor 260, Horiz. bin 18cm @ 3s, Gate 65s, Settle 1000ms, Drop 3100ms, Retrieval 50s, servos 0°/90°).
+   - All timing, retrieval state machines, chime synchronization, and scale routines originating from v2.3.17 (commit `87c7cb7`) are preserved.
 
 ---
 

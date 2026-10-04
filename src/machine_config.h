@@ -1,15 +1,15 @@
 #pragma once
 
 struct MachineConfig {
-    int bin_full_threshold_cm = 15;
-    int pet_nir_w_min = 30;
-    int pet_nir_w_max = 220;
-    int entrance_gate_timeout = 60;
+    int bin_full_threshold_cm = 18;
+    int pet_nir_w_min = 10;
+    int pet_nir_w_max = 120;
+    int entrance_gate_timeout = 65;
     
     // Hardware Timings
-    int settle_time_ms = 500;
-    int success_drop_tout_ms = 3000;
-    int retrieval_timeout_s = 45;
+    int settle_time_ms = 1000;
+    int success_drop_tout_ms = 3100;
+    int retrieval_timeout_s = 50;
 
     // Independent Servo Angles for Fine-Tuning
     int ent_open_angle = 90;
@@ -19,14 +19,14 @@ struct MachineConfig {
 
     // Sensor Verification Requirements
     int require_nir_sensor = 1;      // 1 = Strict NIR polymer check required, 0 = Bench-test mode (servos only)
-    int require_weight_sensor = 0;   // 1 = Strict HX711 weight check required, 0 = Bypassed (sensor optional)
+    int require_weight_sensor = 1;   // 1 = Strict HX711 weight check required, 0 = Bypassed (sensor optional)
     int require_bin_sensor = 0;      // 1 = Strict ultrasonic bin check required, 0 = Bypassed (sensor optional / disabled default)
-    int bin_sensor_orientation = 0;  // 0 = Overhead / Downward, 1 = Horizontal / Side-Mounted
+    int bin_sensor_orientation = 1;  // 0 = Overhead / Downward, 1 = Horizontal / Side-Mounted
     int bin_empty_depth_cm = 60;     // Base-to-sensor empty depth in cm (Overhead mode)
     int bin_debounce_s = 3;          // Continuous presence required in seconds before declaring full (Horizontal mode)
-    int min_bottle_weight_g = 10;    // Minimum weight for empty plastic bottle (grams)
-    int max_bottle_weight_g = 65;    // Maximum weight for empty plastic bottle (grams; rejects glass >250g)
-    int weight_cal_factor = 420;     // HX711 pulses-per-gram calibration factor
+    int min_bottle_weight_g = 20;    // Minimum weight for empty plastic bottle (grams)
+    int max_bottle_weight_g = 90;    // Maximum weight for empty plastic bottle (grams; rejects glass >250g)
+    int weight_cal_factor = 260;     // HX711 pulses-per-gram calibration factor
     // Hardware Configuration Timestamp (Epoch seconds; latest timestamp always wins)
     unsigned long config_timestamp = 0;
 };

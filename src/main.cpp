@@ -400,26 +400,26 @@ int getBinDistanceCm() {
 // -----------------------------------------------------------------------------
 void loadPreferences() {
     preferences.begin("ecovendo", false);
-    config.bin_full_threshold_cm = preferences.getInt("bin_cm", 15);
-    config.bin_sensor_orientation = preferences.getInt("bin_orient", 0);
+    config.bin_full_threshold_cm = preferences.getInt("bin_cm", 18);
+    config.bin_sensor_orientation = preferences.getInt("bin_orient", 1);
     config.bin_empty_depth_cm = preferences.getInt("bin_empty", 60);
     config.bin_debounce_s = preferences.getInt("bin_deb", 3);
-    config.pet_nir_w_min = preferences.getInt("nir_min", 30);
-    config.pet_nir_w_max = preferences.getInt("nir_max", 220);
-    config.entrance_gate_timeout = preferences.getInt("ent_tout", 60);
-    config.settle_time_ms = preferences.getInt("stl_ms", 500);
-    config.success_drop_tout_ms = preferences.getInt("suc_tout", 3000);
-    config.retrieval_timeout_s = preferences.getInt("ret_tout", 45);
+    config.pet_nir_w_min = preferences.getInt("nir_min", 10);
+    config.pet_nir_w_max = preferences.getInt("nir_max", 120);
+    config.entrance_gate_timeout = preferences.getInt("ent_tout", 65);
+    config.settle_time_ms = preferences.getInt("stl_ms", 1000);
+    config.success_drop_tout_ms = preferences.getInt("suc_tout", 3100);
+    config.retrieval_timeout_s = preferences.getInt("ret_tout", 50);
     config.ent_open_angle = preferences.getInt("ent_open", 90);
     config.ent_close_angle = preferences.getInt("ent_close", 0);
     config.suc_open_angle = preferences.getInt("suc_open", 90);
     config.suc_close_angle = preferences.getInt("suc_close", 0);
     config.require_nir_sensor = preferences.getInt("req_nir", 1);
-    config.require_weight_sensor = preferences.getInt("req_wt", 0);
+    config.require_weight_sensor = preferences.getInt("req_wt", 1);
     config.require_bin_sensor = preferences.getInt("req_bin", 0);
-    config.min_bottle_weight_g = preferences.getInt("min_wt", 10);
-    config.max_bottle_weight_g = preferences.getInt("max_wt", 65);
-    config.weight_cal_factor = preferences.getInt("wt_cal", 420);
+    config.min_bottle_weight_g = preferences.getInt("min_wt", 20);
+    config.max_bottle_weight_g = preferences.getInt("max_wt", 90);
+    config.weight_cal_factor = preferences.getInt("wt_cal", 260);
     config.config_timestamp = preferences.getULong("cfg_ts", 0);
 
     logDebug("NVS", "Loaded Hardware Preferences:");
@@ -1302,7 +1302,7 @@ void setup() {
     scale.begin(PIN_HX711_DOUT, PIN_HX711_SCK);
     if (scale.wait_ready_timeout(200)) {
         hx711Found = true;
-        scale.set_scale(config.weight_cal_factor > 0 ? (float)config.weight_cal_factor : 420.0f);
+        scale.set_scale(config.weight_cal_factor > 0 ? (float)config.weight_cal_factor : 260.0f);
         scale.tare();
         logDebug("SCALE", "HX711 Load Cell detected and tared successfully!");
     } else {

@@ -995,7 +995,7 @@ class PortalRegression(unittest.TestCase):
         from esp32_simulator import HARDWARE_BOUNDS, validate_hardware_config
         self.assertIn('retrieval_timeout_s', HARDWARE_BOUNDS)
         low, high, default = HARDWARE_BOUNDS['retrieval_timeout_s']
-        self.assertEqual((low, high, default), (5, 300, 45))
+        self.assertEqual((low, high, default), (5, 300, 50))
         self.assertNotIn('reject_drop_time_ms', HARDWARE_BOUNDS)
         self.assertNotIn('rej_open_angle', HARDWARE_BOUNDS)
         self.assertNotIn('rej_close_angle', HARDWARE_BOUNDS)
