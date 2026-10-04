@@ -833,7 +833,7 @@ class TimePortal(object):
             if timed_out:
                 self.p.log.info('Active deposit session timed out; closing gate')
                 self.abort_active_deposit(reason='deposit_timeout')
-            elif not_in_arp and silence >= 4:
+            elif not_in_arp and silence >= 45:
                 self.p.log.info('Active depositor %s disconnected from AP (not in ARP, silence=%ds); closing gate',
                                self.p.active_depositor_ip, silence)
                 self.abort_active_deposit(reason='client_disconnected')

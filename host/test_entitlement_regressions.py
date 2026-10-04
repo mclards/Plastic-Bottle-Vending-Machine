@@ -1109,9 +1109,9 @@ class PortalRegression(unittest.TestCase):
         self.assertIsNotNone(self.p.active_depositor_ip)
         sid = opened['deposit_session_id']
 
-        # Advance clock by 5s without any status poll and mock non-empty ARP where client is missing
-        self.utc += 5
-        self.mono += 5.0
+        # Advance clock by 50s without any status poll and mock non-empty ARP where client is missing
+        self.utc += 50
+        self.mono += 50.0
         with patch.object(self.p, 'get_arp_table', return_value={'10.0.99.99': 'aa:bb:cc:dd:ee:ff'}):
             self.p.time_service.worker_pass()
 

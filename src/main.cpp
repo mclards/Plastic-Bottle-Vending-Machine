@@ -555,7 +555,7 @@ void sensorTaskCode(void* parameter) {
         }
 
         // 2. Await Entrance Request
-        if (entranceGateRequested.load()) {
+        if (entranceGateRequested.exchange(false)) {
             xSemaphoreTake(creditMutex, portMAX_DELAY);
             bool sensorReady = !config.require_nir_sensor || spectrometerFound;
             bool permitted = creditStorageOk && (creditJournal.phase == 0 || creditJournal.phase == 2) &&
@@ -565,7 +565,6 @@ void sensorTaskCode(void* parameter) {
                     creditJournal.phase = 0;
                     saveCreditJournal();
                 }
-                entranceGateRequested = false;
                 depositCycleBusy = true;
             }
             char curSession[37];
@@ -577,8 +576,13 @@ void sensorTaskCode(void* parameter) {
                      permitted, creditStorageOk.load(), curPhase, curSession, finishRequested.load(), pca9685Found, spectrometerFound, config.require_nir_sensor);
 
             if (!permitted) {
-                logWarn("CYCLE", "Deposit cycle not permitted yet (phase=%d, req=%d). Retrying...", curPhase, entranceGateRequested.load());
-                vTaskDelay(pdMS_TO_TICKS(50));
+                logWarn("CYCLE", "Deposit cycle not permitted! Bypassing entrance request.");
+                if (!pca9685Found) {
+                    emitSerialLine("{\"event\":\"HARDWARE_ALERT\",\"reason\":\"actuators_offline\"}");
+                } else if (config.require_nir_sensor && !spectrometerFound) {
+                    emitSerialLine("{\"event\":\"HARDWARE_ALERT\",\"reason\":\"spectrometer_offline\"}");
+                }
+                vTaskDelay(pdMS_TO_TICKS(20));
                 continue;
             }
 
@@ -678,22 +682,12 @@ void sensorTaskCode(void* parameter) {
             logDebug("AIRLOCK", "Entrance gate CLOSED (Ch 0 -> %d deg). Dropped=%d, WasForced=%d",
                      config.ent_close_angle, dropped, wasForced);
             
-            if (wasForced) {
-                logDebug("AIRLOCK", "Deposit cycle aborted via force close. Resetting to idle cleanly.");
-                vTaskDelay(pdMS_TO_TICKS(150));
-                if (hx711Found && scale.wait_ready_timeout(200)) {
-                    scale.tare(3);
-                    lastMeasuredWeightG = 0.0f;
-                    logDebug("SCALE", "Scale tared cleanly after forced abort.");
-                }
-                depositCycleBusy = false;
-                continue;
-            }
-
             if (!dropped) {
-                logDebug("AIRLOCK", "Intake timeout reached (%u ms). No bottle inserted.", gateTimeoutMs);
-                EventMsg timeoutMsg = MSG_GATE_TIMEOUT;
-                postEvent(timeoutMsg);
+                if (!wasForced) {
+                    logDebug("AIRLOCK", "Intake timeout reached (%u ms). No bottle inserted.", gateTimeoutMs);
+                    EventMsg timeoutMsg = MSG_GATE_TIMEOUT;
+                    postEvent(timeoutMsg);
+                }
 
                 // Tare to 0 as well when inserting is done and entrance gate closed safely
                 vTaskDelay(pdMS_TO_TICKS(150)); // Allow entrance servo physical travel to settle
