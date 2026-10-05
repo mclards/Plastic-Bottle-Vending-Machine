@@ -384,9 +384,16 @@ fi
 
 echo "[5/6.5] Injecting VMC ECO-VENDO software stack into /opt/ecofi..."
 mkdir -p "$MOUNT_DIR/opt/ecofi"
-for module in portal.py license_manager.py esp32_simulator.py gateway_network.py time_schema.py time_policy.py transition_engine.py time_portal.py migrate_legacy_sessions.py; do
-    cp "$SOURCE_HOST/$module" "$MOUNT_DIR/opt/ecofi/"
+for module in portal.py license_manager.py esp32_simulator.py gateway_network.py status_led.py time_schema.py time_policy.py transition_engine.py time_portal.py migrate_legacy_sessions.py test_entitlement_regressions.py test_network_regressions.py test_time_system.py; do
+    if [ -f "$SOURCE_HOST/$module" ]; then
+        cp "$SOURCE_HOST/$module" "$MOUNT_DIR/opt/ecofi/"
+    fi
 done
+if [ -f "$ROOT_DIR/resources/esp32_firmware_factory.bin" ]; then
+    mkdir -p "$MOUNT_DIR/opt/ecofi/firmware"
+    cp "$ROOT_DIR/resources/esp32_firmware_factory.bin" "$MOUNT_DIR/opt/ecofi/firmware/esp32_firmware.bin"
+    (cd "$MOUNT_DIR/opt/ecofi/firmware" && sha256sum esp32_firmware.bin > esp32_firmware.sha256)
+fi
 if [ -d "$SOURCE_HOST/templates" ]; then cp -r "$SOURCE_HOST/templates" "$MOUNT_DIR/opt/ecofi/"; fi
 if [ -d "$SOURCE_HOST/tools" ]; then
     mkdir -p "$MOUNT_DIR/opt/ecofi/tools"
