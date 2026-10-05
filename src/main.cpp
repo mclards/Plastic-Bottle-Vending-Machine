@@ -130,69 +130,6 @@ SemaphoreHandle_t uiMutex;
 TaskHandle_t sensorTaskHandle = NULL;
 std::atomic<int> cachedBinDistanceCm{999};
 
-// -----------------------------------------------------------------------------
-// POLISHED LCD DISPLAY & PROMO RATE ROTATION ENGINE
-// -----------------------------------------------------------------------------
-#define MAX_LCD_RATES 6
-
-char lcdPromoRates[MAX_LCD_RATES][21] = {
-    "Rate: 1 Bottle = 15m",
-    "Rate: 3 Btls = 45m  ",
-    "Rate: 5 Btls = 1h15m",
-    "Rate: 10 Btls = 3hrs"
-};
-int lcdPromoCount = 4;
-int lcdPromoIndex = 0;
-unsigned long lastRateCycleMs = 0;
-const unsigned long RATE_CYCLE_INTERVAL_MS = 2500;
-
-char currentLcdLines[4][21] = {
-    "",
-    "",
-    "",
-    ""
-};
-
-void invalidateLcdBuffer() {
-    if (uiMutex) xSemaphoreTake(uiMutex, portMAX_DELAY);
-    memset(currentLcdLines, 0, sizeof(currentLcdLines));
-    if (uiMutex) xSemaphoreGive(uiMutex);
-}
-
-enum LcdScreenMode {
-    LCD_MODE_IDLE,
-    LCD_MODE_GATE_OPEN,
-    LCD_MODE_VALIDATING,
-    LCD_MODE_SAVED,
-    LCD_MODE_REJECTED,
-    LCD_MODE_ITEM_CLEARED,
-    LCD_MODE_TIMEOUT,
-    LCD_MODE_BIN_FULL
-};
-std::atomic<LcdScreenMode> activeLcdMode{LCD_MODE_IDLE};
-
-void updateLcdRowInternal(uint8_t row, const char* text) {
-    if (row >= 4 || !text) return;
-    char formatted[21];
-    snprintf(formatted, sizeof(formatted), "%-20.20s", text);
-    if (strncmp(currentLcdLines[row], formatted, 20) != 0) {
-        memcpy(currentLcdLines[row], formatted, 20);
-        currentLcdLines[row][20] = '\0';
-        lcd.setCursor(0, row);
-        lcd.print(formatted);
-    }
-}
-
-void setLcdScreen(const char* l0, const char* l1, const char* l2, const char* l3) {
-    if (!uiMutex) return;
-    xSemaphoreTake(uiMutex, portMAX_DELAY);
-    if (l0) updateLcdRowInternal(0, l0);
-    if (l1) updateLcdRowInternal(1, l1);
-    if (l2) updateLcdRowInternal(2, l2);
-    if (l3) updateLcdRowInternal(3, l3);
-    xSemaphoreGive(uiMutex);
-}
-
 enum EventMsg {
     MSG_BIN_FULL,
     MSG_BIN_OK,
@@ -350,27 +287,6 @@ void gateStateEvent(bool open) {
     xSemaphoreGive(creditMutex);
     logDebug("AIRLOCK", "Gate state changed -> %s (session: '%s')", open ? "GATE_OPEN" : "GATE_CLOSED", session);
     scopedEvent(open ? "GATE_OPEN" : "GATE_CLOSED", session);
-    if (open) {
-        if (activeLcdMode.load() == LCD_MODE_IDLE) {
-            activeLcdMode = LCD_MODE_GATE_OPEN;
-            char sessBuf[21];
-            snprintf(sessBuf, sizeof(sessBuf), "Session Bottles: %-3d", currentSessionBottles.load());
-            setLcdScreen("=== VMC ECO-VENDO ==",
-                         "GATE OPEN: INSERT...",
-                         lcdPromoRates[lcdPromoIndex],
-                         sessBuf);
-        }
-    } else {
-        if (activeLcdMode.load() == LCD_MODE_GATE_OPEN) {
-            activeLcdMode = LCD_MODE_IDLE;
-            char sessBuf[21];
-            snprintf(sessBuf, sizeof(sessBuf), "Session Bottles: %-3d", currentSessionBottles.load());
-            setLcdScreen("=== VMC ECO-VENDO ==",
-                         "Ready for Deposit   ",
-                         lcdPromoRates[lcdPromoIndex],
-                         sessBuf);
-        }
-    }
 }
 
 void postEvent(EventMsg kind) {
@@ -1028,13 +944,14 @@ void sensorTaskCode(void* parameter) {
                 buzz(600, 1);
 
                 // 2. LCD update
-                activeLcdMode = LCD_MODE_REJECTED;
+                xSemaphoreTake(uiMutex, portMAX_DELAY);
+                lcd.setCursor(0, 0); lcd.print("=== VMC ECO-VENDO ==");
+                lcd.setCursor(0, 1); lcd.print("STATUS: REJECTED!   ");
                 char lineBuf[21];
-                snprintf(lineBuf, sizeof(lineBuf), "%-20.20s", rejectReasonDesc);
-                setLcdScreen("=== VMC ECO-VENDO ==",
-                             "STATUS: REJECTED!   ",
-                             lineBuf,
-                             "Please Remove Item  ");
+                snprintf(lineBuf, sizeof(lineBuf), "%-20s", rejectReasonDesc);
+                lcd.setCursor(0, 2); lcd.print(lineBuf);
+                lcd.setCursor(0, 3); lcd.print("Please Remove Item  ");
+                xSemaphoreGive(uiMutex);
 
                 // 3. Emit structured REJECTED event to host gateway
                 JsonDocument rejDoc;
@@ -1156,11 +1073,12 @@ void sensorTaskCode(void* parameter) {
                     logDebug("RETRIEVAL", "Item retrieved by user. Emitting ITEM_CLEARED.");
                     buzz(100, 1); // Pleasant confirmation beep
 
-                    activeLcdMode = LCD_MODE_ITEM_CLEARED;
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "STATUS: ITEM REMOVED",
-                                 "Slot Cleared! Ready ",
-                                 "Insert Valid Bottle ");
+                    xSemaphoreTake(uiMutex, portMAX_DELAY);
+                    lcd.setCursor(0, 0); lcd.print("=== VMC ECO-VENDO ==");
+                    lcd.setCursor(0, 1); lcd.print("STATUS: ITEM REMOVED");
+                    lcd.setCursor(0, 2); lcd.print("Slot Cleared! Ready ");
+                    lcd.setCursor(0, 3); lcd.print("Insert Valid Bottle ");
+                    xSemaphoreGive(uiMutex);
 
                     JsonDocument clrDoc;
                     clrDoc["event"] = "ITEM_CLEARED";
@@ -1180,11 +1098,12 @@ void sensorTaskCode(void* parameter) {
                     setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
                     gateStateEvent(false);
 
-                    activeLcdMode = LCD_MODE_TIMEOUT;
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "STATUS: TIMEOUT     ",
-                                 "Item Not Retrieved  ",
-                                 "Session on Hold     ");
+                    xSemaphoreTake(uiMutex, portMAX_DELAY);
+                    lcd.setCursor(0, 0); lcd.print("=== VMC ECO-VENDO ==");
+                    lcd.setCursor(0, 1); lcd.print("STATUS: TIMEOUT     ");
+                    lcd.setCursor(0, 2); lcd.print("Item Not Retrieved  ");
+                    lcd.setCursor(0, 3); lcd.print("Session on Hold     ");
+                    xSemaphoreGive(uiMutex);
 
                     JsonDocument toutDoc;
                     toutDoc["event"] = "RETRIEVAL_TIMEOUT";
@@ -1214,177 +1133,89 @@ void commTaskCode(void* parameter) {
 
     while (true) {
         if (xQueueReceive(eventQueue, &queued, pdMS_TO_TICKS(50)) == pdTRUE) {
+            xSemaphoreTake(uiMutex, portMAX_DELAY);
             EventMsg msg = queued.kind;
             logDebug("COMM", "Handling UI event: %s (Session: '%s')", getEventMsgName(msg), queued.session);
             switch(msg) {
-                case MSG_BIN_FULL: {
-                    activeLcdMode = LCD_MODE_BIN_FULL;
-                    char sessFull[21];
-                    snprintf(sessFull, sizeof(sessFull), "Session Bottles: %-3d", currentSessionBottles.load());
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "STATUS: STORAGE FULL",
-                                 "Empty Bin Required  ",
-                                 sessFull);
+                case MSG_BIN_FULL:
+                    lcd.setCursor(0, 1); lcd.print("STATUS: STORAGE FULL");
+                    lcd.setCursor(0, 2); lcd.print("Empty Bin Required  ");
                     digitalWrite(PIN_LED_RED, HIGH);
                     logDebug("COMM", "UI -> Storage Full alert. Red LED ON.");
                     emitSerialLine("{\"event\":\"BIN_FULL\"}");
                     break;
-                }
                 
-                case MSG_BIN_OK: {
-                    activeLcdMode = LCD_MODE_IDLE;
+                case MSG_BIN_OK:
                     emitSerialLine("{\"event\":\"BIN_OK\"}");
-                    char sessOk[21];
-                    snprintf(sessOk, sizeof(sessOk), "Session Bottles: %-3d", currentSessionBottles.load());
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "Ready for Deposit   ",
-                                 lcdPromoRates[lcdPromoIndex],
-                                 sessOk);
+                    lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
+                    lcd.setCursor(0, 2); lcd.print("Rate: 1 Bottle = 15m");
                     digitalWrite(PIN_LED_RED, LOW);
                     logDebug("COMM", "UI -> Bin OK. Red LED OFF.");
                     break;
-                }
 
                 case MSG_REJECT_TIN:
                 case MSG_REJECT_NON_PLASTIC:
-                case MSG_REJECT_NIR: {
-                    activeLcdMode = LCD_MODE_REJECTED;
+                case MSG_REJECT_NIR:
                     digitalWrite(PIN_LED_RED, HIGH);
                     digitalWrite(PIN_LED_GREEN, LOW);
-                    const char* rejDesc;
-                    if (msg == MSG_REJECT_TIN) rejDesc = "Tin/Can Detected    ";
-                    else if (msg == MSG_REJECT_NIR) rejDesc = "Invalid Material NIR";
-                    else rejDesc = "No Plastic Detected ";
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "STATUS: REJECTED!   ",
-                                 rejDesc,
-                                 "Please Remove Item  ");
+                    lcd.setCursor(0, 1); lcd.print("STATUS: REJECTED!   ");
+                    lcd.setCursor(0, 2); 
+                    if (msg == MSG_REJECT_TIN) lcd.print("Tin/Can Detected    ");
+                    else if (msg == MSG_REJECT_NIR) lcd.print("Invalid Material NIR");
+                    else lcd.print("No Plastic Detected ");
                     scopedEvent("REJECTED", queued.session);
                     logDebug("COMM", "UI -> Rejection displayed: %s. Buzzing...", getEventMsgName(msg));
                     buzz(600, 1);
                     digitalWrite(PIN_LED_RED, LOW);
+                    lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
+                    lcd.setCursor(0, 2); lcd.print("Rate: 1 Bottle = 15m");
                     break;
-                }
                 
-                case MSG_VALIDATE_START: {
-                    activeLcdMode = LCD_MODE_VALIDATING;
+                case MSG_VALIDATE_START:
                     digitalWrite(PIN_LED_GREEN, HIGH);
-                    char sessVal[21];
-                    snprintf(sessVal, sizeof(sessVal), "Session Bottles: %-3d", currentSessionBottles.load());
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "STATUS: VERIFIED OK ",
-                                 "Dropping to bin...  ",
-                                 sessVal);
+                    lcd.setCursor(0, 1); lcd.print("STATUS: VERIFIED OK ");
+                    lcd.setCursor(0, 2); lcd.print("Dropping to bin...  ");
                     logDebug("COMM", "UI -> Verified OK. Green LED ON.");
                     break;
-                }
 
-                case MSG_BOTTLE_SAVED: {
-                    activeLcdMode = LCD_MODE_SAVED;
+                case MSG_BOTTLE_SAVED:
                     logDebug("COMM", "UI -> Bottle saved! Emitting 2x chimes. Session Total: %d",
                              currentSessionBottles.load());
                     buzz(120, 2);
-                    char sessSaved[21];
-                    snprintf(sessSaved, sizeof(sessSaved), "Session Bottles: %-3d", currentSessionBottles.load());
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "STATUS: BOTTLE SAVED",
-                                 "+WiFi Time Credited!",
-                                 sessSaved);
+                    // Receipt emission/retry is independent of the display queue.
+                    lcd.setCursor(0, 1); lcd.print("STATUS: BOTTLE SAVED");
+                    lcd.setCursor(0, 3); lcd.print("Session Bottles: ");
+                    lcd.print(currentSessionBottles.load());
+                    lcd.print("  ");
                     vTaskDelay(pdMS_TO_TICKS(1200));
+                    lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
+                    lcd.setCursor(0, 2); lcd.print("Rate: 1 Bottle = 15m");
                     digitalWrite(PIN_LED_GREEN, LOW);
-                    activeLcdMode = LCD_MODE_IDLE;
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "Ready for Deposit   ",
-                                 lcdPromoRates[lcdPromoIndex],
-                                 sessSaved);
                     break;
-                }
                 
-                case MSG_DROP_TIMEOUT: {
-                    activeLcdMode = LCD_MODE_IDLE;
+                case MSG_DROP_TIMEOUT:
                     digitalWrite(PIN_LED_RED, HIGH);
                     digitalWrite(PIN_LED_GREEN, LOW);
-                    char sessErr[21];
-                    snprintf(sessErr, sizeof(sessErr), "Session Bottles: %-3d", currentSessionBottles.load());
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "STATUS: ERROR       ",
-                                 "Drop / Sensor Error ",
-                                 sessErr);
+                    lcd.setCursor(0, 1); lcd.print("STATUS: ERROR       ");
+                    lcd.setCursor(0, 2); lcd.print("Drop / Sensor Error ");
                     scopedEvent("REJECTED", queued.session);
                     logWarn("COMM", "UI -> Chute drop error / timeout displayed.");
                     buzz(600, 1);
                     digitalWrite(PIN_LED_RED, LOW);
-                    vTaskDelay(pdMS_TO_TICKS(1500));
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "Ready for Deposit   ",
-                                 lcdPromoRates[lcdPromoIndex],
-                                 sessErr);
+                    lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
+                    lcd.setCursor(0, 2); lcd.print("Rate: 1 Bottle = 15m");
                     break;
-                }
 
-                case MSG_GATE_TIMEOUT: {
-                    activeLcdMode = LCD_MODE_IDLE;
+                case MSG_GATE_TIMEOUT:
                     digitalWrite(PIN_LED_GREEN, LOW);
                     digitalWrite(PIN_LED_RED, LOW);
-                    char sessTout[21];
-                    snprintf(sessTout, sizeof(sessTout), "Session Bottles: %-3d", currentSessionBottles.load());
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "Ready for Deposit   ",
-                                 lcdPromoRates[lcdPromoIndex],
-                                 sessTout);
+                    lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
+                    lcd.setCursor(0, 2); lcd.print("Rate: 1 Bottle = 15m");
                     logDebug("COMM", "UI -> Gate intake timeout displayed.");
                     scopedEvent("TIMEOUT", queued.session);
                     break;
-                }
-
-                case MSG_ITEM_CLEARED: {
-                    activeLcdMode = LCD_MODE_IDLE;
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "STATUS: ITEM REMOVED",
-                                 "Slot Cleared! Ready ",
-                                 "Insert Valid Bottle ");
-                    vTaskDelay(pdMS_TO_TICKS(1200));
-                    char sessClr[21];
-                    snprintf(sessClr, sizeof(sessClr), "Session Bottles: %-3d", currentSessionBottles.load());
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "Ready for Deposit   ",
-                                 lcdPromoRates[lcdPromoIndex],
-                                 sessClr);
-                    break;
-                }
-
-                case MSG_RETRIEVAL_TIMEOUT: {
-                    activeLcdMode = LCD_MODE_IDLE;
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "STATUS: TIMEOUT     ",
-                                 "Item Not Retrieved  ",
-                                 "Session on Hold     ");
-                    vTaskDelay(pdMS_TO_TICKS(1800));
-                    char sessRtout[21];
-                    snprintf(sessRtout, sizeof(sessRtout), "Session Bottles: %-3d", currentSessionBottles.load());
-                    setLcdScreen("=== VMC ECO-VENDO ==",
-                                 "Ready for Deposit   ",
-                                 lcdPromoRates[lcdPromoIndex],
-                                 sessRtout);
-                    break;
-                }
             }
-        }
-
-        // Periodic promo rates rotation when idle or gate open
-        LcdScreenMode curMode = activeLcdMode.load();
-        if ((curMode == LCD_MODE_IDLE || curMode == LCD_MODE_GATE_OPEN) && !depositCycleBusy.load() && lcdPromoCount > 0) {
-            unsigned long now = millis();
-            if (now - lastRateCycleMs >= RATE_CYCLE_INTERVAL_MS) {
-                lastRateCycleMs = now;
-                lcdPromoIndex = (lcdPromoIndex + 1) % lcdPromoCount;
-                char sessBuf[21];
-                snprintf(sessBuf, sizeof(sessBuf), "Session Bottles: %-3d", currentSessionBottles.load());
-                setLcdScreen("=== VMC ECO-VENDO ==",
-                             (curMode == LCD_MODE_GATE_OPEN) ? "GATE OPEN: INSERT..." : "Ready for Deposit   ",
-                             lcdPromoRates[lcdPromoIndex],
-                             sessBuf);
-            }
+            xSemaphoreGive(uiMutex);
         }
         vTaskDelay(pdMS_TO_TICKS(20));
     }
@@ -1444,8 +1275,6 @@ void setup() {
     logDebug("I2C", "Initializing LCD (0x27)...");
     lcd.init();
     lcd.backlight();
-    uiMutex = xSemaphoreCreateMutex();
-    memset(currentLcdLines, 0, sizeof(currentLcdLines));
 
     logDebug("I2C", "Probing AS7263 NIR Spectrometer...");
     if (spectrometer.begin() == false) {
@@ -1522,14 +1351,15 @@ void setup() {
 
 
     // Normal Vending Setup
+    logDebug("BOOT", ">>> STARTING NORMAL VENDING MODE <<<");
+    lcd.setCursor(0, 0); lcd.print("=== VMC ECO-VENDO ==");
+    lcd.setCursor(0, 1); lcd.print("Ready for Deposit   ");
+    lcd.setCursor(0, 2); lcd.print("Rate: 1 Bottle = 15m");
+    lcd.setCursor(0, 3); lcd.print("Session Bottles: 0  ");
+
     eventQueue = xQueueCreate(10, sizeof(QueuedEvent));
     configQueue = xQueueCreate(1, sizeof(MachineConfig));
-
-    logDebug("BOOT", ">>> STARTING NORMAL VENDING MODE <<<");
-    setLcdScreen("=== VMC ECO-VENDO ==",
-                 "Ready for Deposit   ",
-                 lcdPromoRates[0],
-                 "Session Bottles: 0  ");
+    uiMutex = xSemaphoreCreateMutex();
 
     BaseType_t commCreated = xTaskCreatePinnedToCore(commTaskCode, "CommTask", 6144, NULL, 1, NULL, 1);
     BaseType_t sensorCreated = xTaskCreatePinnedToCore(sensorTaskCode, "SensorTask", 6144, NULL, 2, &sensorTaskHandle, 0);
@@ -1767,54 +1597,9 @@ void loop() {
                 }
                 xQueueOverwrite(configQueue, &next);
                 logDebug("CMD", "SET_CONFIG accepted and queued to SensorTask.");
-
-                if (!command["rates"].isNull() && command["rates"].is<JsonArray>()) {
-                    JsonArray arr = command["rates"].as<JsonArray>();
-                    int count = 0;
-                    for (JsonVariant v : arr) {
-                        if (count >= MAX_LCD_RATES) break;
-                        if (v.is<const char*>()) {
-                            snprintf(lcdPromoRates[count], sizeof(lcdPromoRates[count]), "%-20.20s", v.as<const char*>());
-                            count++;
-                        }
-                    }
-                    if (count > 0) {
-                        lcdPromoCount = count;
-                        lcdPromoIndex = 0;
-                        if (activeLcdMode.load() == LCD_MODE_IDLE) {
-                            char sessBuf[21];
-                            snprintf(sessBuf, sizeof(sessBuf), "Session Bottles: %-3d", currentSessionBottles.load());
-                            setLcdScreen("=== VMC ECO-VENDO ==", "Ready for Deposit   ", lcdPromoRates[0], sessBuf);
-                        }
-                    }
-                    logDebug("LCD", "SET_CONFIG updated %d promo rates on LCD.", count);
-                }
             } else {
                 logWarn("CMD", "SET_CONFIG rejected: invalid fields or configuration out of bounds.");
                 emitSerialLine("{\"event\":\"CONFIG_INVALID\"}");
-            }
-        } else if (strcmp(cmd, "SET_RATES") == 0) {
-            if (!command["rates"].isNull() && command["rates"].is<JsonArray>()) {
-                JsonArray arr = command["rates"].as<JsonArray>();
-                int count = 0;
-                for (JsonVariant v : arr) {
-                    if (count >= MAX_LCD_RATES) break;
-                    if (v.is<const char*>()) {
-                        snprintf(lcdPromoRates[count], sizeof(lcdPromoRates[count]), "%-20.20s", v.as<const char*>());
-                        count++;
-                    }
-                }
-                if (count > 0) {
-                    lcdPromoCount = count;
-                    lcdPromoIndex = 0;
-                    if (activeLcdMode.load() == LCD_MODE_IDLE) {
-                        char sessBuf[21];
-                        snprintf(sessBuf, sizeof(sessBuf), "Session Bottles: %-3d", currentSessionBottles.load());
-                        setLcdScreen("=== VMC ECO-VENDO ==", "Ready for Deposit   ", lcdPromoRates[0], sessBuf);
-                    }
-                }
-                logDebug("LCD", "SET_RATES accepted %d promo rates.", count);
-                emitSerialLine("{\"event\":\"RATES_UPDATED\",\"success\":true}");
             }
         } else if (strcmp(cmd, "TEST_SERVO") == 0) {
             int channel = command["channel"] | -1;
