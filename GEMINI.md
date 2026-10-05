@@ -27,6 +27,9 @@
    - Standard WISPr 2.0 XML handshake must be embedded in `PORTAL_HTML` and served at `/hotspot.html`.
 9. **ESP32 20x4 LCD Buffer Invalidation (PERMANENT RULE):**
    - In `src/main.cpp`, `currentLcdLines` must be initialized empty; call `invalidateLcdBuffer()` on screen clears or state changes to ensure Rows 1 & 2 are never dropped. Dynamic rates cycle on Rows 3 & 4 every 3.5s.
+10. **Admin Panel Sidebar Information Architecture (PERMANENT RULE):**
+   - The Admin Panel sidebar navigation is authoritatively structured into 5 distinct functional domains: `VENDO OPERATIONS`, `NETWORK & TRAFFIC`, `PORTAL & BRANDING`, `HARDWARE & SENSORS`, and `SYSTEM & MAINTENANCE`.
+   - Never lump portal branding, traffic/networking, or OS maintenance items into a generic catch-all group. Ensure all 15 sections have direct mapping and active link state tracking in `showSection(secId)`.
 
 
 

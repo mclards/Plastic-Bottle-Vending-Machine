@@ -75,6 +75,15 @@
   - Apple CNA parses WISPr XML (`<WISPAccessGatewayParam>` with `<LoginURL>http://10.0.0.1/</LoginURL>`).
   - Prepend WISPr XML to `PORTAL_HTML` and expose `/hotspot.html`. Probe requests to `captive.apple.com` must return HTTP 302 redirects to `/hotspot.html`.
 
+### Admin Panel Information Architecture & Sidebar Taxonomy
+- The Admin Panel sidebar navigation is authoritatively structured into **5 distinct functional domains**:
+  1. **`VENDO OPERATIONS`:** Dashboard & Stats, Active Clients, Voucher Tickets, Rates & Promos (`Rates & Packages`, `Validity & Pauses`).
+  2. **`NETWORK & TRAFFIC`:** Network & Interfaces (`sec-network`), Bandwidth & Speed (`sec-bandwidth`), Walled Garden Sites (`sec-walled`), MAC Filtering (`sec-security`).
+  3. **`PORTAL & BRANDING`:** Portal & Banners (`sec-portal-custom`), Audio & Chimes (`sec-audio`).
+  4. **`HARDWARE & SENSORS`:** ESP32 Hardware & Sensors (`sec-esp32`).
+  5. **`SYSTEM & MAINTENANCE`:** Telegram Alerts (`sec-telegram`), System Maintenance (`sec-system`), Hardware Licensing (`sec-licensing`).
+- **Rule:** Never dump portal customization, networking, or maintenance items into a generic catch-all group. All 15 sections have direct mapping and active link state tracking in `showSection(secId)`.
+
 ---
 
 ## 4. Time Entitlement Engine & SQLite Database

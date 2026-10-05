@@ -31,7 +31,7 @@ def connect():
             client.connect(h,
                            username=os.environ.get('OPI_USER', 'root'),
                            password=os.environ.get('OPI_PASSWORD', default),
-                           timeout=5, auth_timeout=5, look_for_keys=False, allow_agent=False)
+                           timeout=12, auth_timeout=12, look_for_keys=False, allow_agent=False)
             keys.parent.mkdir(parents=True, exist_ok=True)
             client.save_host_keys(str(keys))
             return client

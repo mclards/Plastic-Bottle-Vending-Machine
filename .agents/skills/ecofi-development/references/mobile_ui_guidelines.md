@@ -196,3 +196,20 @@
     margin: 2px 0 !important;
   }
   ```
+
+---
+
+## 8. Admin Panel Information Architecture & Sidebar Taxonomy
+To prevent navigation clutter and cognitive overload, the Eco-Vendo Admin Panel adheres to a 5-domain taxonomy:
+
+| Domain Header | Sections Included | Purpose / Scope |
+| :--- | :--- | :--- |
+| **VENDO OPERATIONS** | `Dashboard & Stats`<br>`Active Clients`<br>`Voucher Tickets`<br>`Rates & Promos` (`Rates & Packages`, `Validity & Pauses`) | Business logic, active transactions, customer sessions, bottle pricing, and expiration policies. |
+| **NETWORK & TRAFFIC** | `Network & Interfaces`<br>`Bandwidth & Speed`<br>`Walled Garden Sites`<br>`MAC Filtering` | Gateway interfaces (WAN/LAN/DNS/DHCP), bandwidth shaping, gaming QoS, captive bypass, and device access control. |
+| **PORTAL & BRANDING** | `Portal & Banners`<br>`Audio & Chimes` | Customer-facing captive portal themes, announcement banners, logo branding, and browser sound effects. |
+| **HARDWARE & SENSORS** | `ESP32 Hardware` | Physical RVM controller: AS7263 NIR spectrometer, HX711 weight scale, SG90 servos, drop gates, proximity, and firmware flasher. |
+| **SYSTEM & MAINTENANCE** | `Telegram Alerts`<br>`System Maintenance`<br>`Hardware Licensing` | Linux host diagnostics (verifier, database backup, power/reboot), automated Telegram bot alerts, and cryptographic HWID licensing. |
+
+> [!NOTE]
+> Never dump portal, network, or alerting features into a generic "System & Hardware" category. Each item must strictly map to its authoritative domain.
+
