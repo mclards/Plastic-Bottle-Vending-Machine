@@ -62,23 +62,6 @@ class TimePortal(object):
         # Install a common JSON error boundary without swallowing storage failures as success.
         for path,name,fn,methods in endpoints:
             app.view_functions[name]=self.guarded(fn)
-        def _bg_prune():
-            time.sleep(300.0)
-            while True:
-                try:
-                    p_now = time.time()
-                    c_intents = p_now - 3600
-                    c_ledger = p_now - 86400
-                    with self.p.db_connection() as conn:
-                        conn.execute("DELETE FROM network_intents WHERE status IN ('APPLIED', 'STALE') AND created_at < ?", (c_intents,))
-                        conn.execute("DELETE FROM time_ledger WHERE reason='time_consumed' AND created_at < ?", (c_ledger,))
-                except Exception:
-                    pass
-                time.sleep(21600.0)
-        try:
-            threading.Thread(target=_bg_prune, daemon=True).start()
-        except Exception:
-            pass
 
     FRIENDLY_ERRORS = {
         'invalid_voucher': 'This voucher code is invalid or already used.',
@@ -130,15 +113,14 @@ class TimePortal(object):
         # The image's older systemd has `status`, but no `show -p` interface.
         interval=10 if self.clock_ok else 2
         if self.clock_checked is None or not 0<=mono-self.clock_checked<interval:
-            self.clock_checked=mono
+            self.clock_checked=mono;self.clock_ok=False;self.client_clock_trusted=False
             try:
                 env=dict(os.environ,LC_ALL='C',SYSTEMD_PAGER='cat')
                 result=self.p.subprocess.run(['timedatectl','status'],stdout=self.p.subprocess.PIPE,
                     stderr=self.p.subprocess.DEVNULL,timeout=2,env=env)
-                if result.returncode == 0:
-                    self.clock_ok=bool(re.search(
-                        br'^\s*(?:NTP synchronized|System clock synchronized):\s*yes\s*$',
-                        result.stdout,re.MULTILINE))
+                self.clock_ok=result.returncode==0 and bool(re.search(
+                    br'^\s*(?:NTP synchronized|System clock synchronized):\s*yes\s*$',
+                    result.stdout,re.MULTILINE))
             except (OSError,self.p.subprocess.TimeoutExpired):
                 pass
         return self.clock_ok
@@ -487,8 +469,6 @@ class TimePortal(object):
             if action=='kick':
                 with self.p.active_clients_lock:
                     self.p.active_clients.pop(ip, None)
-                if hasattr(self.p, 'release_dhcp_lease'):
-                    self.p.release_dhcp_lease(target_ip=ip)
         else:raise ValueError('unknown_admin_action')
         return jsonify(result)
 
@@ -567,11 +547,7 @@ class TimePortal(object):
         with ctx as conn:
             bad=engine.all_rows(conn,'''SELECT a.id,a.balance_us,g.remaining_us FROM ledger_accounts a
                 JOIN time_grants g ON a.grant_id=g.id WHERE a.balance_us<>g.remaining_us''')
-            total_delta = conn.execute("SELECT COALESCE(SUM(delta_us),0) FROM time_ledger").fetchone()[0]
-            if total_delta != 0:
-                journals=engine.all_rows(conn,'SELECT journal_id,SUM(delta_us) AS delta FROM time_ledger WHERE journal_id IS NOT NULL GROUP BY journal_id HAVING SUM(delta_us)<>0')
-            else:
-                journals = []
+            journals=engine.all_rows(conn,'SELECT journal_id,SUM(delta_us) AS delta FROM time_ledger WHERE journal_id IS NOT NULL GROUP BY journal_id HAVING SUM(delta_us)<>0')
             pending=conn.execute("SELECT COUNT(*) FROM network_intents WHERE status='PENDING'").fetchone()[0]
             held=conn.execute('SELECT COUNT(*) FROM deposit_recovery WHERE resolved_at IS NULL').fetchone()[0]
             ready=storage.metadata(conn,'ready','0')=='1'
