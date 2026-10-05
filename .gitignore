@@ -44,4 +44,6 @@ commit_diff.txt
 # PyInstaller & Build Artifacts
 build/
 dist/
-*.spec
+# Logs
+*.log
+system_events.log

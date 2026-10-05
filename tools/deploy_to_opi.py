@@ -28,6 +28,7 @@ FILES_TO_DEPLOY = [
     'time_policy.py',
     'time_schema.py',
     'transition_engine.py',
+    'system_logger.py',
 ]
 
 TOOLS_TO_DEPLOY = [
