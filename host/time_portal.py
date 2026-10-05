@@ -62,6 +62,23 @@ class TimePortal(object):
         # Install a common JSON error boundary without swallowing storage failures as success.
         for path,name,fn,methods in endpoints:
             app.view_functions[name]=self.guarded(fn)
+        def _bg_prune():
+            time.sleep(300.0)
+            while True:
+                try:
+                    p_now = time.time()
+                    c_intents = p_now - 3600
+                    c_ledger = p_now - 86400
+                    with self.p.db_connection() as conn:
+                        conn.execute("DELETE FROM network_intents WHERE status IN ('APPLIED', 'STALE') AND created_at < ?", (c_intents,))
+                        conn.execute("DELETE FROM time_ledger WHERE reason='time_consumed' AND created_at < ?", (c_ledger,))
+                except Exception:
+                    pass
+                time.sleep(21600.0)
+        try:
+            threading.Thread(target=_bg_prune, daemon=True).start()
+        except Exception:
+            pass
 
     FRIENDLY_ERRORS = {
         'invalid_voucher': 'This voucher code is invalid or already used.',
@@ -111,7 +128,7 @@ class TimePortal(object):
             return True
         # A saved date cannot measure time spent powered off. Check actual sync.
         # The image's older systemd has `status`, but no `show -p` interface.
-        interval=120 if self.clock_ok else 1
+        interval=10 if self.clock_ok else 2
         if self.clock_checked is None or not 0<=mono-self.clock_checked<interval:
             self.clock_checked=mono
             try:
@@ -831,16 +848,6 @@ class TimePortal(object):
                     storage.set_metadata(conn,'last_known_utc',str(now))
             except Exception:
                 pass
-        if getattr(self, 'last_prune_utc', None) is None or now - self.last_prune_utc > 3600:
-            self.last_prune_utc = now
-            try:
-                with self.p.db_connection() as conn:
-                    cutoff_intents = now - 3600
-                    cutoff_ledger = now - 86400
-                    conn.execute("DELETE FROM network_intents WHERE status IN ('APPLIED', 'STALE') AND created_at < ?", (cutoff_intents,))
-                    conn.execute("DELETE FROM time_ledger WHERE reason='time_consumed' AND created_at < ?", (cutoff_ledger,))
-            except Exception:
-                self.p.log.exception("Automatic retention pruning encountered error")
         arp=self.p.get_arp_table(); projections=[]
         if self.p.active_depositor_ip:
             last_seen = getattr(self.p, 'active_depositor_last_seen', now)

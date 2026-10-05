@@ -498,25 +498,46 @@ def get_arp_table():
     if platform.system() == 'Windows':
         return {}
     lan_iface = get_lan_interface()
-    # Fast path: read directly from /proc/net/arp in RAM (sub-millisecond, zero subprocesses)
+    result = {}
+    # Fast path 1: read directly from /proc/net/arp in RAM (sub-millisecond, zero subprocesses)
     try:
-        result = {}
         with open('/proc/net/arp', 'r') as f:
             next(f)  # Header
             for line in f:
                 parts = line.split()
                 if len(parts) >= 6:
                     ip_addr, flags, mac_addr, dev = parts[0], parts[2], parts[3], parts[5]
-                    if dev == lan_iface and mac_addr != '00:00:00:00:00:00' and flags != '0x0':
+                    if dev == lan_iface and mac_addr != '00:00:00:00:00:00' and len(mac_addr) == 17:
                         result[ip_addr] = mac_addr.lower()
-        return result
     except (OSError, IOError):
         pass
 
-    # Fallback to ip neigh show if /proc/net/arp was not available
+    # Fast path 2: read active dnsmasq DHCP leases (RAM/disk file, zero subprocesses)
+    lease_files = [
+        '/var/lib/misc/dnsmasq.leases',
+        '/tmp/dnsmasq.leases',
+        '/var/run/dnsmasq/dnsmasq.leases'
+    ]
+    for lf in lease_files:
+        if not os.path.exists(lf):
+            continue
+        try:
+            with open(lf, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        l_mac, l_ip = parts[1].lower(), parts[2]
+                        if len(l_mac) == 17 and l_ip not in result:
+                            result[l_ip] = l_mac
+        except (OSError, IOError):
+            pass
+
+    if result:
+        return result
+
+    # Fallback to ip neigh show if both fast RAM paths yielded no neighbors
     try:
-        res = subprocess.run(['ip', '-4', 'neigh', 'show', 'dev', lan_iface], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=5)
-        result = {}
+        res = subprocess.run(['ip', '-4', 'neigh', 'show', 'dev', lan_iface], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=2)
         for line in res.stdout.splitlines():
             parts = line.split()
             if 'lladdr' in parts and not any(state in parts for state in ('FAILED', 'INCOMPLETE')):
@@ -2710,7 +2731,6 @@ def admin_dashboard():
 
 _system_hardware_stats_cache = {}
 _system_hardware_stats_lock = threading.Lock()
-_system_metrics_thread = None
 
 def _sample_system_hardware_stats(prev_stats, ema_cores, ema_overall):
     now = time.time()
@@ -2867,36 +2887,24 @@ def _sample_system_hardware_stats(prev_stats, ema_cores, ema_overall):
     }
     return cur_stats, ema_cores, ema_overall, stats
 
-def hardware_metrics_daemon():
-    prev_stats = {}
-    ema_cores = {}
-    ema_overall = 0.0
-    while True:
-        try:
-            cur_stats, ema_cores, ema_overall, stats = _sample_system_hardware_stats(prev_stats, ema_cores, ema_overall)
-            prev_stats = cur_stats
-            with _system_hardware_stats_lock:
-                _system_hardware_stats_cache.clear()
-                _system_hardware_stats_cache.update(stats)
-        except Exception:
-            pass
-        _real_time.sleep(2.0)
-
-def ensure_metrics_daemon_started():
-    global _system_metrics_thread
-    if not hasattr(time, 'sleep'):
-        return
-    if _system_metrics_thread is None or not _system_metrics_thread.is_alive():
-        _system_metrics_thread = threading.Thread(target=hardware_metrics_daemon, daemon=True)
-        _system_metrics_thread.start()
+_system_hardware_stats_cache = {}
+_system_hardware_stats_ts = 0.0
+_system_hardware_stats_lock = threading.Lock()
 
 def get_system_hardware_stats():
-    ensure_metrics_daemon_started()
+    global _system_hardware_stats_cache, _system_hardware_stats_ts
+    now = time.time()
     with _system_hardware_stats_lock:
-        if _system_hardware_stats_cache:
+        if _system_hardware_stats_cache and (now - _system_hardware_stats_ts < 2.5):
             return dict(_system_hardware_stats_cache)
-    _, _, _, stats = _sample_system_hardware_stats({}, {}, 0.0)
-    return stats
+        try:
+            _, _, _, stats = _sample_system_hardware_stats({}, {}, 0.0)
+            _system_hardware_stats_cache = stats
+            _system_hardware_stats_ts = now
+            return dict(stats)
+        except Exception as e:
+            log.warning("Hardware stats sampling error: %s", e)
+            return dict(_system_hardware_stats_cache) if _system_hardware_stats_cache else {}
 
 def get_esp32_health_stats():
     global ser, last_esp32_rx_time, esp32_port_name, physical_esp32_state, esp32
@@ -3360,19 +3368,6 @@ def release_dhcp_lease(target_ip=None, target_mac=None):
         except Exception as e:
             log.warning('release_dhcp_lease error for %s: %s', lf, e)
 
-    if removed > 0:
-        try:
-            subprocess.run(['pkill', '-HUP', 'dnsmasq'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-
-    if target_ip:
-        lan_iface = get_config('lan_interface', 'eth1')
-        try:
-            subprocess.run(['ip', 'neigh', 'del', target_ip, 'dev', lan_iface], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-
     return removed
 
 
@@ -3834,7 +3829,6 @@ if __name__ == '__main__':
     threading.Thread(target=time_daemon, daemon=True).start()
     if serial:
         threading.Thread(target=hardware_serial_daemon, daemon=True).start()
-    ensure_metrics_daemon_started()
     port = int(os.environ.get('PORT', 5000))
     print('=================================================='.format())
     print('  SMART ECO-VENDO REVERSE VENDING MACHINE v{}'.format(RELEASE_VERSION))
