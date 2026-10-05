@@ -82,14 +82,14 @@ function updateChuteSequenceUI(data) {
         var isFail = (stState === 'failed');
 
         if (nodeEl) {
-            var bg = isPass ? 'rgba(16, 185, 129, 0.2)' : (isAct ? 'rgba(245, 158, 11, 0.25)' : (isFail ? 'rgba(239, 68, 68, 0.25)' : 'rgba(30, 41, 59, 0.7)'));
-            var bColor = isPass ? '#10b981' : (isAct ? '#f59e0b' : (isFail ? '#ef4444' : 'rgba(255,255,255,0.1)'));
+            var bg = isPass ? 'rgba(16, 185, 129, 0.18)' : (isAct ? 'rgba(245, 158, 11, 0.2)' : (isFail ? 'rgba(239, 68, 68, 0.2)' : 'var(--eco-card-sub)'));
+            var bColor = isPass ? '#10b981' : (isAct ? '#f59e0b' : (isFail ? '#ef4444' : 'var(--eco-border)'));
             nodeEl.style.background = bg;
             nodeEl.style.borderColor = bColor;
             if (isAct) {
-                nodeEl.style.boxShadow = '0 0 14px rgba(245, 158, 11, 0.45)';
+                nodeEl.style.boxShadow = '0 0 10px rgba(245, 158, 11, 0.35)';
             } else if (isPass) {
-                nodeEl.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.3)';
+                nodeEl.style.boxShadow = '0 0 8px rgba(16, 185, 129, 0.25)';
             } else {
                 nodeEl.style.boxShadow = 'none';
             }
