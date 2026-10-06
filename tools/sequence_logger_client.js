@@ -38,13 +38,15 @@ function pollChuteSequence() {
 function updateChuteSequenceUI(data) {
     if (!data) return;
     var status = data.status || 'IDLE';
-    var currentStage = data.current_stage || 0;
-    var elapsedSec = ((data.total_elapsed_ms || 0) / 1000).toFixed(2);
+    var isIdle = (status === 'IDLE');
+    var currentStage = isIdle ? 0 : (data.current_stage || 0);
+    var elapsedSec = isIdle ? '0.00' : ((data.total_elapsed_ms || 0) / 1000).toFixed(2);
 
     var statBadge = document.getElementById('seq-status-badge');
     if (statBadge) {
-        statBadge.textContent = status;
+        statBadge.textContent = isIdle ? 'STANDBY' : status;
         statBadge.className = 'badge font-weight-bold ml-2 ' + (
+            isIdle ? 'badge-secondary' :
             status === 'PASSED' ? 'badge-success' :
             status === 'SCANNING' ? 'badge-warning' :
             status === 'REJECTED' ? 'badge-danger' :
@@ -60,17 +62,21 @@ function updateChuteSequenceUI(data) {
     }
 
     var sessEl = document.getElementById('seq-session-id');
-    if (sessEl) sessEl.textContent = data.active_session_id || '--';
+    if (sessEl) sessEl.textContent = (isIdle || !data.active_session_id) ? '--' : data.active_session_id;
 
     var timerEl = document.getElementById('seq-elapsed-timer');
-    if (timerEl) timerEl.textContent = elapsedSec + ' s';
+    if (timerEl) timerEl.textContent = isIdle ? '0.00 s' : (elapsedSec + ' s');
 
     var pBar = document.getElementById('seq-progress-bar');
     if (pBar) {
-        var pct = status === 'PASSED' ? 100 : Math.min(100, Math.round((currentStage / 6) * 100));
+        var pct = isIdle ? 0 : (status === 'PASSED' ? 100 : Math.min(100, Math.round((currentStage / 6) * 100)));
         pBar.style.width = pct + '%';
-        pBar.className = 'progress-bar progress-bar-striped progress-bar-animated ' + (
-            status === 'PASSED' ? 'bg-success' : (status === 'REJECTED' ? 'bg-danger' : 'bg-warning')
+        pBar.className = 'progress-bar ' + (
+            isIdle ? 'bg-secondary' : (
+                'progress-bar-striped progress-bar-animated ' + (
+                    status === 'PASSED' ? 'bg-success' : (status === 'REJECTED' ? 'bg-danger' : 'bg-warning')
+                )
+            )
         );
     }
 
@@ -90,7 +96,7 @@ function updateChuteSequenceUI(data) {
         var rowLat = document.getElementById('row-s' + num + '-lat');
         var rowStat = document.getElementById('row-s' + num + '-stat');
 
-        var stState = st.status || 'idle';
+        var stState = isIdle ? 'idle' : (st.status || 'idle');
         var isAct = (stState === 'active');
         var isPass = (stState === 'passed');
         var isFail = (stState === 'failed');
@@ -118,12 +124,21 @@ function updateChuteSequenceUI(data) {
         }
 
         var latVal = st.elapsed_ms != null ? st.elapsed_ms : st.latency_ms;
-        var latText = (latVal != null && latVal > 0) ? (latVal + 'ms') : '--';
+        var latText = (!isIdle && latVal != null && latVal > 0) ? (latVal + 'ms') : '--';
         if (latEl) latEl.textContent = latText;
         if (rowLat) rowLat.textContent = latText;
 
         if (stateEl) {
-            stateEl.textContent = st.detail || (isPass ? 'PASSED' : (isAct ? 'MEASURING' : (isFail ? 'REJECT' : 'WAIT')));
+            var detailText = st.detail;
+            if (isIdle) {
+                if (num === 1) detailText = 'Closed (0°)';
+                else if (num === 2) detailText = 'Clear (HIGH)';
+                else if (num === 3) detailText = '0.0g (Standby)';
+                else if (num === 4) detailText = 'Standby';
+                else if (num === 5) detailText = 'Neutral (0°)';
+                else if (num === 6) detailText = 'Clear (Standby)';
+            }
+            stateEl.textContent = detailText || (isPass ? 'PASSED' : (isAct ? 'MEASURING' : (isFail ? 'REJECT' : 'WAIT')));
             stateEl.className = 'badge ' + (isPass ? 'badge-success' : (isAct ? 'badge-warning' : (isFail ? 'badge-danger' : 'badge-secondary')));
             stateEl.style.display = 'block';
             stateEl.style.width = '100%';
@@ -138,27 +153,27 @@ function updateChuteSequenceUI(data) {
         }
 
         if (rowStat) {
-            var bClass = isPass ? 'badge-success' : (isAct ? 'badge-warning' : (isFail ? 'badge-danger' : 'badge-secondary'));
-            var bText = isPass ? 'OK' : (isAct ? 'RUN' : (isFail ? 'FAIL' : 'WAIT'));
+            var bClass = isIdle ? 'badge-secondary' : (isPass ? 'badge-success' : (isAct ? 'badge-warning' : (isFail ? 'badge-danger' : 'badge-secondary')));
+            var bText = isIdle ? 'IDLE' : (isPass ? 'OK' : (isAct ? 'RUN' : (isFail ? 'FAIL' : 'WAIT')));
             rowStat.innerHTML = '<span class="badge ' + bClass + '" style="display:inline-block;width:68px;text-align:center;font-size:11.5px;font-weight:700;padding:3px 0;border-radius:4px;letter-spacing:0.5px;">' + bText + '</span>';
         }
     });
 
     if (stages['3_scale'] && stages['3_scale'].detail) {
         var wEl = document.getElementById('seq-s3-weight');
-        if (wEl) wEl.textContent = stages['3_scale'].detail;
+        if (wEl) wEl.textContent = isIdle ? '0.0g (Standby)' : stages['3_scale'].detail;
     }
     if (stages['4_nir'] && stages['4_nir'].detail) {
         var calwEl = document.getElementById('seq-s4-calw');
-        if (calwEl) calwEl.textContent = stages['4_nir'].detail;
+        if (calwEl) calwEl.textContent = isIdle ? 'Standby' : stages['4_nir'].detail;
     }
 
     var rowTotLat = document.getElementById('row-tot-lat');
-    if (rowTotLat) rowTotLat.textContent = (data.total_elapsed_ms || 0) + 'ms';
+    if (rowTotLat) rowTotLat.textContent = isIdle ? '--' : (((data.total_elapsed_ms || 0) > 0 ? data.total_elapsed_ms : 0) + 'ms');
     var badgeTot = document.getElementById('badge-tot-stat');
     if (badgeTot) {
-        var totText = status === 'PASSED' ? 'PASSED' : (status === 'REJECTED' ? 'REJECT' : (status === 'SCANNING' ? 'RUN' : (status || 'IDLE')));
-        var totClass = status === 'PASSED' ? 'badge-success' : (status === 'REJECTED' ? 'badge-danger' : (status === 'SCANNING' ? 'badge-warning' : 'badge-secondary'));
+        var totText = isIdle ? 'IDLE' : (status === 'PASSED' ? 'PASSED' : (status === 'REJECTED' ? 'REJECT' : (status === 'SCANNING' ? 'RUN' : (status || 'IDLE'))));
+        var totClass = isIdle ? 'badge-secondary' : (status === 'PASSED' ? 'badge-success' : (status === 'REJECTED' ? 'badge-danger' : (status === 'SCANNING' ? 'badge-warning' : 'badge-secondary')));
         badgeTot.textContent = totText;
         badgeTot.className = 'badge ' + totClass;
         badgeTot.style.display = 'inline-block';

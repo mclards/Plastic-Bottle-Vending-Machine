@@ -228,8 +228,30 @@ class ChuteSequenceTracker(object):
         self.rejection_reason = None
         self.rejection_code = None
         self.bottles_processed = 0
+        self._sequence_run_id = 0
 
         self.stages = self._build_default_stages()
+
+    def _schedule_auto_reset(self, run_id, delay_sec=7.0):
+        """Schedules a graceful auto-reset back to IDLE after a view window."""
+        def _timer_worker():
+            time.sleep(delay_sec)
+            with self._lock:
+                if self._sequence_run_id == run_id and self.status in ('PASSED', 'REJECTED', 'TIMEOUT'):
+                    self.status = "IDLE"
+                    self.current_stage = 0
+                    self.active_session_id = None
+                    self.start_epoch = 0.0
+                    self.last_event_epoch = 0.0
+                    self.total_elapsed_ms = 0
+                    self.rejection_reason = None
+                    self.rejection_code = None
+                    self.stages = self._build_default_stages()
+            self.logger.info("CHUTE", "Chute sequence monitor returned to STANDBY")
+
+        t = threading.Thread(target=_timer_worker)
+        t.daemon = True
+        t.start()
 
     def _build_default_stages(self):
         return {
@@ -294,6 +316,7 @@ class ChuteSequenceTracker(object):
 
     def reset(self):
         with self._lock:
+            self._sequence_run_id += 1
             self.status = "IDLE"
             self.current_stage = 0
             self.active_session_id = None
@@ -311,6 +334,7 @@ class ChuteSequenceTracker(object):
         now = time.time()
         now_str = _format_time_ms()
         with self._lock:
+            self._sequence_run_id += 1
             self.status = "SCANNING"
             self.current_stage = 1
             self.active_session_id = session_id or self.active_session_id or 'LIVE_SESSION'
@@ -473,9 +497,11 @@ class ChuteSequenceTracker(object):
             self.stages['6_drop']['transit_verified'] = True
             self.stages['6_drop']['timestamp'] = now_str
             self.stages['6_drop']['latency_ms'] = delta_ms
+            run_id = self._sequence_run_id
 
         self.logger.success("CHUTE", "STAGE 6: PIR Drop (Bottom IR Beam) TRANSIT CONFIRMED - Bottle saved! Total: {}ms".format(
             self.total_elapsed_ms), {'stage': 6, 'total_elapsed_ms': self.total_elapsed_ms, 'latency_ms': delta_ms})
+        self._schedule_auto_reset(run_id, delay_sec=8.0)
 
     def on_rejected(self, reason='Item Rejected', code=None):
         """Item rejected event."""
@@ -490,9 +516,11 @@ class ChuteSequenceTracker(object):
             self.stages['5_exit']['status'] = 'failed'
             self.stages['5_exit']['timestamp'] = now_str
             self.stages['5_exit']['latency_ms'] = delta_ms
+            run_id = self._sequence_run_id
 
         self.logger.warn("CHUTE", "Chute Classification REJECTED: {} (+{}ms)".format(reason, delta_ms),
                          {'reason': reason, 'code': code, 'latency_ms': delta_ms})
+        self._schedule_auto_reset(run_id, delay_sec=8.0)
 
     def on_timeout(self, reason='Intake Timeout'):
         """Timeout reached."""
@@ -500,8 +528,10 @@ class ChuteSequenceTracker(object):
             self.status = "TIMEOUT"
             self.rejection_reason = reason
             self.rejection_code = "timeout"
+            run_id = self._sequence_run_id
 
         self.logger.warn("CHUTE", "Chute Sequence TIMEOUT: {}".format(reason), {'reason': reason})
+        self._schedule_auto_reset(run_id, delay_sec=8.0)
 
     def on_gate_closed(self):
         """Entrance gate closed."""
@@ -509,8 +539,12 @@ class ChuteSequenceTracker(object):
             self.stages['1_gate']['angle'] = 0
             if self.status == 'SCANNING' and self.current_stage == 1:
                 self.stages['1_gate']['status'] = 'passed'
+            curr_status = self.status
+            run_id = self._sequence_run_id
 
         self.logger.info("CHUTE", "Servo Entrance Gate CLOSED (Angle: 0°)")
+        if curr_status in ('PASSED', 'REJECTED', 'TIMEOUT'):
+            self._schedule_auto_reset(run_id, delay_sec=7.0)
 
     def get_state(self):
         """Returns deep snapshot of current state."""
@@ -519,6 +553,8 @@ class ChuteSequenceTracker(object):
             elapsed = self.total_elapsed_ms
             if self.status == 'SCANNING' and self.start_epoch > 0:
                 elapsed = int((now - self.start_epoch) * 1000)
+            elif self.status == 'IDLE':
+                elapsed = 0
 
             recent_logs = self.logger.get_entries(limit=40, category='CHUTE')
             if len(recent_logs) < 15:
@@ -526,19 +562,32 @@ class ChuteSequenceTracker(object):
 
             st_copy = json.loads(json.dumps(self.stages))
             for k, st in st_copy.items():
-                st['elapsed_ms'] = st.get('latency_ms', 0)
+                st_status = st.get('status', 'idle')
+                st['elapsed_ms'] = st.get('latency_ms', 0) if (self.status != 'IDLE' and st_status != 'idle') else 0
                 if k == '1_gate':
                     st['detail'] = 'Open ({}°)'.format(st.get('angle', 0)) if st.get('angle', 0) > 0 else 'Closed (0°)'
                 elif k == '2_intake':
                     st['detail'] = 'Intrusion (LOW)' if st.get('triggered') else 'Clear (HIGH)'
                 elif k == '3_scale':
-                    st['detail'] = 'Mass: {:.1f}g ({})'.format(st.get('weight_g', 0.0), 'Valid' if st.get('is_valid') else 'Wait')
+                    if st_status == 'idle' or st.get('is_valid') is None:
+                        st['detail'] = '0.0g (Standby)' if st_status == 'idle' else 'Measuring...'
+                    else:
+                        st['detail'] = 'Mass: {:.1f}g ({})'.format(st.get('weight_g', 0.0), 'Valid' if st.get('is_valid') else 'Wait')
                 elif k == '4_nir':
-                    st['detail'] = 'Cal-W: {:.1f} uW/cm2 ({})'.format(st.get('cal_w', 0.0), 'PET' if st.get('is_pet') else 'REJECT')
+                    if st_status == 'idle' or st.get('is_pet') is None:
+                        st['detail'] = 'Standby' if st_status == 'idle' else 'Scanning...'
+                    else:
+                        st['detail'] = 'Cal-W: {:.1f} uW/cm2 ({})'.format(st.get('cal_w', 0.0), 'PET' if st.get('is_pet') else 'REJECT')
                 elif k == '5_exit':
-                    st['detail'] = '{} ({}°)'.format(st.get('action') or 'Flap', st.get('angle', 0))
+                    if st_status == 'idle' or not st.get('action'):
+                        st['detail'] = 'Neutral (0°)'
+                    else:
+                        st['detail'] = '{} ({}°)'.format(st.get('action') or 'Flap', st.get('angle', 0))
                 elif k == '6_drop':
-                    st['detail'] = 'Transit OK (+1)' if st.get('transit_verified') else 'Awaiting Fall'
+                    if st_status == 'idle':
+                        st['detail'] = 'Clear (Standby)'
+                    else:
+                        st['detail'] = 'Transit OK (+1)' if st.get('transit_verified') else 'Awaiting Fall'
 
             events_copy = []
             for r in recent_logs:

@@ -222,11 +222,11 @@ def build_compact_sequence_pane():
         '                    <div id="seq-node-1" class="seq-card flex-fill text-center p-1 rounded" style="background: var(--eco-card-sub); border: 1px solid var(--eco-border); min-width: 135px; transition: all 0.2s ease;">\\n',
         '                      <div class="d-flex justify-content-between align-items-center px-1">\\n',
         '                        <span class="badge font-mono font-weight-bold" style="font-size: 11px; background: var(--eco-card); border: 1px solid var(--eco-border); color: var(--eco-text-muted); padding: 2px 6px; border-radius: 3px;">S1</span>\\n',
-        '                        <span id="seq-s1-lat" class="font-mono" style="font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 3px; background: var(--eco-card); border: 1px solid var(--eco-border); color: var(--eco-text-main); min-width: 44px; text-align: right; display: inline-block;">0ms</span>\\n',
+        '                        <span id="seq-s1-lat" class="font-mono" style="font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 3px; background: var(--eco-card); border: 1px solid var(--eco-border); color: var(--eco-text-main); min-width: 44px; text-align: right; display: inline-block;">--</span>\\n',
         '                      </div>\\n',
         '                      <div class="my-1"><i id="seq-s1-icon" class="fas fa-door-closed text-muted" style="font-size: 1.35rem; transition: color 0.2s;"></i></div>\\n',
         '                      <div class="font-weight-bold" style="font-size: 13px; color: var(--eco-text-main); line-height: 1.25;">Servo Gate</div>\\n',
-        '                      <div class="mt-1" style="width: 100%;"><span id="seq-s1-state" class="badge badge-secondary" style="display: block; width: 100%; text-align: center; font-size: 12px; font-weight: 700; padding: 3.5px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Closed (0deg)</span></div>\\n',
+        '                      <div class="mt-1" style="width: 100%;"><span id="seq-s1-state" class="badge badge-secondary" style="display: block; width: 100%; text-align: center; font-size: 12px; font-weight: 700; padding: 3.5px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Closed (0°)</span></div>\\n',
         '                    </div>\\n',
         '                    <div class="seq-arrow text-center px-0"><i id="seq-arr-1" class="fas fa-chevron-right text-muted" style="font-size: 1rem;"></i></div>\\n',
         '                    <!-- STAGE 2: PIR Intake (Top IR) -->\\n',
@@ -248,7 +248,7 @@ def build_compact_sequence_pane():
         '                      </div>\\n',
         '                      <div class="my-1"><i id="seq-s3-icon" class="fas fa-balance-scale text-muted" style="font-size: 1.35rem; transition: color 0.2s;"></i></div>\\n',
         '                      <div class="font-weight-bold" style="font-size: 13px; color: var(--eco-text-main); line-height: 1.25;">HX711 Scale</div>\\n',
-        '                      <div class="mt-1" style="width: 100%;"><span id="seq-s3-state" class="badge badge-secondary" style="display: block; width: 100%; text-align: center; font-size: 12px; font-weight: 700; padding: 3.5px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Mass: -- g</span></div>\\n',
+        '                      <div class="mt-1" style="width: 100%;"><span id="seq-s3-state" class="badge badge-secondary" style="display: block; width: 100%; text-align: center; font-size: 12px; font-weight: 700; padding: 3.5px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">0.0g (Standby)</span></div>\\n',
         '                    </div>\\n',
         '                    <div class="seq-arrow text-center px-0"><i id="seq-arr-3" class="fas fa-chevron-right text-muted" style="font-size: 1rem;"></i></div>\\n',
         '                    <!-- STAGE 4: NIR Spectrometer (v2.3.18 Flow: Evaluated on valid-weight items) -->\\n',
@@ -259,7 +259,7 @@ def build_compact_sequence_pane():
         '                      </div>\\n',
         '                      <div class="my-1"><i id="seq-s4-icon" class="fas fa-eye text-muted" style="font-size: 1.35rem; transition: color 0.2s;"></i></div>\\n',
         '                      <div class="font-weight-bold" style="font-size: 13px; color: var(--eco-text-main); line-height: 1.25;">NIR Sensor</div>\\n',
-        '                      <div class="mt-1" style="width: 100%;"><span id="seq-s4-state" class="badge badge-secondary" style="display: block; width: 100%; text-align: center; font-size: 12px; font-weight: 700; padding: 3.5px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Cal-W: --</span></div>\\n',
+        '                      <div class="mt-1" style="width: 100%;"><span id="seq-s4-state" class="badge badge-secondary" style="display: block; width: 100%; text-align: center; font-size: 12px; font-weight: 700; padding: 3.5px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Standby</span></div>\\n',
         '                    </div>\\n',
         '                    <div class="seq-arrow text-center px-0"><i id="seq-arr-4" class="fas fa-chevron-right text-muted" style="font-size: 1rem;"></i></div>\\n',
         '                    <!-- STAGE 5: Drop Exit Flap -->\\n',
@@ -270,7 +270,7 @@ def build_compact_sequence_pane():
         '                      </div>\\n',
         '                      <div class="my-1"><i id="seq-s5-icon" class="fas fa-box-open text-muted" style="font-size: 1.35rem; transition: color 0.2s;"></i></div>\\n',
         '                      <div class="font-weight-bold" style="font-size: 13px; color: var(--eco-text-main); line-height: 1.25;">Drop Servo</div>\\n',
-        '                      <div class="mt-1" style="width: 100%;"><span id="seq-s5-state" class="badge badge-secondary" style="display: block; width: 100%; text-align: center; font-size: 12px; font-weight: 700; padding: 3.5px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Neutral (0deg)</span></div>\\n',
+        '                      <div class="mt-1" style="width: 100%;"><span id="seq-s5-state" class="badge badge-secondary" style="display: block; width: 100%; text-align: center; font-size: 12px; font-weight: 700; padding: 3.5px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Neutral (0°)</span></div>\\n',
         '                    </div>\\n',
         '                    <div class="seq-arrow text-center px-0"><i id="seq-arr-5" class="fas fa-chevron-right text-muted" style="font-size: 1rem;"></i></div>\\n',
         '                    <!-- STAGE 6: PIR Drop Transit -->\\n',
@@ -281,7 +281,7 @@ def build_compact_sequence_pane():
         '                      </div>\\n',
         '                      <div class="my-1"><i id="seq-s6-icon" class="fas fa-check-circle text-muted" style="font-size: 1.35rem; transition: color 0.2s;"></i></div>\\n',
         '                      <div class="font-weight-bold" style="font-size: 13px; color: var(--eco-text-main); line-height: 1.25;">Drop PIR Clear</div>\\n',
-        '                      <div class="mt-1" style="width: 100%;"><span id="seq-s6-state" class="badge badge-secondary" style="display: block; width: 100%; text-align: center; font-size: 12px; font-weight: 700; padding: 3.5px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Awaiting</span></div>\\n',
+        '                      <div class="mt-1" style="width: 100%;"><span id="seq-s6-state" class="badge badge-secondary" style="display: block; width: 100%; text-align: center; font-size: 12px; font-weight: 700; padding: 3.5px 4px; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Clear (Standby)</span></div>\\n',
         '                    </div>\\n',
         '                  </div>\\n',
         '                </div>\\n',
@@ -314,42 +314,42 @@ def build_compact_sequence_pane():
         '                              <td style="padding: 5px 8px; font-weight: 600;">1. Servo Gate Open</td>\\n',
         '                              <td class="text-center text-muted font-mono" style="padding: 5px 6px; font-size: 11px;">150 - 300 ms</td>\\n',
         '                              <td id="row-s1-lat" class="text-center font-mono font-weight-bold" style="padding: 5px 6px; color: var(--eco-text-main); font-size: 12px;">--</td>\\n',
-        '                              <td id="row-s1-stat" class="text-center" style="padding: 4px 6px; width: 78px;"><span class="badge badge-secondary" style="display: inline-block; width: 68px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; letter-spacing: 0.5px;">WAIT</span></td>\\n',
+        '                              <td id="row-s1-stat" class="text-center" style="padding: 4px 6px; width: 78px;"><span class="badge badge-secondary" style="display: inline-block; width: 68px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; letter-spacing: 0.5px;">IDLE</span></td>\\n',
         '                            </tr>\\n',
         '                            <tr style="border-bottom: 1px solid var(--eco-border);">\\n',
         '                              <td style="padding: 5px 8px; font-weight: 600;">2. PIR Intake Intrusion</td>\\n',
         '                              <td class="text-center text-muted font-mono" style="padding: 5px 6px; font-size: 11px;">200 - 8000 ms</td>\\n',
         '                              <td id="row-s2-lat" class="text-center font-mono font-weight-bold" style="padding: 5px 6px; color: var(--eco-text-main); font-size: 12px;">--</td>\\n',
-        '                              <td id="row-s2-stat" class="text-center" style="padding: 4px 6px; width: 78px;"><span class="badge badge-secondary" style="display: inline-block; width: 68px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; letter-spacing: 0.5px;">WAIT</span></td>\\n',
+        '                              <td id="row-s2-stat" class="text-center" style="padding: 4px 6px; width: 78px;"><span class="badge badge-secondary" style="display: inline-block; width: 68px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; letter-spacing: 0.5px;">IDLE</span></td>\\n',
         '                            </tr>\\n',
         '                            <tr style="border-bottom: 1px solid var(--eco-border);">\\n',
         '                              <td style="padding: 5px 8px; font-weight: 600;">3. HX711 Scale Mass</td>\\n',
         '                              <td class="text-center text-muted font-mono" style="padding: 5px 6px; font-size: 11px;">100 - 350 ms</td>\\n',
         '                              <td id="row-s3-lat" class="text-center font-mono font-weight-bold" style="padding: 5px 6px; color: var(--eco-text-main); font-size: 12px;">--</td>\\n',
-        '                              <td id="row-s3-stat" class="text-center" style="padding: 4px 6px; width: 78px;"><span class="badge badge-secondary" style="display: inline-block; width: 68px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; letter-spacing: 0.5px;">WAIT</span></td>\\n',
+        '                              <td id="row-s3-stat" class="text-center" style="padding: 4px 6px; width: 78px;"><span class="badge badge-secondary" style="display: inline-block; width: 68px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; letter-spacing: 0.5px;">IDLE</span></td>\\n',
         '                            </tr>\\n',
         '                            <tr style="border-bottom: 1px solid var(--eco-border);">\\n',
         '                              <td style="padding: 5px 8px; font-weight: 600;">4. AS7263 NIR Spectrometry</td>\\n',
         '                              <td class="text-center text-muted font-mono" style="padding: 5px 6px; font-size: 11px;">140 - 400 ms</td>\\n',
         '                              <td id="row-s4-lat" class="text-center font-mono font-weight-bold" style="padding: 5px 6px; color: var(--eco-text-main); font-size: 12px;">--</td>\\n',
-        '                              <td id="row-s4-stat" class="text-center" style="padding: 4px 6px; width: 78px;"><span class="badge badge-secondary" style="display: inline-block; width: 68px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; letter-spacing: 0.5px;">WAIT</span></td>\\n',
+        '                              <td id="row-s4-stat" class="text-center" style="padding: 4px 6px; width: 78px;"><span class="badge badge-secondary" style="display: inline-block; width: 68px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; letter-spacing: 0.5px;">IDLE</span></td>\\n',
         '                            </tr>\\n',
         '                            <tr style="border-bottom: 1px solid var(--eco-border);">\\n',
         '                              <td style="padding: 5px 8px; font-weight: 600;">5. Drop Exit Servo</td>\\n',
         '                              <td class="text-center text-muted font-mono" style="padding: 5px 6px; font-size: 11px;">100 - 300 ms</td>\\n',
         '                              <td id="row-s5-lat" class="text-center font-mono font-weight-bold" style="padding: 5px 6px; color: var(--eco-text-main); font-size: 12px;">--</td>\\n',
-        '                              <td id="row-s5-stat" class="text-center" style="padding: 4px 6px; width: 78px;"><span class="badge badge-secondary" style="display: inline-block; width: 68px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; letter-spacing: 0.5px;">WAIT</span></td>\\n',
+        '                              <td id="row-s5-stat" class="text-center" style="padding: 4px 6px; width: 78px;"><span class="badge badge-secondary" style="display: inline-block; width: 68px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; letter-spacing: 0.5px;">IDLE</span></td>\\n',
         '                            </tr>\\n',
         '                            <tr style="border-bottom: 1px solid var(--eco-border);">\\n',
         '                              <td style="padding: 5px 8px; font-weight: 600;">6. PIR Drop Transit Clear</td>\\n',
         '                              <td class="text-center text-muted font-mono" style="padding: 5px 6px; font-size: 11px;">250 - 3100 ms</td>\\n',
         '                              <td id="row-s6-lat" class="text-center font-mono font-weight-bold" style="padding: 5px 6px; color: var(--eco-text-main); font-size: 12px;">--</td>\\n',
-        '                              <td id="row-s6-stat" class="text-center" style="padding: 4px 6px; width: 78px;"><span class="badge badge-secondary" style="display: inline-block; width: 68px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; letter-spacing: 0.5px;">WAIT</span></td>\\n',
+        '                              <td id="row-s6-stat" class="text-center" style="padding: 4px 6px; width: 78px;"><span class="badge badge-secondary" style="display: inline-block; width: 68px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; letter-spacing: 0.5px;">IDLE</span></td>\\n',
         '                            </tr>\\n',
         '                            <tr style="background: var(--eco-card-sub); font-weight: 700;">\\n',
         '                              <td style="padding: 5px 8px; color: var(--eco-text-main); font-size: 12px;">Total Duration</td>\\n',
         '                              <td class="text-center text-muted font-mono" style="padding: 5px 6px; font-size: 11px;">~1.5 - 4.5 s</td>\\n',
-        '                              <td id="row-tot-lat" class="text-center font-mono text-success font-weight-bold" style="padding: 5px 6px; font-size: 12px;">0ms</td>\\n',
+        '                              <td id="row-tot-lat" class="text-center font-mono text-muted font-weight-bold" style="padding: 5px 6px; font-size: 12px;">--</td>\\n',
         '                              <td id="row-tot-stat" class="text-center" style="padding: 4px 6px; width: 78px;"><span id="badge-tot-stat" class="badge badge-secondary" style="display: inline-block; width: 68px; text-align: center; font-size: 11.5px; font-weight: 700; padding: 3px 0; border-radius: 4px; letter-spacing: 0.5px;">IDLE</span></td>\\n',
         '                            </tr>\\n',
         '                          </tbody>\\n',
@@ -500,72 +500,80 @@ def update_portal_py():
         print("4b. Embedded hardware flash note inside #tab-cal-firmware pane.")
 
     # --- 5. Update shown.bs.tab handler to hide card footer on non-calibration tabs (firmware & sequence) ---
-    tab_listener_pattern_end = "if (target === \\'#sys-tab-logs\\') { if (typeof startSystemLogPolling === \\'function\\') startSystemLogPolling(); } else { if (typeof stopSystemLogPolling === \\'function\\') stopSystemLogPolling(); }"
-    idx_tl_start = content.find("var saveWrap = document.getElementById(\\'esp-footer-save-wrap\\');")
-    idx_tl_end = content.find(tab_listener_pattern_end, idx_tl_start)
-    if idx_tl_start != -1 and idx_tl_end != -1:
-        new_tab_listener = (
-            "var saveWrap = document.getElementById(\\'esp-footer-save-wrap\\');\\n"
-            "    var flashHint = document.getElementById(\\'esp-footer-flash-hint\\');\\n"
-            "    var globalFooter = document.getElementById(\\'esp-global-card-footer\\');\\n"
-            "    var isCalTab = (target === \\'#tab-cal-nir\\' || target === \\'#tab-cal-scale\\' || target === \\'#tab-cal-servos\\' || target === \\'#tab-cal-timing\\');\\n"
-            "    if (isCalTab) {\\n"
-            "        if (globalFooter) { globalFooter.classList.remove(\\'d-none\\'); globalFooter.classList.add(\\'d-flex\\'); globalFooter.style.display = \\'flex\\'; }\\n"
-            "        if (saveWrap) { saveWrap.classList.remove(\\'d-none\\'); saveWrap.classList.add(\\'d-flex\\'); saveWrap.style.display = \\'flex\\'; }\\n"
-            "        if (flashHint) { flashHint.classList.remove(\\'d-flex\\'); flashHint.classList.add(\\'d-none\\'); flashHint.style.display = \\'none\\'; }\\n"
-            "    } else {\\n"
-            "        if (globalFooter) { globalFooter.classList.remove(\\'d-flex\\'); globalFooter.classList.add(\\'d-none\\'); globalFooter.style.display = \\'none\\'; }\\n"
-            "        if (saveWrap) { saveWrap.classList.remove(\\'d-flex\\'); saveWrap.classList.add(\\'d-none\\'); saveWrap.style.display = \\'none\\'; }\\n"
-            "        if (flashHint) { flashHint.classList.remove(\\'d-flex\\'); flashHint.classList.add(\\'d-none\\'); flashHint.style.display = \\'none\\'; }\\n"
-            "    }\\n"
-            "    if (target === \\'#tab-cal-sequence\\') {\\n"
-            "        if (typeof startSequencePolling === \\'function\\') startSequencePolling();\\n"
-            "        if (typeof syncChuteTerminalHeight === \\'function\\') {\\n"
-            "            setTimeout(syncChuteTerminalHeight, 50);\\n"
-            "            setTimeout(syncChuteTerminalHeight, 200);\\n"
-            "        }\\n"
-            "    } else {\\n"
-            "        if (typeof stopSequencePolling === \\'function\\') stopSequencePolling();\\n"
-            "    }\\n"
-            "    " + tab_listener_pattern_end
-        )
-        content = content[:idx_tl_start] + new_tab_listener + content[idx_tl_end + len(tab_listener_pattern_end):]
-        print("5. Updated shown.bs.tab handler to hide card footer on both sequence monitor and firmware flash tabs.")
+    if "if (target === \\'#tab-cal-sequence\\') {" not in content:
+        tab_listener_pattern_end = "if (target === \\'#sys-tab-logs\\') { if (typeof startSystemLogPolling === \\'function\\') startSystemLogPolling(); } else { if (typeof stopSystemLogPolling === \\'function\\') stopSystemLogPolling(); }"
+        idx_tab_shown = content.find("shown.bs.tab")
+        if idx_tab_shown != -1:
+            idx_tl_start = content.find("var saveWrap = document.getElementById(\\'esp-footer-save-wrap\\');", idx_tab_shown)
+            idx_tl_end = content.find(tab_listener_pattern_end, idx_tl_start)
+            if idx_tl_start != -1 and idx_tl_end != -1:
+                new_tab_listener = (
+                    "var saveWrap = document.getElementById(\\'esp-footer-save-wrap\\');\\n"
+                    "    var flashHint = document.getElementById(\\'esp-footer-flash-hint\\');\\n"
+                    "    var globalFooter = document.getElementById(\\'esp-global-card-footer\\');\\n"
+                    "    var isCalTab = (target === \\'#tab-cal-nir\\' || target === \\'#tab-cal-scale\\' || target === \\'#tab-cal-servos\\' || target === \\'#tab-cal-timing\\');\\n"
+                    "    if (isCalTab) {\\n"
+                    "        if (globalFooter) { globalFooter.classList.remove(\\'d-none\\'); globalFooter.classList.add(\\'d-flex\\'); globalFooter.style.display = \\'flex\\'; }\\n"
+                    "        if (saveWrap) { saveWrap.classList.remove(\\'d-none\\'); saveWrap.classList.add(\\'d-flex\\'); saveWrap.style.display = \\'flex\\'; }\\n"
+                    "        if (flashHint) { flashHint.classList.remove(\\'d-flex\\'); flashHint.classList.add(\\'d-none\\'); flashHint.style.display = \\'none\\'; }\\n"
+                    "    } else {\\n"
+                    "        if (globalFooter) { globalFooter.classList.remove(\\'d-flex\\'); globalFooter.classList.add(\\'d-none\\'); globalFooter.style.display = \\'none\\'; }\\n"
+                    "        if (saveWrap) { saveWrap.classList.remove(\\'d-flex\\'); saveWrap.classList.add(\\'d-none\\'); saveWrap.style.display = \\'none\\'; }\\n"
+                    "        if (flashHint) { flashHint.classList.remove(\\'d-flex\\'); flashHint.classList.add(\\'d-none\\'); flashHint.style.display = \\'none\\'; }\\n"
+                    "    }\\n"
+                    "    if (target === \\'#tab-cal-sequence\\') {\\n"
+                    "        if (typeof startSequencePolling === \\'function\\') startSequencePolling();\\n"
+                    "        if (typeof syncChuteTerminalHeight === \\'function\\') {\\n"
+                    "            setTimeout(syncChuteTerminalHeight, 50);\\n"
+                    "            setTimeout(syncChuteTerminalHeight, 200);\\n"
+                    "        }\\n"
+                    "    } else {\\n"
+                    "        if (typeof stopSequencePolling === \\'function\\') stopSequencePolling();\\n"
+                    "    }\\n"
+                    "    " + tab_listener_pattern_end
+                )
+                content = content[:idx_tl_start] + new_tab_listener + content[idx_tl_end + len(tab_listener_pattern_end):]
+                print("5. Updated shown.bs.tab handler to hide card footer on both sequence monitor and firmware flash tabs.")
+    else:
+        print("5. shown.bs.tab handler already updated, skipping.")
 
     # --- 6. Update showSection(secId) for sec-esp32 ---
-    show_sec_pattern_start = "if (secId !== \\'sec-esp32\\') {"
-    show_sec_pattern_end = "if (secId !== \\'sec-system\\') {"
-    idx_ss_start = content.find(show_sec_pattern_start)
-    idx_ss_end = content.find(show_sec_pattern_end, idx_ss_start)
-    if idx_ss_start != -1 and idx_ss_end != -1:
-        new_show_sec = (
-            "if (secId !== \\'sec-esp32\\') {\\n"
-            "        if (typeof stopSequencePolling === \\'function\\') stopSequencePolling();\\n"
-            "    } else {\\n"
-            "        var activePill = $(\\'#esp32-cal-pills .nav-link.active\\').attr(\\'href\\');\\n"
-            "        var isCalTab = (activePill === \\'#tab-cal-nir\\' || activePill === \\'#tab-cal-scale\\' || activePill === \\'#tab-cal-servos\\' || activePill === \\'#tab-cal-timing\\');\\n"
-            "        var globalFooter = document.getElementById(\\'esp-global-card-footer\\');\\n"
-            "        var saveWrap = document.getElementById(\\'esp-footer-save-wrap\\');\\n"
-            "        if (isCalTab) {\\n"
-            "            if (globalFooter) { globalFooter.classList.remove(\\'d-none\\'); globalFooter.classList.add(\\'d-flex\\'); globalFooter.style.display = \\'flex\\'; }\\n"
-            "            if (saveWrap) { saveWrap.classList.remove(\\'d-none\\'); saveWrap.classList.add(\\'d-flex\\'); saveWrap.style.display = \\'flex\\'; }\\n"
-            "        } else {\\n"
-            "            if (globalFooter) { globalFooter.classList.remove(\\'d-flex\\'); globalFooter.classList.add(\\'d-none\\'); globalFooter.style.display = \\'none\\'; }\\n"
-            "            if (saveWrap) { saveWrap.classList.remove(\\'d-flex\\'); saveWrap.classList.add(\\'d-none\\'); saveWrap.style.display = \\'none\\'; }\\n"
-            "        }\\n"
-            "        if (activePill === \\'#tab-cal-sequence\\') {\\n"
-            "            if (typeof startSequencePolling === \\'function\\') startSequencePolling();\\n"
-            "            if (typeof syncChuteTerminalHeight === \\'function\\') {\\n"
-            "                setTimeout(syncChuteTerminalHeight, 50);\\n"
-            "                setTimeout(syncChuteTerminalHeight, 200);\\n"
-            "            }\\n"
-            "        } else {\\n"
-            "            if (typeof stopSequencePolling === \\'function\\') stopSequencePolling();\\n"
-            "        }\\n"
-            "    }\\n    "
-        )
-        content = content[:idx_ss_start] + new_show_sec + content[idx_ss_end:]
-        print("6. Updated showSection for sec-esp32 to hide card footer when non-calibration tab is active.")
+    if "var activePill = $(\\'#esp32-cal-pills .nav-link.active\\').attr(\\'href\\');" not in content:
+        show_sec_pattern_start = "if (secId !== \\'sec-esp32\\') {"
+        show_sec_pattern_end = "if (secId !== \\'sec-system\\') {"
+        idx_ss_start = content.find(show_sec_pattern_start)
+        idx_ss_end = content.find(show_sec_pattern_end, idx_ss_start)
+        if idx_ss_start != -1 and idx_ss_end != -1:
+            new_show_sec = (
+                "if (secId !== \\'sec-esp32\\') {\\n"
+                "        if (typeof stopSequencePolling === \\'function\\') stopSequencePolling();\\n"
+                "    } else {\\n"
+                "        var activePill = $(\\'#esp32-cal-pills .nav-link.active\\').attr(\\'href\\');\\n"
+                "        var isCalTab = (activePill === \\'#tab-cal-nir\\' || activePill === \\'#tab-cal-scale\\' || activePill === \\'#tab-cal-servos\\' || activePill === \\'#tab-cal-timing\\');\\n"
+                "        var globalFooter = document.getElementById(\\'esp-global-card-footer\\');\\n"
+                "        var saveWrap = document.getElementById(\\'esp-footer-save-wrap\\');\\n"
+                "        if (isCalTab) {\\n"
+                "            if (globalFooter) { globalFooter.classList.remove(\\'d-none\\'); globalFooter.classList.add(\\'d-flex\\'); globalFooter.style.display = \\'flex\\'; }\\n"
+                "            if (saveWrap) { saveWrap.classList.remove(\\'d-none\\'); saveWrap.classList.add(\\'d-flex\\'); saveWrap.style.display = \\'flex\\'; }\\n"
+                "        } else {\\n"
+                "            if (globalFooter) { globalFooter.classList.remove(\\'d-flex\\'); globalFooter.classList.add(\\'d-none\\'); globalFooter.style.display = \\'none\\'; }\\n"
+                "            if (saveWrap) { saveWrap.classList.remove(\\'d-flex\\'); saveWrap.classList.add(\\'d-none\\'); saveWrap.style.display = \\'none\\'; }\\n"
+                "        }\\n"
+                "        if (activePill === \\'#tab-cal-sequence\\') {\\n"
+                "            if (typeof startSequencePolling === \\'function\\') startSequencePolling();\\n"
+                "            if (typeof syncChuteTerminalHeight === \\'function\\') {\\n"
+                "                setTimeout(syncChuteTerminalHeight, 50);\\n"
+                "                setTimeout(syncChuteTerminalHeight, 200);\\n"
+                "            }\\n"
+                "        } else {\\n"
+                "            if (typeof stopSequencePolling === \\'function\\') stopSequencePolling();\\n"
+                "        }\\n"
+                "    }\\n    "
+            )
+            content = content[:idx_ss_start] + new_show_sec + content[idx_ss_end:]
+            print("6. Updated showSection for sec-esp32 to hide card footer when non-calibration tab is active.")
+    else:
+        print("6. showSection for sec-esp32 already updated, skipping.")
 
     with open(PORTAL_PY, 'w', encoding='utf-8') as f:
         f.write(content)

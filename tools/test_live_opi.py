@@ -70,6 +70,12 @@ for e in d4.get('entries', [])[-7:]:
 req5 = urllib.request.Request('http://127.0.0.1:5000/admin/api/system/logs/download')
 res5 = opener.open(req5)
 print('DOWNLOAD_ENDPOINT_STATUS:', res5.getcode(), 'bytes:', len(res5.read()))
+
+# 7. Clean up: Reset sequence tracker back to clean standby IDLE
+req6 = urllib.request.Request('http://127.0.0.1:5000/admin/api/esp32/sequence/reset', data=b'{}', headers={'Content-Type': 'application/json'})
+res6 = opener.open(req6)
+d6 = json.loads(res6.read().decode('utf-8'))
+print('SEQUENCE_RESET_STATUS:', res6.getcode(), 'TRACKER_STATUS_AFTER_RESET:', d6.get('data', {}).get('status'))
 """
 
     sftp = client.open_sftp()
