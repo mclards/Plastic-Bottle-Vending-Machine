@@ -5,6 +5,11 @@ var lastKnownLogId = 0;
 var cachedSystemLogs = [];
 
 function startSequencePolling() {
+    var globalFooter = document.getElementById('esp-global-card-footer');
+    if (globalFooter) {
+        globalFooter.classList.remove('d-flex');
+        globalFooter.classList.add('d-none');
+    }
     if (sequencePollTimer) return;
     pollChuteSequence();
     sequencePollTimer = setInterval(pollChuteSequence, 1000);
@@ -420,6 +425,11 @@ if (typeof window !== 'undefined') {
     var pillTab = document.getElementById('pill-sequence-tab');
     if (pillTab) {
         pillTab.addEventListener('click', function() {
+            var globalFooter = document.getElementById('esp-global-card-footer');
+            if (globalFooter) {
+                globalFooter.classList.remove('d-flex');
+                globalFooter.classList.add('d-none');
+            }
             setTimeout(syncChuteTerminalHeight, 50);
             setTimeout(syncChuteTerminalHeight, 250);
         });

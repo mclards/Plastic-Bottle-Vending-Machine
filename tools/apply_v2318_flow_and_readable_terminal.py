@@ -480,6 +480,76 @@ def update_portal_py():
             content = content[:idx_j1] + escaped_js + content[end_of_js:]
             print("3. Injected updated JavaScript client engine with v2.3.18 flow and high-contrast terminal.")
 
+    # --- 4. Add id="esp-global-card-footer" to the card footer if missing ---
+    old_footer_tag = '<!-- Global Card Footer: Save & Status -->\\n        <div class="card-footer d-flex align-items-center justify-content-between"'
+    new_footer_tag = '<!-- Global Card Footer: Save & Status -->\\n        <div id="esp-global-card-footer" class="card-footer d-flex align-items-center justify-content-between"'
+    if old_footer_tag in content:
+        content = content.replace(old_footer_tag, new_footer_tag)
+        print("4. Added id=\"esp-global-card-footer\" to ESP32 card footer.")
+
+    # --- 5. Update shown.bs.tab handler to hide card footer on Chute Sequence Monitor tab ---
+    old_tab_listener = (
+        "var saveWrap = document.getElementById(\\'esp-footer-save-wrap\\');\\n"
+        "    var flashHint = document.getElementById(\\'esp-footer-flash-hint\\');\\n"
+        "    if (target === \\'#tab-cal-sequence\\') { if (typeof startSequencePolling === \\'function\\') startSequencePolling(); } else { if (typeof stopSequencePolling === \\'function\\') stopSequencePolling(); }\\n"
+        "    if (target === \\'#sys-tab-logs\\') { if (typeof startSystemLogPolling === \\'function\\') startSystemLogPolling(); } else { if (typeof stopSystemLogPolling === \\'function\\') stopSystemLogPolling(); }\\n"
+        "    if (target === \\'#tab-cal-firmware\\') {\\n"
+        "        if (saveWrap) saveWrap.classList.add(\\'d-none\\');\\n"
+        "        if (flashHint) { flashHint.classList.remove(\\'d-none\\'); flashHint.classList.add(\\'d-flex\\'); }\\n"
+        "    } else if (target && target.indexOf(\\'#tab-cal-\\') === 0) {\\n"
+        "        if (saveWrap) saveWrap.classList.remove(\\'d-none\\');\\n"
+        "        if (flashHint) { flashHint.classList.remove(\\'d-flex\\'); flashHint.classList.add(\\'d-none\\'); }\\n"
+        "    }"
+    )
+    new_tab_listener = (
+        "var saveWrap = document.getElementById(\\'esp-footer-save-wrap\\');\\n"
+        "    var flashHint = document.getElementById(\\'esp-footer-flash-hint\\');\\n"
+        "    var globalFooter = document.getElementById(\\'esp-global-card-footer\\');\\n"
+        "    if (target === \\'#tab-cal-sequence\\') {\\n"
+        "        if (typeof startSequencePolling === \\'function\\') startSequencePolling();\\n"
+        "        if (globalFooter) { globalFooter.classList.remove(\\'d-flex\\'); globalFooter.classList.add(\\'d-none\\'); }\\n"
+        "        if (typeof syncChuteTerminalHeight === \\'function\\') {\\n"
+        "            setTimeout(syncChuteTerminalHeight, 50);\\n"
+        "            setTimeout(syncChuteTerminalHeight, 200);\\n"
+        "        }\\n"
+        "    } else {\\n"
+        "        if (typeof stopSequencePolling === \\'function\\') stopSequencePolling();\\n"
+        "        if (globalFooter) { globalFooter.classList.remove(\\'d-none\\'); globalFooter.classList.add(\\'d-flex\\'); }\\n"
+        "    }\\n"
+        "    if (target === \\'#sys-tab-logs\\') { if (typeof startSystemLogPolling === \\'function\\') startSystemLogPolling(); } else { if (typeof stopSystemLogPolling === \\'function\\') stopSystemLogPolling(); }\\n"
+        "    if (target === \\'#tab-cal-firmware\\') {\\n"
+        "        if (saveWrap) saveWrap.classList.add(\\'d-none\\');\\n"
+        "        if (flashHint) { flashHint.classList.remove(\\'d-none\\'); flashHint.classList.add(\\'d-flex\\'); }\\n"
+        "    } else if (target && target.indexOf(\\'#tab-cal-\\') === 0 && target !== \\'#tab-cal-sequence\\') {\\n"
+        "        if (saveWrap) { saveWrap.classList.remove(\\'d-none\\'); saveWrap.classList.add(\\'d-flex\\'); }\\n"
+        "        if (flashHint) { flashHint.classList.remove(\\'d-flex\\'); flashHint.classList.add(\\'d-none\\'); }\\n"
+        "    }"
+    )
+    if old_tab_listener in content:
+        content = content.replace(old_tab_listener, new_tab_listener)
+        print("5. Updated shown.bs.tab handler to hide card footer on sequence monitor tab.")
+
+    # --- 6. Update showSection(secId) for sec-esp32 ---
+    old_show_sec = "if (secId !== \\'sec-esp32\\') { if (typeof stopSequencePolling === \\'function\\') stopSequencePolling(); } else { if ($(\\'#pill-sequence-tab\\').hasClass(\\'active\\') && typeof startSequencePolling === \\'function\\') startSequencePolling(); }"
+    new_show_sec = (
+        "if (secId !== \\'sec-esp32\\') {\\n"
+        "        if (typeof stopSequencePolling === \\'function\\') stopSequencePolling();\\n"
+        "    } else {\\n"
+        "        if ($(\\'#pill-sequence-tab\\').hasClass(\\'active\\')) {\\n"
+        "            if (typeof startSequencePolling === \\'function\\') startSequencePolling();\\n"
+        "            var globalFooter = document.getElementById(\\'esp-global-card-footer\\');\\n"
+        "            if (globalFooter) { globalFooter.classList.remove(\\'d-flex\\'); globalFooter.classList.add(\\'d-none\\'); }\\n"
+        "            if (typeof syncChuteTerminalHeight === \\'function\\') {\\n"
+        "                setTimeout(syncChuteTerminalHeight, 50);\\n"
+        "                setTimeout(syncChuteTerminalHeight, 200);\\n"
+        "            }\\n"
+        "        }\\n"
+        "    }"
+    )
+    if old_show_sec in content:
+        content = content.replace(old_show_sec, new_show_sec)
+        print("6. Updated showSection for sec-esp32 to hide card footer when sequence monitor active.")
+
     with open(PORTAL_PY, 'w', encoding='utf-8') as f:
         f.write(content)
     print("host/portal.py successfully updated and saved!")
