@@ -46,10 +46,10 @@ function updateChuteSequenceUI(data) {
             status === 'TIMEOUT' ? 'badge-warning' : 'badge-secondary'
         );
         statBadge.style.display = 'inline-block';
-        statBadge.style.minWidth = '68px';
+        statBadge.style.minWidth = '74px';
         statBadge.style.textAlign = 'center';
-        statBadge.style.fontSize = '10.5px';
-        statBadge.style.padding = '3px 6px';
+        statBadge.style.fontSize = '11.5px';
+        statBadge.style.padding = '3.5px 8px';
         statBadge.style.borderRadius = '4px';
         statBadge.style.letterSpacing = '0.5px';
     }
@@ -123,20 +123,19 @@ function updateChuteSequenceUI(data) {
             stateEl.style.display = 'block';
             stateEl.style.width = '100%';
             stateEl.style.textAlign = 'center';
-            stateEl.style.padding = '2px 2px';
-            stateEl.style.fontSize = '9.5px';
+            stateEl.style.padding = '3.5px 4px';
+            stateEl.style.fontSize = '12px';
             stateEl.style.fontWeight = '700';
-            stateEl.style.borderRadius = '3px';
+            stateEl.style.borderRadius = '4px';
             stateEl.style.whiteSpace = 'nowrap';
             stateEl.style.overflow = 'hidden';
             stateEl.style.textOverflow = 'ellipsis';
-            stateEl.style.fontFamily = 'Consolas, monospace';
         }
 
         if (rowStat) {
             var bClass = isPass ? 'badge-success' : (isAct ? 'badge-warning' : (isFail ? 'badge-danger' : 'badge-secondary'));
             var bText = isPass ? 'OK' : (isAct ? 'RUN' : (isFail ? 'FAIL' : 'WAIT'));
-            rowStat.innerHTML = '<span class="badge ' + bClass + '" style="display:inline-block;width:62px;text-align:center;font-size:10px;font-weight:700;padding:2.5px 0;border-radius:4px;letter-spacing:0.5px;">' + bText + '</span>';
+            rowStat.innerHTML = '<span class="badge ' + bClass + '" style="display:inline-block;width:68px;text-align:center;font-size:11.5px;font-weight:700;padding:3px 0;border-radius:4px;letter-spacing:0.5px;">' + bText + '</span>';
         }
     });
 
@@ -158,11 +157,11 @@ function updateChuteSequenceUI(data) {
         badgeTot.textContent = totText;
         badgeTot.className = 'badge ' + totClass;
         badgeTot.style.display = 'inline-block';
-        badgeTot.style.width = '62px';
+        badgeTot.style.width = '68px';
         badgeTot.style.textAlign = 'center';
-        badgeTot.style.fontSize = '10px';
+        badgeTot.style.fontSize = '11.5px';
         badgeTot.style.fontWeight = '700';
-        badgeTot.style.padding = '2.5px 0';
+        badgeTot.style.padding = '3px 0';
         badgeTot.style.borderRadius = '4px';
         badgeTot.style.letterSpacing = '0.5px';
     }
@@ -192,7 +191,7 @@ function renderChuteLogTerminal(events) {
         else if (stage === 'ACTUATOR') badgeStyle = 'background:#d97706;color:#fff;';
         else if (stage === 'SYSTEM') badgeStyle = 'background:#475569;color:#fff;';
 
-        var stageHtml = '<span class="badge px-1 font-mono" style="' + badgeStyle + 'font-size:9.5px;font-weight:700;margin-right:4px;">' + escapeHtml(stage) + '</span>';
+        var stageHtml = '<span class="badge px-2 py-0 font-mono" style="' + badgeStyle + 'font-size:11px;font-weight:700;margin-right:4px;border-radius:3px;">' + escapeHtml(stage) + '</span>';
 
         var msgClass = '';
         var msgStyle = 'color:var(--eco-text-main);';
