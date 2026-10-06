@@ -426,12 +426,36 @@ if (typeof window !== 'undefined') {
     if (pillTab) {
         pillTab.addEventListener('click', function() {
             var globalFooter = document.getElementById('esp-global-card-footer');
+            var saveWrap = document.getElementById('esp-footer-save-wrap');
             if (globalFooter) {
                 globalFooter.classList.remove('d-flex');
                 globalFooter.classList.add('d-none');
+                globalFooter.style.display = 'none';
+            }
+            if (saveWrap) {
+                saveWrap.classList.remove('d-flex');
+                saveWrap.classList.add('d-none');
+                saveWrap.style.display = 'none';
             }
             setTimeout(syncChuteTerminalHeight, 50);
             setTimeout(syncChuteTerminalHeight, 250);
+        });
+    }
+    var fwTab = document.getElementById('pill-firmware-tab');
+    if (fwTab) {
+        fwTab.addEventListener('click', function() {
+            var globalFooter = document.getElementById('esp-global-card-footer');
+            var saveWrap = document.getElementById('esp-footer-save-wrap');
+            if (globalFooter) {
+                globalFooter.classList.remove('d-flex');
+                globalFooter.classList.add('d-none');
+                globalFooter.style.display = 'none';
+            }
+            if (saveWrap) {
+                saveWrap.classList.remove('d-flex');
+                saveWrap.classList.add('d-none');
+                saveWrap.style.display = 'none';
+            }
         });
     }
 }

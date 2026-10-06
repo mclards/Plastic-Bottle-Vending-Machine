@@ -487,68 +487,85 @@ def update_portal_py():
         content = content.replace(old_footer_tag, new_footer_tag)
         print("4. Added id=\"esp-global-card-footer\" to ESP32 card footer.")
 
-    # --- 5. Update shown.bs.tab handler to hide card footer on Chute Sequence Monitor tab ---
-    old_tab_listener = (
-        "var saveWrap = document.getElementById(\\'esp-footer-save-wrap\\');\\n"
-        "    var flashHint = document.getElementById(\\'esp-footer-flash-hint\\');\\n"
-        "    if (target === \\'#tab-cal-sequence\\') { if (typeof startSequencePolling === \\'function\\') startSequencePolling(); } else { if (typeof stopSequencePolling === \\'function\\') stopSequencePolling(); }\\n"
-        "    if (target === \\'#sys-tab-logs\\') { if (typeof startSystemLogPolling === \\'function\\') startSystemLogPolling(); } else { if (typeof stopSystemLogPolling === \\'function\\') stopSystemLogPolling(); }\\n"
-        "    if (target === \\'#tab-cal-firmware\\') {\\n"
-        "        if (saveWrap) saveWrap.classList.add(\\'d-none\\');\\n"
-        "        if (flashHint) { flashHint.classList.remove(\\'d-none\\'); flashHint.classList.add(\\'d-flex\\'); }\\n"
-        "    } else if (target && target.indexOf(\\'#tab-cal-\\') === 0) {\\n"
-        "        if (saveWrap) saveWrap.classList.remove(\\'d-none\\');\\n"
-        "        if (flashHint) { flashHint.classList.remove(\\'d-flex\\'); flashHint.classList.add(\\'d-none\\'); }\\n"
-        "    }"
+    # --- 4b. Embed hardware flash note inside #tab-cal-firmware pane ---
+    old_fw_tags = '\\n                          <i class="fas fa-upload mr-1"></i> Flash Custom\\n                        </button>\\n                      </div>\\n                    </div>\\n                  </div>\\n                </div>\\n              </div>\\n            </div>\\n'
+    new_fw_tags = (
+        '\\n                          <i class="fas fa-upload mr-1"></i> Flash Custom\\n                        </button>\\n                      </div>\\n                    </div>\\n                  </div>\\n                </div>\\n              </div>\\n'
+        '              <div class="mt-2 text-muted small d-flex align-items-center" style="font-size: 11.5px; padding: 7px 12px; background: rgba(0,0,0,0.18); border-radius: 6px; border: 1px solid rgba(255,255,255,0.06);">'
+        '<i class="fas fa-info-circle text-info mr-2"></i><span>Hardware flashing writes directly to ESP32 ROM flash storage. Sensor and servo calibrations remain stored in NVS.</span></div>\\n'
+        '            </div>\\n'
     )
-    new_tab_listener = (
-        "var saveWrap = document.getElementById(\\'esp-footer-save-wrap\\');\\n"
-        "    var flashHint = document.getElementById(\\'esp-footer-flash-hint\\');\\n"
-        "    var globalFooter = document.getElementById(\\'esp-global-card-footer\\');\\n"
-        "    if (target === \\'#tab-cal-sequence\\') {\\n"
-        "        if (typeof startSequencePolling === \\'function\\') startSequencePolling();\\n"
-        "        if (globalFooter) { globalFooter.classList.remove(\\'d-flex\\'); globalFooter.classList.add(\\'d-none\\'); }\\n"
-        "        if (typeof syncChuteTerminalHeight === \\'function\\') {\\n"
-        "            setTimeout(syncChuteTerminalHeight, 50);\\n"
-        "            setTimeout(syncChuteTerminalHeight, 200);\\n"
-        "        }\\n"
-        "    } else {\\n"
-        "        if (typeof stopSequencePolling === \\'function\\') stopSequencePolling();\\n"
-        "        if (globalFooter) { globalFooter.classList.remove(\\'d-none\\'); globalFooter.classList.add(\\'d-flex\\'); }\\n"
-        "    }\\n"
-        "    if (target === \\'#sys-tab-logs\\') { if (typeof startSystemLogPolling === \\'function\\') startSystemLogPolling(); } else { if (typeof stopSystemLogPolling === \\'function\\') stopSystemLogPolling(); }\\n"
-        "    if (target === \\'#tab-cal-firmware\\') {\\n"
-        "        if (saveWrap) saveWrap.classList.add(\\'d-none\\');\\n"
-        "        if (flashHint) { flashHint.classList.remove(\\'d-none\\'); flashHint.classList.add(\\'d-flex\\'); }\\n"
-        "    } else if (target && target.indexOf(\\'#tab-cal-\\') === 0 && target !== \\'#tab-cal-sequence\\') {\\n"
-        "        if (saveWrap) { saveWrap.classList.remove(\\'d-none\\'); saveWrap.classList.add(\\'d-flex\\'); }\\n"
-        "        if (flashHint) { flashHint.classList.remove(\\'d-flex\\'); flashHint.classList.add(\\'d-none\\'); }\\n"
-        "    }"
-    )
-    if old_tab_listener in content:
-        content = content.replace(old_tab_listener, new_tab_listener)
-        print("5. Updated shown.bs.tab handler to hide card footer on sequence monitor tab.")
+    if 'Hardware flashing writes directly to ESP32 ROM flash storage' not in content[:content.find('<!-- TAB 6: CHUTE SEQUENCE')]:
+        content = content.replace(old_fw_tags, new_fw_tags)
+        print("4b. Embedded hardware flash note inside #tab-cal-firmware pane.")
+
+    # --- 5. Update shown.bs.tab handler to hide card footer on non-calibration tabs (firmware & sequence) ---
+    tab_listener_pattern_end = "if (target === \\'#sys-tab-logs\\') { if (typeof startSystemLogPolling === \\'function\\') startSystemLogPolling(); } else { if (typeof stopSystemLogPolling === \\'function\\') stopSystemLogPolling(); }"
+    idx_tl_start = content.find("var saveWrap = document.getElementById(\\'esp-footer-save-wrap\\');")
+    idx_tl_end = content.find(tab_listener_pattern_end, idx_tl_start)
+    if idx_tl_start != -1 and idx_tl_end != -1:
+        new_tab_listener = (
+            "var saveWrap = document.getElementById(\\'esp-footer-save-wrap\\');\\n"
+            "    var flashHint = document.getElementById(\\'esp-footer-flash-hint\\');\\n"
+            "    var globalFooter = document.getElementById(\\'esp-global-card-footer\\');\\n"
+            "    var isCalTab = (target === \\'#tab-cal-nir\\' || target === \\'#tab-cal-scale\\' || target === \\'#tab-cal-servos\\' || target === \\'#tab-cal-timing\\');\\n"
+            "    if (isCalTab) {\\n"
+            "        if (globalFooter) { globalFooter.classList.remove(\\'d-none\\'); globalFooter.classList.add(\\'d-flex\\'); globalFooter.style.display = \\'flex\\'; }\\n"
+            "        if (saveWrap) { saveWrap.classList.remove(\\'d-none\\'); saveWrap.classList.add(\\'d-flex\\'); saveWrap.style.display = \\'flex\\'; }\\n"
+            "        if (flashHint) { flashHint.classList.remove(\\'d-flex\\'); flashHint.classList.add(\\'d-none\\'); flashHint.style.display = \\'none\\'; }\\n"
+            "    } else {\\n"
+            "        if (globalFooter) { globalFooter.classList.remove(\\'d-flex\\'); globalFooter.classList.add(\\'d-none\\'); globalFooter.style.display = \\'none\\'; }\\n"
+            "        if (saveWrap) { saveWrap.classList.remove(\\'d-flex\\'); saveWrap.classList.add(\\'d-none\\'); saveWrap.style.display = \\'none\\'; }\\n"
+            "        if (flashHint) { flashHint.classList.remove(\\'d-flex\\'); flashHint.classList.add(\\'d-none\\'); flashHint.style.display = \\'none\\'; }\\n"
+            "    }\\n"
+            "    if (target === \\'#tab-cal-sequence\\') {\\n"
+            "        if (typeof startSequencePolling === \\'function\\') startSequencePolling();\\n"
+            "        if (typeof syncChuteTerminalHeight === \\'function\\') {\\n"
+            "            setTimeout(syncChuteTerminalHeight, 50);\\n"
+            "            setTimeout(syncChuteTerminalHeight, 200);\\n"
+            "        }\\n"
+            "    } else {\\n"
+            "        if (typeof stopSequencePolling === \\'function\\') stopSequencePolling();\\n"
+            "    }\\n"
+            "    " + tab_listener_pattern_end
+        )
+        content = content[:idx_tl_start] + new_tab_listener + content[idx_tl_end + len(tab_listener_pattern_end):]
+        print("5. Updated shown.bs.tab handler to hide card footer on both sequence monitor and firmware flash tabs.")
 
     # --- 6. Update showSection(secId) for sec-esp32 ---
-    old_show_sec = "if (secId !== \\'sec-esp32\\') { if (typeof stopSequencePolling === \\'function\\') stopSequencePolling(); } else { if ($(\\'#pill-sequence-tab\\').hasClass(\\'active\\') && typeof startSequencePolling === \\'function\\') startSequencePolling(); }"
-    new_show_sec = (
-        "if (secId !== \\'sec-esp32\\') {\\n"
-        "        if (typeof stopSequencePolling === \\'function\\') stopSequencePolling();\\n"
-        "    } else {\\n"
-        "        if ($(\\'#pill-sequence-tab\\').hasClass(\\'active\\')) {\\n"
-        "            if (typeof startSequencePolling === \\'function\\') startSequencePolling();\\n"
-        "            var globalFooter = document.getElementById(\\'esp-global-card-footer\\');\\n"
-        "            if (globalFooter) { globalFooter.classList.remove(\\'d-flex\\'); globalFooter.classList.add(\\'d-none\\'); }\\n"
-        "            if (typeof syncChuteTerminalHeight === \\'function\\') {\\n"
-        "                setTimeout(syncChuteTerminalHeight, 50);\\n"
-        "                setTimeout(syncChuteTerminalHeight, 200);\\n"
-        "            }\\n"
-        "        }\\n"
-        "    }"
-    )
-    if old_show_sec in content:
-        content = content.replace(old_show_sec, new_show_sec)
-        print("6. Updated showSection for sec-esp32 to hide card footer when sequence monitor active.")
+    show_sec_pattern_start = "if (secId !== \\'sec-esp32\\') {"
+    show_sec_pattern_end = "if (secId !== \\'sec-system\\') {"
+    idx_ss_start = content.find(show_sec_pattern_start)
+    idx_ss_end = content.find(show_sec_pattern_end, idx_ss_start)
+    if idx_ss_start != -1 and idx_ss_end != -1:
+        new_show_sec = (
+            "if (secId !== \\'sec-esp32\\') {\\n"
+            "        if (typeof stopSequencePolling === \\'function\\') stopSequencePolling();\\n"
+            "    } else {\\n"
+            "        var activePill = $(\\'#esp32-cal-pills .nav-link.active\\').attr(\\'href\\');\\n"
+            "        var isCalTab = (activePill === \\'#tab-cal-nir\\' || activePill === \\'#tab-cal-scale\\' || activePill === \\'#tab-cal-servos\\' || activePill === \\'#tab-cal-timing\\');\\n"
+            "        var globalFooter = document.getElementById(\\'esp-global-card-footer\\');\\n"
+            "        var saveWrap = document.getElementById(\\'esp-footer-save-wrap\\');\\n"
+            "        if (isCalTab) {\\n"
+            "            if (globalFooter) { globalFooter.classList.remove(\\'d-none\\'); globalFooter.classList.add(\\'d-flex\\'); globalFooter.style.display = \\'flex\\'; }\\n"
+            "            if (saveWrap) { saveWrap.classList.remove(\\'d-none\\'); saveWrap.classList.add(\\'d-flex\\'); saveWrap.style.display = \\'flex\\'; }\\n"
+            "        } else {\\n"
+            "            if (globalFooter) { globalFooter.classList.remove(\\'d-flex\\'); globalFooter.classList.add(\\'d-none\\'); globalFooter.style.display = \\'none\\'; }\\n"
+            "            if (saveWrap) { saveWrap.classList.remove(\\'d-flex\\'); saveWrap.classList.add(\\'d-none\\'); saveWrap.style.display = \\'none\\'; }\\n"
+            "        }\\n"
+            "        if (activePill === \\'#tab-cal-sequence\\') {\\n"
+            "            if (typeof startSequencePolling === \\'function\\') startSequencePolling();\\n"
+            "            if (typeof syncChuteTerminalHeight === \\'function\\') {\\n"
+            "                setTimeout(syncChuteTerminalHeight, 50);\\n"
+            "                setTimeout(syncChuteTerminalHeight, 200);\\n"
+            "            }\\n"
+            "        } else {\\n"
+            "            if (typeof stopSequencePolling === \\'function\\') stopSequencePolling();\\n"
+            "        }\\n"
+            "    }\\n    "
+        )
+        content = content[:idx_ss_start] + new_show_sec + content[idx_ss_end:]
+        print("6. Updated showSection for sec-esp32 to hide card footer when non-calibration tab is active.")
 
     with open(PORTAL_PY, 'w', encoding='utf-8') as f:
         f.write(content)
