@@ -358,24 +358,24 @@ def build_compact_sequence_pane():
         '                    </div>\\n',
         '                  </div>\\n',
         '                </div>\\n',
-        '                <!-- RIGHT: High-Contrast Chute Diagnostics Event Stream Terminal -->\\n',
+        '                <!-- RIGHT: Theme-Native Chute Diagnostics Event Stream Terminal -->\\n',
         '                <div class="col-lg-7 col-12 mb-2 pl-lg-1">\\n',
         '                  <div class="card h-100 mb-0" style="background: var(--eco-card); border: 1px solid var(--eco-border); border-radius: 8px;">\\n',
         '                    <div class="card-header py-1 px-2 d-flex align-items-center justify-content-between flex-wrap" style="background: var(--eco-card-sub); border-bottom: 1px solid var(--eco-border); min-height: 32px; gap: 4px;">\\n',
         '                      <div class="d-flex align-items-center">\\n',
         '                        <i class="fas fa-terminal text-success mr-1" style="font-size: 0.95rem;"></i>\\n',
         '                        <span class="font-weight-bold" style="font-size: 11.5px; color: var(--eco-text-main);">Chute Diagnostics Event Stream</span>\\n',
+        '                        <span class="badge badge-success px-1 py-0 ml-2 font-mono" style="font-size: 9px;">LIVE</span>\\n',
         '                      </div>\\n',
         '                      <div class="d-flex align-items-center" style="gap: 4px;">\\n',
-        '                        <button id="btn-seq-term-theme" class="btn btn-xs btn-outline-secondary font-weight-bold px-1 py-0" onclick="toggleSequenceTerminalTheme()" title="Toggle Dark/Light Terminal Theme" style="font-size: 10px;"><i class="fas fa-adjust mr-1"></i>Theme</button>\\n',
         '                        <button class="btn btn-xs btn-outline-info px-1 py-0 font-weight-bold" onclick="copySequenceTerminalLogs()" title="Copy logs" style="font-size: 10px;"><i class="fas fa-copy mr-1"></i>Copy</button>\\n',
         '                        <a href="/admin/api/system/logs/download" class="btn btn-xs btn-outline-success px-1 py-0 font-weight-bold" title="Download .LOG" style="font-size: 10px;"><i class="fas fa-download mr-1"></i>Download</a>\\n',
         '                        <button class="btn btn-xs btn-outline-danger px-1 py-0 font-weight-bold" onclick="clearSystemLogs()" title="Clear logs" style="font-size: 10px;"><i class="fas fa-trash"></i></button>\\n',
         '                      </div>\\n',
         '                    </div>\\n',
-        '                    <div id="seq-term-body" class="card-body p-1" style="background: #0b0f19; border: 1px solid rgba(255,255,255,0.08); border-top: none; border-radius: 0 0 8px 8px; transition: background 0.2s ease;">\\n',
-        '                      <div id="seq-log-terminal" style="font-family: Consolas, &quot;Liberation Mono&quot;, monospace; font-size: 11.5px; height: 155px; overflow-y: auto; color: #f8fafc; line-height: 1.6; white-space: pre-wrap; word-break: break-all; padding: 4px 8px;">\\n',
-        '                        <span style="color: #94a3b8;">[System Ready] Awaiting bottle deposit sequence...</span>\\n',
+        '                    <div class="card-body p-2" style="background: var(--eco-card); border-radius: 0 0 8px 8px;">\\n',
+        '                      <div id="seq-log-terminal" style="font-family: Consolas, &quot;Liberation Mono&quot;, monospace; font-size: 11.5px; height: 155px; overflow-y: auto; color: var(--eco-text-main); line-height: 1.6; white-space: pre-wrap; word-break: break-all; padding: 6px 8px; background: var(--eco-card-sub); border: 1px solid var(--eco-border); border-radius: 6px;">\\n',
+        '                        <span class="text-muted font-mono font-weight-bold">[System Ready] Awaiting bottle deposit sequence...</span>\\n',
         '                      </div>\\n',
         '                    </div>\\n',
         '                  </div>\\n',
@@ -420,9 +420,9 @@ def build_theme_sys_logs_pane():
         '                    <button class="btn btn-xs btn-outline-danger px-2 py-0" onclick="clearSystemLogs()" title="Clear logs" style="font-size: 10.5px;"><i class="fas fa-trash mr-1"></i>Clear</button>\\n',
         '                  </div>\\n',
         '                </div>\\n',
-        '                <div class="card-body p-2" style="background: #0b0f19; border-radius: 0 0 8px 8px; border: 1px solid rgba(255,255,255,0.08); border-top: none;">\\n',
-        '                  <div id="sys-log-terminal" style="font-family: Consolas, &quot;Liberation Mono&quot;, monospace; font-size: 11.5px; height: 380px; overflow-y: auto; color: #f8fafc; line-height: 1.6; white-space: pre-wrap; word-break: break-all; padding: 6px 10px;">\\n',
-        '                    <span style="color: #94a3b8;">Loading system event logs...</span>\\n',
+        '                <div class="card-body p-2" style="background: var(--eco-card); border-radius: 0 0 8px 8px;">\\n',
+        '                  <div id="sys-log-terminal" style="font-family: Consolas, &quot;Liberation Mono&quot;, monospace; font-size: 11.5px; height: 380px; overflow-y: auto; color: var(--eco-text-main); line-height: 1.6; white-space: pre-wrap; word-break: break-all; padding: 6px 10px; background: var(--eco-card-sub); border: 1px solid var(--eco-border); border-radius: 6px;">\\n',
+        '                    <span class="text-muted font-mono font-weight-bold">Loading system event logs...</span>\\n',
         '                  </div>\\n',
         '                </div>\\n',
         '              </div>\\n',
@@ -460,12 +460,15 @@ def update_portal_py():
     start_sys = '<!-- SUB-TAB 4: SYSTEM EVENT LOGGER -->'
     idx_sys1 = content.find(start_sys)
     if idx_sys1 != -1:
-        end_sys = '</div>\\n\\n          </div>\\n        </div>\\n      </div>\\n    </div>'
-        idx_sys2 = content.find(end_sys, idx_sys1)
+        end_marker = '\\n          </div>\\n        </div>\\n      </div>\\n    </div>'
+        idx_sys2 = content.find(end_marker, idx_sys1)
         if idx_sys2 != -1:
             new_sys_html = build_theme_sys_logs_pane()
-            content = content[:idx_sys1] + new_sys_html + content[idx_sys2 + 7:]
+            content = content[:idx_sys1] + new_sys_html + content[idx_sys2:]
             print("2. Replaced system logger pane with high-contrast layout.")
+        else:
+            print("ERROR: end_marker for sys-tab-logs not found!")
+            sys.exit(1)
 
     # --- 3. Replace JavaScript Client Engine ---
     js_start = "// --- CHUTE SEQUENCE & SYSTEM LOGGER CLIENT ENGINE ---"

@@ -3,51 +3,9 @@ var sequencePollTimer = null;
 var systemLogPollTimer = null;
 var lastKnownLogId = 0;
 var cachedSystemLogs = [];
-var cachedChuteEvents = [];
-var seqTerminalDark = true;
-
-try {
-    var storedTheme = localStorage.getItem('ecofi_seq_term_theme');
-    if (storedTheme !== null) {
-        seqTerminalDark = (storedTheme === 'dark');
-    }
-} catch(e) {}
-
-function toggleSequenceTerminalTheme() {
-    seqTerminalDark = !seqTerminalDark;
-    try {
-        localStorage.setItem('ecofi_seq_term_theme', seqTerminalDark ? 'dark' : 'light');
-    } catch(e) {}
-    applySequenceTerminalTheme();
-    if (cachedChuteEvents && cachedChuteEvents.length > 0) {
-        renderChuteLogTerminal(cachedChuteEvents);
-    }
-}
-
-function applySequenceTerminalTheme() {
-    var termBody = document.getElementById('seq-term-body');
-    var term = document.getElementById('seq-log-terminal');
-    var btn = document.getElementById('btn-seq-term-theme');
-    if (btn) {
-        btn.innerHTML = '<i class="fas fa-adjust mr-1"></i>' + (seqTerminalDark ? 'Dark' : 'Light');
-    }
-    if (!termBody || !term) return;
-    if (seqTerminalDark) {
-        termBody.style.background = '#0b0f19';
-        termBody.style.border = '1px solid rgba(255,255,255,0.1)';
-        termBody.style.borderTop = 'none';
-        term.style.color = '#f8fafc';
-    } else {
-        termBody.style.background = '#f8fafc';
-        termBody.style.border = '1px solid var(--eco-border)';
-        termBody.style.borderTop = 'none';
-        term.style.color = '#0f172a';
-    }
-}
 
 function startSequencePolling() {
     if (sequencePollTimer) return;
-    applySequenceTerminalTheme();
     pollChuteSequence();
     sequencePollTimer = setInterval(pollChuteSequence, 1000);
 }
@@ -188,42 +146,39 @@ function updateChuteSequenceUI(data) {
 function renderChuteLogTerminal(events) {
     var term = document.getElementById('seq-log-terminal');
     if (!term) return;
-    cachedChuteEvents = events;
-    applySequenceTerminalTheme();
 
-    var isDark = seqTerminalDark;
     var lines = events.map(function(ev) {
         var ts = ev.timestamp || ev.ts || '';
         var stage = ev.stage || ev.category || 'SYS';
         var msg = ev.message || ev.msg || '';
 
-        // High-contrast, crystal-clear timestamp
-        var tsColor = isDark ? '#94a3b8' : '#475569';
-        var tsHtml = '<span style="color:' + tsColor + ';font-weight:600;">[' + escapeHtml(ts) + ']</span>';
+        var tsHtml = '<span class="text-muted font-mono mr-1" style="font-weight:600;">[' + escapeHtml(ts) + ']</span>';
 
-        // Stage badges: bright bold colored chips
-        var badgeBg = '#334155';
-        var badgeText = '#ffffff';
-        if (stage === 'CHUTE') { badgeBg = '#0284c7'; }
-        else if (stage === 'SENSOR') { badgeBg = '#7c3aed'; }
-        else if (stage === 'ACTUATOR') { badgeBg = '#d97706'; }
-        else if (stage === 'SYSTEM') { badgeBg = isDark ? '#475569' : '#64748b'; }
+        var badgeStyle = 'background:#64748b;color:#fff;';
+        if (stage === 'CHUTE') badgeStyle = 'background:#0284c7;color:#fff;';
+        else if (stage === 'SENSOR') badgeStyle = 'background:#7c3aed;color:#fff;';
+        else if (stage === 'ACTUATOR') badgeStyle = 'background:#d97706;color:#fff;';
+        else if (stage === 'SYSTEM') badgeStyle = 'background:#475569;color:#fff;';
 
-        var stageHtml = '<span style="background:' + badgeBg + ';color:' + badgeText + ';font-weight:700;font-size:9.5px;padding:1px 5px;border-radius:3px;margin-right:4px;">' + escapeHtml(stage) + '</span>';
+        var stageHtml = '<span class="badge px-1 font-mono" style="' + badgeStyle + 'font-size:9.5px;font-weight:700;margin-right:4px;">' + escapeHtml(stage) + '</span>';
 
-        // Message text with high-contrast syntax highlighting
-        var msgColor = isDark ? '#f8fafc' : '#0f172a';
+        var msgClass = '';
+        var msgStyle = 'color:var(--eco-text-main);';
         if (msg.indexOf('REJECT') !== -1 || msg.indexOf('FAIL') !== -1 || msg.indexOf('TIMEOUT') !== -1) {
-            msgColor = isDark ? '#fca5a5' : '#dc2626';
+            msgClass = 'text-danger font-weight-bold';
+            msgStyle = '';
         } else if (msg.indexOf('MEASURE') !== -1 || msg.indexOf('SCAN') !== -1 || msg.indexOf('Cal-W=') !== -1 || msg.indexOf('Mass:') !== -1) {
-            msgColor = isDark ? '#fde047' : '#b45309';
-        } else if (msg.indexOf('CONFIRMED') !== -1 || msg.indexOf('ACCEPTED') !== -1 || msg.indexOf('saved') !== -1 || msg.indexOf('Authentic') !== -1 || msg.indexOf('OK') !== -1) {
-            msgColor = isDark ? '#4ade80' : '#15803d';
+            msgClass = 'text-warning font-weight-bold';
+            msgStyle = '';
+        } else if (msg.indexOf('CONFIRMED') !== -1 || msg.indexOf('ACCEPTED') !== -1 || msg.indexOf('saved') !== -1 || msg.indexOf('Authentic') !== -1) {
+            msgClass = 'text-success font-weight-bold';
+            msgStyle = '';
         } else if (msg.indexOf('OPENED') !== -1 || msg.indexOf('TRIGGERED') !== -1) {
-            msgColor = isDark ? '#60a5fa' : '#1d4ed8';
+            msgClass = 'text-primary font-weight-bold';
+            msgStyle = '';
         }
 
-        return tsHtml + ' ' + stageHtml + ' <span style="color:' + msgColor + ';font-weight:500;">' + escapeHtml(msg) + '</span>';
+        return tsHtml + ' ' + stageHtml + ' <span class="' + msgClass + '" style="' + msgStyle + '">' + escapeHtml(msg) + '</span>';
     });
 
     term.innerHTML = lines.join('\n');
@@ -324,17 +279,21 @@ function renderSystemLogs(entries) {
         var msg = e.message || e.msg || '';
 
         var lvlBadge = 'badge-secondary';
-        var msgColor = '#f8fafc';
-        if (lvl === 'TRIGGER') { lvlBadge = 'badge-primary'; msgColor = '#93c5fd'; }
-        else if (lvl === 'MEASURE') { lvlBadge = 'badge-warning'; msgColor = '#fde68a'; }
-        else if (lvl === 'SUCCESS') { lvlBadge = 'badge-success'; msgColor = '#86efac'; }
-        else if (lvl === 'WARN') { lvlBadge = 'badge-warning'; msgColor = '#fdba74'; }
-        else if (lvl === 'ERROR') { lvlBadge = 'badge-danger'; msgColor = '#fca5a5'; }
+        if (lvl === 'TRIGGER') lvlBadge = 'badge-primary';
+        else if (lvl === 'MEASURE') lvlBadge = 'badge-warning';
+        else if (lvl === 'SUCCESS') lvlBadge = 'badge-success';
+        else if (lvl === 'WARN') lvlBadge = 'badge-warning';
+        else if (lvl === 'ERROR') lvlBadge = 'badge-danger';
 
-        return '<span style="color:#94a3b8;font-weight:600;">[' + ts + ']</span> ' +
-               '<span class="badge ' + lvlBadge + ' px-1 font-mono" style="font-size:9.5px;">' + lvl + '</span> ' +
-               '<span class="badge badge-dark border border-secondary px-1 text-info font-mono" style="font-size:9.5px;">' + cat + '</span> ' +
-               '<span style="color:' + msgColor + ';font-weight:500;">' + escapeHtml(msg) + '</span>';
+        var catBadge = 'background:#475569;color:#fff;';
+        if (cat === 'CHUTE') catBadge = 'background:#0284c7;color:#fff;';
+        else if (cat === 'SENSOR') catBadge = 'background:#7c3aed;color:#fff;';
+        else if (cat === 'ACTUATOR') catBadge = 'background:#d97706;color:#fff;';
+
+        return '<span class="text-muted font-mono mr-1" style="font-weight:600;">[' + escapeHtml(ts) + ']</span> ' +
+               '<span class="badge ' + lvlBadge + ' px-1 font-mono" style="font-size:9.5px;">' + escapeHtml(lvl) + '</span> ' +
+               '<span class="badge px-1 font-mono" style="' + catBadge + 'font-size:9.5px;">' + escapeHtml(cat) + '</span> ' +
+               '<span style="color:var(--eco-text-main);">' + escapeHtml(msg) + '</span>';
     });
 
     term.innerHTML = lines.join('\n');
@@ -371,7 +330,6 @@ function clearSystemLogs() {
                 .then(function(r) { return r.json(); })
                 .then(function(d) {
                     cachedSystemLogs = [];
-                    cachedChuteEvents = [];
                     lastKnownLogId = 0;
                     var term1 = document.getElementById('seq-log-terminal');
                     if (term1) term1.innerHTML = '<span class="text-muted">[System log cleared]</span>';
