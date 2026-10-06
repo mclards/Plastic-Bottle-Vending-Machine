@@ -140,6 +140,8 @@ function updateChuteSequenceUI(data) {
     var evList = data.events || data.recent_logs;
     if (evList && evList.length > 0) {
         renderChuteLogTerminal(evList);
+    } else {
+        syncChuteTerminalHeight();
     }
 }
 
@@ -183,6 +185,7 @@ function renderChuteLogTerminal(events) {
 
     term.innerHTML = lines.join('\n');
     term.scrollTop = term.scrollHeight;
+    syncChuteTerminalHeight();
 }
 
 function simulateChuteSequence(isPet) {
@@ -348,4 +351,48 @@ function escapeHtml(text) {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
+}
+
+function syncChuteTerminalHeight() {
+    var leftCard = document.getElementById('card-latency-budget');
+    var rightCard = document.getElementById('card-chute-terminal');
+    var term = document.getElementById('seq-log-terminal');
+    if (!leftCard || !rightCard || !term) return;
+
+    if (window.innerWidth >= 992) {
+        var leftHeight = leftCard.offsetHeight;
+        if (leftHeight > 0) {
+            rightCard.style.height = leftHeight + 'px';
+            var headerEl = rightCard.querySelector('.card-header');
+            var headerHeight = headerEl ? headerEl.offsetHeight : 32;
+            var availableTermHeight = leftHeight - headerHeight - 16;
+            if (availableTermHeight > 60) {
+                term.style.height = availableTermHeight + 'px';
+                term.style.maxHeight = availableTermHeight + 'px';
+            }
+        }
+    } else {
+        rightCard.style.height = '';
+        term.style.height = '180px';
+        term.style.maxHeight = '180px';
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.addEventListener('resize', syncChuteTerminalHeight);
+    window.addEventListener('load', function() {
+        setTimeout(syncChuteTerminalHeight, 100);
+        setTimeout(syncChuteTerminalHeight, 350);
+    });
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(syncChuteTerminalHeight, 100);
+        setTimeout(syncChuteTerminalHeight, 350);
+    });
+    var pillTab = document.getElementById('pill-sequence-tab');
+    if (pillTab) {
+        pillTab.addEventListener('click', function() {
+            setTimeout(syncChuteTerminalHeight, 50);
+            setTimeout(syncChuteTerminalHeight, 250);
+        });
+    }
 }
