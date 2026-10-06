@@ -39,12 +39,19 @@ function updateChuteSequenceUI(data) {
     var statBadge = document.getElementById('seq-status-badge');
     if (statBadge) {
         statBadge.textContent = status;
-        statBadge.className = 'badge px-2 py-0 font-weight-bold ml-2 ' + (
+        statBadge.className = 'badge font-weight-bold ml-2 ' + (
             status === 'PASSED' ? 'badge-success' :
             status === 'SCANNING' ? 'badge-warning' :
             status === 'REJECTED' ? 'badge-danger' :
             status === 'TIMEOUT' ? 'badge-warning' : 'badge-secondary'
         );
+        statBadge.style.display = 'inline-block';
+        statBadge.style.minWidth = '68px';
+        statBadge.style.textAlign = 'center';
+        statBadge.style.fontSize = '10.5px';
+        statBadge.style.padding = '3px 6px';
+        statBadge.style.borderRadius = '4px';
+        statBadge.style.letterSpacing = '0.5px';
     }
 
     var sessEl = document.getElementById('seq-session-id');
@@ -112,11 +119,24 @@ function updateChuteSequenceUI(data) {
 
         if (stateEl) {
             stateEl.textContent = st.detail || (isPass ? 'PASSED' : (isAct ? 'MEASURING' : (isFail ? 'REJECT' : 'WAIT')));
-            stateEl.className = 'badge px-2 py-0 ' + (isPass ? 'badge-success' : (isAct ? 'badge-warning' : (isFail ? 'badge-danger' : 'badge-secondary')));
+            stateEl.className = 'badge ' + (isPass ? 'badge-success' : (isAct ? 'badge-warning' : (isFail ? 'badge-danger' : 'badge-secondary')));
+            stateEl.style.display = 'block';
+            stateEl.style.width = '100%';
+            stateEl.style.textAlign = 'center';
+            stateEl.style.padding = '2px 2px';
+            stateEl.style.fontSize = '9.5px';
+            stateEl.style.fontWeight = '700';
+            stateEl.style.borderRadius = '3px';
+            stateEl.style.whiteSpace = 'nowrap';
+            stateEl.style.overflow = 'hidden';
+            stateEl.style.textOverflow = 'ellipsis';
+            stateEl.style.fontFamily = 'Consolas, monospace';
         }
 
         if (rowStat) {
-            rowStat.innerHTML = '<span class="badge px-1 ' + (isPass ? 'badge-success' : (isAct ? 'badge-warning' : (isFail ? 'badge-danger' : 'badge-secondary'))) + '">' + (isPass ? 'OK' : (isAct ? 'RUN' : (isFail ? 'FAIL' : 'WAIT'))) + '</span>';
+            var bClass = isPass ? 'badge-success' : (isAct ? 'badge-warning' : (isFail ? 'badge-danger' : 'badge-secondary'));
+            var bText = isPass ? 'OK' : (isAct ? 'RUN' : (isFail ? 'FAIL' : 'WAIT'));
+            rowStat.innerHTML = '<span class="badge ' + bClass + '" style="display:inline-block;width:62px;text-align:center;font-size:10px;font-weight:700;padding:2.5px 0;border-radius:4px;letter-spacing:0.5px;">' + bText + '</span>';
         }
     });
 
@@ -133,8 +153,18 @@ function updateChuteSequenceUI(data) {
     if (rowTotLat) rowTotLat.textContent = (data.total_elapsed_ms || 0) + 'ms';
     var badgeTot = document.getElementById('badge-tot-stat');
     if (badgeTot) {
-        badgeTot.textContent = status;
-        badgeTot.className = 'badge px-1 ' + (status === 'PASSED' ? 'badge-success' : (status === 'REJECTED' ? 'badge-danger' : 'badge-secondary'));
+        var totText = status === 'PASSED' ? 'PASSED' : (status === 'REJECTED' ? 'REJECT' : (status === 'SCANNING' ? 'RUN' : (status || 'IDLE')));
+        var totClass = status === 'PASSED' ? 'badge-success' : (status === 'REJECTED' ? 'badge-danger' : (status === 'SCANNING' ? 'badge-warning' : 'badge-secondary'));
+        badgeTot.textContent = totText;
+        badgeTot.className = 'badge ' + totClass;
+        badgeTot.style.display = 'inline-block';
+        badgeTot.style.width = '62px';
+        badgeTot.style.textAlign = 'center';
+        badgeTot.style.fontSize = '10px';
+        badgeTot.style.fontWeight = '700';
+        badgeTot.style.padding = '2.5px 0';
+        badgeTot.style.borderRadius = '4px';
+        badgeTot.style.letterSpacing = '0.5px';
     }
 
     var evList = data.events || data.recent_logs;
