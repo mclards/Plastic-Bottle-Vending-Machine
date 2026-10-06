@@ -21,7 +21,7 @@ SIMULATOR_VERSION = 'v' + _read_release_version()
 HARDWARE_BOUNDS={
     'bin_full_threshold_cm':(1,400,18),'pet_nir_w_min':(0,65535,10),
     'pet_nir_w_max':(1,65535,120),'entrance_gate_timeout':(1,600,65),
-    'settle_time_ms':(1,30000,1000),'success_drop_tout_ms':(1,30000,3100),
+    'settle_time_ms':(1,30000,1000),'success_drop_tout_ms':(1,30000,7500),
     'retrieval_timeout_s':(5,300,50),'require_nir_sensor':(0,1,1),
     'require_weight_sensor':(0,1,1),'require_bin_sensor':(0,1,0),
     'bin_sensor_orientation':(0,1,1),'bin_empty_depth_cm':(20,250,60),
@@ -59,7 +59,7 @@ class ESP32Simulator:
         self.pet_nir_w_max = 120
         self.entrance_gate_timeout = 65
         self.settle_time_ms = 1000
-        self.success_drop_tout_ms = 3100
+        self.success_drop_tout_ms = 7500
         self.retrieval_timeout_s = 50
         self.require_nir_sensor = 1
         self.require_weight_sensor = 1
@@ -241,6 +241,14 @@ class ESP32Simulator:
             elif cmd=='TARE_WEIGHT':
                 self.measured_weight_g = 0.0
                 self.send_uart({'event': 'TARE_OK', 'success': True})
+            elif cmd=='TEST_PROX':
+                is_metal = bool(getattr(self, 'inductive_metal_detected', False))
+                self.send_uart({
+                    'event': 'PROX_TEST', 'success': True,
+                    'metal': is_metal,
+                    'pin': 25,
+                    'raw': 0 if is_metal else 1
+                })
         except Exception:
             self.close_entrance_gate()
             raise

@@ -19,8 +19,9 @@
    - **Default Password:** `admin1234`
    - AI agents must NEVER modify, overwrite, or randomize the default admin credentials in code, tests, scripts, or database under any circumstances.
 7. **Authoritative Golden Release Baseline (PERMANENT RULE):**
-   - **v2.3.18 is definitively confirmed as the stable release baseline** across both the Orange Pi gateway and ESP32 firmwares, embedding authoritative hardware & sensor calibration defaults (NIR W [10 - 120], Weight [20 - 90]g, HX711 cal factor 260, Horiz. bin 18cm @ 3s, Gate 65s, Settle 1000ms, Drop 3100ms, Retrieval 50s, servos 0°/90°).
-   - All timing, retrieval state machines, chime synchronization, and scale routines originating from v2.3.17 (commit `87c7cb7`) are preserved. Never modify these core algorithms without benchmarking against `87c7cb7`.
+   - **v2.3.19 is definitively confirmed as the stable release** across both the Orange Pi gateway and ESP32 firmwares, preserving all timing, retrieval state machines, chime synchronization, and scale baseline routines originating from v2.3.17 (commit `87c7cb7`) and v2.3.18.
+   - Authoritative hardware & sensor calibration defaults: NIR W [10 - 120], Weight [20 - 90]g, HX711 cal factor 260, Horiz. bin 18cm @ 3s, Gate 65s, Settle 1000ms, Drop 7500ms, Retrieval 50s, servos 0°/90°.
+   - Key stable features: 7-stage chute sequence pipeline, drop flap anti-crush jam prevention on timeout, trimmed-mean HX711 weight filtering with cradle deadweight-aware tare, and non-blocking credit journal boot recovery.
 8. **Captive Portal CNA Auto-Popup Protocol (PERMANENT RULE):**
    - DHCP Option 114 MUST point to RFC 8908 JSON API (`http://10.0.0.1/api/captive-portal`). Never return raw HTML to Option 114 queries.
    - DNS MUST return `NXDOMAIN` for Apple iCloud Private Relay (`local=/mask.icloud.com/` and `local=/mask-h2.icloud.com/`).
@@ -30,6 +31,8 @@
 10. **Admin Panel Sidebar Information Architecture (PERMANENT RULE):**
    - The Admin Panel sidebar navigation is authoritatively structured into 5 distinct functional domains: `VENDO OPERATIONS`, `NETWORK & TRAFFIC`, `PORTAL & BRANDING`, `HARDWARE & SENSORS`, and `SYSTEM & MAINTENANCE`.
    - Never lump portal branding, traffic/networking, or OS maintenance items into a generic catch-all group. Ensure all 15 sections have direct mapping and active link state tracking in `showSection(secId)`.
+11. **Live Firmware Ground-Truth Rule (PERMANENT RULE):**
+   - When creating or building firmware (`firmware.bin`, `esp32_firmware_factory.bin`), AI agents must strictly follow what is flashed and running inside the live physical Orange Pi and ESP32 hardware. Never introduce speculative algorithm changes or diverging calibrations in firmware builds that deviate from the running live system ground truth.
 
 
 

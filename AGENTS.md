@@ -45,8 +45,12 @@
    - **Forced Password Change:** The forced password change on first login with default `admin1234` is an intentional security design and MUST be preserved.
    - **STRICT PROHIBITION:** AI agents must NEVER change, overwrite, or randomize the default admin credentials in code, tests, scripts, or database under any circumstances.
 5. **Authoritative Stable Version (PERMANENT MEMORY RULE):**
-   - **v2.3.18 is definitively confirmed as the stable release baseline** across both the Orange Pi gateway and ESP32 firmwares, embedding authoritative hardware & sensor calibration defaults (NIR W [10 - 120], Weight [20 - 90]g, HX711 cal factor 260, Horiz. bin 18cm @ 3s, Gate 65s, Settle 1000ms, Drop 3100ms, Retrieval 50s, servos 0°/90°).
-   - All timing, retrieval state machines, chime synchronization, and scale routines originating from v2.3.17 (commit `87c7cb7`) are preserved.
+   - **v2.3.19 is definitively confirmed as the stable release** across both the Orange Pi gateway and ESP32 firmwares, preserving all timing, retrieval state machines, chime synchronization, and scale baseline routines originating from v2.3.17 (commit `87c7cb7`) and v2.3.18.
+   - Authoritative hardware & sensor calibration defaults: NIR W [10 - 120], Weight [20 - 90]g, HX711 cal factor 260, Horiz. bin 18cm @ 3s, Gate 65s, Settle 1000ms, Drop 7500ms, Retrieval 50s, servos 0°/90°.
+   - Key stable features: 7-stage chute sequence pipeline, drop flap anti-crush jam prevention on timeout, trimmed-mean HX711 weight filtering with cradle deadweight-aware tare, and non-blocking credit journal boot recovery.
+6. **Live Firmware Ground-Truth Rule (PERMANENT RULE):**
+   - When creating or building firmware (`firmware.bin`, `esp32_firmware_factory.bin`), AI agents must strictly follow what is flashed and running inside the live physical Orange Pi and ESP32 hardware.
+   - Never introduce speculative algorithm changes or diverging calibrations in firmware builds that deviate from the running live system ground truth.
 
 ---
 

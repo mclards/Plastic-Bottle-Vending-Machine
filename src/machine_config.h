@@ -8,7 +8,7 @@ struct MachineConfig {
     
     // Hardware Timings
     int settle_time_ms = 1000;
-    int success_drop_tout_ms = 3100;
+    int success_drop_tout_ms = 7500;
     int retrieval_timeout_s = 50;
 
     // Independent Servo Angles for Fine-Tuning

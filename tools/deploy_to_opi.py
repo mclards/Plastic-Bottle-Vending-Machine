@@ -176,6 +176,10 @@ server {
         else:
             print("  Nginx reloaded successfully with persistent keepalive upstream!")
 
+        # Step 4.6: Update esp_success_drop_tout_ms to 7500 in vendo_sessions.db
+        print("  Updating esp_success_drop_tout_ms to 7500 in /opt/ecofi/vendo_sessions.db...", flush=True)
+        execute(client, "sqlite3 /opt/ecofi/vendo_sessions.db \"REPLACE INTO config(key, value) VALUES ('esp_success_drop_tout_ms', '7500');\"")
+
         # Step 5: Flash ESP32 via GPIO harness flasher
         if not host_only:
             print("[6/7] Flashing ESP32 via hardware GPIO flasher (/dev/ttyS3)...", flush=True)

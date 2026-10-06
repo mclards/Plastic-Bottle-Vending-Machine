@@ -6,13 +6,20 @@ var cachedSystemLogs = [];
 
 function startSequencePolling() {
     var globalFooter = document.getElementById('esp-global-card-footer');
+    var saveWrap = document.getElementById('esp-footer-save-wrap');
     if (globalFooter) {
         globalFooter.classList.remove('d-flex');
         globalFooter.classList.add('d-none');
+        globalFooter.style.display = 'none';
+    }
+    if (saveWrap) {
+        saveWrap.classList.remove('d-flex');
+        saveWrap.classList.add('d-none');
+        saveWrap.style.display = 'none';
     }
     if (sequencePollTimer) return;
     pollChuteSequence();
-    sequencePollTimer = setInterval(pollChuteSequence, 1000);
+    sequencePollTimer = setInterval(pollChuteSequence, 350);
 }
 
 function stopSequencePolling() {
@@ -69,7 +76,7 @@ function updateChuteSequenceUI(data) {
 
     var pBar = document.getElementById('seq-progress-bar');
     if (pBar) {
-        var pct = isIdle ? 0 : (status === 'PASSED' ? 100 : Math.min(100, Math.round((currentStage / 6) * 100)));
+        var pct = isIdle ? 0 : (status === 'PASSED' ? 100 : Math.min(100, Math.round((currentStage / 7) * 100)));
         pBar.style.width = pct + '%';
         pBar.className = 'progress-bar ' + (
             isIdle ? 'bg-secondary' : (
@@ -81,9 +88,9 @@ function updateChuteSequenceUI(data) {
     }
 
     var stages = data.stages || {};
-    // Stage keys ordered authoritatively by v2.3.18 firmware sequence:
-    // S1: Gate -> S2: Top IR Intake -> S3: HX711 Scale -> S4: AS7263 NIR -> S5: Flap Servo -> S6: Bottom IR Drop
-    var stageKeys = ['1_gate', '2_intake', '3_scale', '4_nir', '5_exit', '6_drop'];
+    // Stage keys ordered authoritatively by physical reverse vending sequence:
+    // S1: Gate -> S2: Top IR Intake -> S3: LJ12A3 Inductive -> S4: HX711 Scale -> S5: AS7263 NIR -> S6: Flap Servo -> S7: Bottom IR Drop
+    var stageKeys = ['1_gate', '2_intake', '3_prox', '4_scale', '5_nir', '6_exit', '7_drop'];
 
     stageKeys.forEach(function(key, idx) {
         var num = idx + 1;
@@ -132,11 +139,12 @@ function updateChuteSequenceUI(data) {
             var detailText = st.detail;
             if (isIdle) {
                 if (num === 1) detailText = 'Closed (0°)';
-                else if (num === 2) detailText = 'Clear (HIGH)';
-                else if (num === 3) detailText = '0.0g (Standby)';
-                else if (num === 4) detailText = 'Standby';
-                else if (num === 5) detailText = 'Neutral (0°)';
-                else if (num === 6) detailText = 'Clear (Standby)';
+                else if (num === 2) detailText = '--';
+                else if (num === 3) detailText = '--';
+                else if (num === 4) detailText = '--';
+                else if (num === 5) detailText = '--';
+                else if (num === 6) detailText = 'Closed (0°)';
+                else if (num === 7) detailText = '--';
             }
             stateEl.textContent = detailText || (isPass ? 'PASSED' : (isAct ? 'MEASURING' : (isFail ? 'REJECT' : 'WAIT')));
             stateEl.className = 'badge ' + (isPass ? 'badge-success' : (isAct ? 'badge-warning' : (isFail ? 'badge-danger' : 'badge-secondary')));
@@ -159,13 +167,13 @@ function updateChuteSequenceUI(data) {
         }
     });
 
-    if (stages['3_scale'] && stages['3_scale'].detail) {
-        var wEl = document.getElementById('seq-s3-weight');
-        if (wEl) wEl.textContent = isIdle ? '0.0g (Standby)' : stages['3_scale'].detail;
+    if (stages['4_scale'] && stages['4_scale'].detail) {
+        var wEl = document.getElementById('seq-s4-weight');
+        if (wEl) wEl.textContent = isIdle ? '--' : stages['4_scale'].detail;
     }
-    if (stages['4_nir'] && stages['4_nir'].detail) {
-        var calwEl = document.getElementById('seq-s4-calw');
-        if (calwEl) calwEl.textContent = isIdle ? 'Standby' : stages['4_nir'].detail;
+    if (stages['5_nir'] && stages['5_nir'].detail) {
+        var calwEl = document.getElementById('seq-s5-calw');
+        if (calwEl) calwEl.textContent = isIdle ? '--' : stages['5_nir'].detail;
     }
 
     var rowTotLat = document.getElementById('row-tot-lat');
@@ -237,11 +245,18 @@ function renderChuteLogTerminal(events) {
     syncChuteTerminalHeight();
 }
 
-function simulateChuteSequence(isPet) {
+function simulateChuteSequence(isPet, isMetal) {
+    var metalFlag = (isMetal === true);
+    var petFlag = (isPet === true && !metalFlag);
     fetch('/admin/api/esp32/sequence/simulate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_pet: isPet, weight: isPet ? 34.5 : 9.2, cal_w: isPet ? 48.2 : 12.0 })
+        body: JSON.stringify({
+            is_pet: petFlag,
+            is_metal: metalFlag,
+            weight: petFlag ? 34.5 : (metalFlag ? 52.0 : 9.2),
+            cal_w: petFlag ? 48.2 : 12.0
+        })
     })
     .then(function(r) { return r.json(); })
     .then(function() {
@@ -452,6 +467,7 @@ if (typeof window !== 'undefined') {
                 saveWrap.classList.add('d-none');
                 saveWrap.style.display = 'none';
             }
+            if (typeof startSequencePolling === 'function') startSequencePolling();
             setTimeout(syncChuteTerminalHeight, 50);
             setTimeout(syncChuteTerminalHeight, 250);
         });
@@ -471,6 +487,7 @@ if (typeof window !== 'undefined') {
                 saveWrap.classList.add('d-none');
                 saveWrap.style.display = 'none';
             }
+            if (typeof stopSequencePolling === 'function') stopSequencePolling();
         });
     }
 }

@@ -8,10 +8,11 @@ Authoritative Logging & Physical Chute Sequence Diagnostic Engine:
 Stages:
   1. Servo Entrance Gate (PCA9685 Ch 0: 0° Closed -> 90° Open)
   2. PIR Intake (Top IR Beam / PIN_IR_TOP GPIO 32: Beam Break LOW)
-  3. NIR Spectrometer (SparkFun AS7263 6-Channel: Cal-W [10 - 120] uW/cm², R/S/T/U/V/W)
+  3. Inductive Sensor (LJ12A3-4-Z/BX Metal Check / PIN_PROX_METAL GPIO 25: Clear / Metal)
   4. Scale (HX711 24-bit ADC: Weight in grams [20 - 90]g)
-  5. Drop Exit Servo (PCA9685 Ch 1: 90° Drop Accept / 0° Chute Return)
-  6. PIR Drop (Bottom IR Beam / PIN_IR_BOTTOM GPIO 33: Beam Break LOW Transit Verified)
+  5. NIR Spectrometer (SparkFun AS7263 6-Channel: Cal-W [10 - 120] uW/cm², R/S/T/U/V/W)
+  6. Drop Exit Servo (PCA9685 Ch 1: 90° Drop Accept / 0° Chute Return)
+  7. PIR Drop (Bottom IR Beam / PIN_IR_BOTTOM GPIO 33: Beam Break LOW Transit Verified)
 """
 
 import os
@@ -207,13 +208,14 @@ class SystemLogger(object):
 
 class ChuteSequenceTracker(object):
     """
-    Live state engine tracking the 6 physical scanning stages:
+    Live state engine tracking the 7 physical scanning stages:
       Stage 1: Servo Entrance Gate (Channel 0: 0° / 90°)
       Stage 2: PIR Intake (Top IR Beam: HIGH Clear / LOW Triggered)
-      Stage 3: Scale HX711 (Mass in grams [20 - 90]g)
-      Stage 4: NIR Spectrometer (Cal-W [10 - 120], R, S, T, U, V, W)
-      Stage 5: Drop Exit Servo (Channel 1: 90° Accept / 0° Reject)
-      Stage 6: PIR Drop (Bottom IR Beam: LOW Transit Verified)
+      Stage 3: Inductive Sensor (LJ12A3 Proximity: Clear / Metal Detected)
+      Stage 4: Scale HX711 (Mass in grams [20 - 90]g)
+      Stage 5: NIR Spectrometer (Cal-W [10 - 120], R, S, T, U, V, W)
+      Stage 6: Drop Exit Servo (Channel 1: 90° Accept / 0° Reject)
+      Stage 7: PIR Drop (Bottom IR Beam: LOW Transit Verified)
     """
 
     def __init__(self, logger=None):
@@ -273,7 +275,15 @@ class ChuteSequenceTracker(object):
                 'timestamp': None,
                 'latency_ms': 0
             },
-            '3_scale': {
+            '3_prox': {
+                'title': 'Inductive Sensor (LJ12A3)',
+                'description': 'LJ12A3-4-Z/BX metal proximity detection (GPIO 25)',
+                'status': 'idle',
+                'is_metal': None,
+                'timestamp': None,
+                'latency_ms': 0
+            },
+            '4_scale': {
                 'title': 'Scale (HX711)',
                 'description': '24-bit ADC load cell cradle',
                 'status': 'idle',
@@ -283,7 +293,7 @@ class ChuteSequenceTracker(object):
                 'timestamp': None,
                 'latency_ms': 0
             },
-            '4_nir': {
+            '5_nir': {
                 'title': 'NIR Spectrometer',
                 'description': 'SparkFun AS7263 multi-spectral sensor',
                 'status': 'idle',
@@ -295,7 +305,7 @@ class ChuteSequenceTracker(object):
                 'timestamp': None,
                 'latency_ms': 0
             },
-            '5_exit': {
+            '6_exit': {
                 'title': 'Drop Exit Servo',
                 'description': 'PCA9685 Channel 1 routing flap',
                 'status': 'idle',
@@ -304,7 +314,7 @@ class ChuteSequenceTracker(object):
                 'timestamp': None,
                 'latency_ms': 0
             },
-            '6_drop': {
+            '7_drop': {
                 'title': 'PIR Drop (Bottom IR)',
                 'description': 'E18-D80NK gravitational transit (GPIO 33)',
                 'status': 'idle',
@@ -345,7 +355,7 @@ class ChuteSequenceTracker(object):
             self.rejection_code = None
 
             # Reset subsequent stages
-            for k in ['2_intake', '3_scale', '4_nir', '5_exit', '6_drop']:
+            for k in ['2_intake', '3_prox', '4_scale', '5_nir', '6_exit', '7_drop']:
                 self.stages[k]['status'] = 'waiting'
                 self.stages[k]['timestamp'] = None
                 self.stages[k]['latency_ms'] = 0
@@ -376,13 +386,78 @@ class ChuteSequenceTracker(object):
             self.stages['2_intake']['timestamp'] = now_str
             self.stages['2_intake']['latency_ms'] = delta_ms
 
-            self.stages['3_scale']['status'] = 'active'
+            self.stages['3_prox']['status'] = 'active'
 
         self.logger.trigger("SENSOR", "STAGE 2: PIR Intake (Top IR Beam) TRIGGERED - Bottle inserted (+{}ms)".format(delta_ms),
                             {'stage': 2, 'latency_ms': delta_ms})
 
+    def on_prox_scan(self, prox_data):
+        """Stage 3: Inductive Sensor (LJ12A3 metal proximity check)."""
+        now = time.time()
+        now_str = _format_time_ms()
+        is_metal = bool(prox_data.get('metal', False))
+
+        with self._lock:
+            delta_ms = int((now - self.last_event_epoch) * 1000) if self.last_event_epoch > 0 else 0
+            self.last_event_epoch = now
+            self.total_elapsed_ms = int((now - self.start_epoch) * 1000) if self.start_epoch > 0 else 0
+
+            self.current_stage = 3
+            self.stages['3_prox']['status'] = 'failed' if is_metal else 'passed'
+            self.stages['3_prox']['is_metal'] = is_metal
+            self.stages['3_prox']['timestamp'] = now_str
+            self.stages['3_prox']['latency_ms'] = delta_ms
+
+            if not is_metal:
+                self.stages['4_scale']['status'] = 'active'
+            else:
+                self.status = "REJECTED"
+                self.rejection_reason = "Tin Can / Metal Detected"
+                self.rejection_code = "metal_detected"
+
+        verdict = "REJECT (Metal / Tin Can Detected)" if is_metal else "Non-Metal Verified (Clear)"
+        if is_metal:
+            self.logger.warn("SENSOR", "STAGE 3: Inductive Sensor (LJ12A3) - {} (+{}ms)".format(
+                verdict, delta_ms), {'stage': 3, 'is_metal': is_metal, 'latency_ms': delta_ms})
+        else:
+            self.logger.measure("SENSOR", "STAGE 3: Inductive Sensor (LJ12A3) - {} (+{}ms)".format(
+                verdict, delta_ms), {'stage': 3, 'is_metal': is_metal, 'latency_ms': delta_ms})
+
+    def on_weight_scan(self, weight_data):
+        """Stage 4: Scale HX711 measurement."""
+        now = time.time()
+        now_str = _format_time_ms()
+        weight_g = float(weight_data.get('weight_g', 0.0) or 0.0)
+        is_valid = bool(weight_data.get('is_valid', True))
+        if 'is_valid' not in weight_data:
+            bounds = self.stages['4_scale']['bounds']
+            is_valid = (bounds[0] <= weight_g <= bounds[1])
+
+        with self._lock:
+            delta_ms = int((now - self.last_event_epoch) * 1000) if self.last_event_epoch > 0 else 0
+            self.last_event_epoch = now
+            self.total_elapsed_ms = int((now - self.start_epoch) * 1000) if self.start_epoch > 0 else 0
+
+            self.current_stage = 4
+            self.stages['4_scale']['status'] = 'passed' if is_valid else 'failed'
+            self.stages['4_scale']['weight_g'] = round(weight_g, 1)
+            self.stages['4_scale']['is_valid'] = is_valid
+            self.stages['4_scale']['timestamp'] = now_str
+            self.stages['4_scale']['latency_ms'] = delta_ms
+
+            if is_valid:
+                self.stages['5_nir']['status'] = 'active'
+            else:
+                self.status = "REJECTED"
+                self.rejection_reason = "Weight Out of Bounds ({:.1f}g)".format(weight_g)
+                self.rejection_code = "invalid_weight"
+
+        verdict = "Weight Authentic" if is_valid else "Weight Out of Bounds"
+        self.logger.measure("SENSOR", "STAGE 4: Scale (HX711) - Mass: {:.1f}g -> {} (+{}ms)".format(
+            weight_g, verdict, delta_ms), {'stage': 4, 'weight_g': weight_g, 'is_valid': is_valid, 'latency_ms': delta_ms})
+
     def on_nir_scan(self, nir_data):
-        """Stage 4: NIR Spectrometer measurement (v2.3.18 flow)."""
+        """Stage 5: NIR Spectrometer measurement."""
         now = time.time()
         now_str = _format_time_ms()
         cal_w = float(nir_data.get('calibrated_w', 0.0) or 0.0)
@@ -406,82 +481,28 @@ class ChuteSequenceTracker(object):
             self.last_event_epoch = now
             self.total_elapsed_ms = int((now - self.start_epoch) * 1000) if self.start_epoch > 0 else 0
 
-            self.current_stage = 4
-            self.stages['4_nir']['status'] = 'passed' if is_pet else 'failed'
-            self.stages['4_nir']['cal_w'] = round(cal_w, 2)
-            self.stages['4_nir']['channels'] = channels
-            self.stages['4_nir']['ratios'] = ratios
-            self.stages['4_nir']['is_pet'] = is_pet
-            self.stages['4_nir']['timestamp'] = now_str
-            self.stages['4_nir']['latency_ms'] = delta_ms
+            self.current_stage = 5
+            self.stages['5_nir']['status'] = 'passed' if is_pet else 'failed'
+            self.stages['5_nir']['cal_w'] = round(cal_w, 2)
+            self.stages['5_nir']['channels'] = channels
+            self.stages['5_nir']['ratios'] = ratios
+            self.stages['5_nir']['is_pet'] = is_pet
+            self.stages['5_nir']['timestamp'] = now_str
+            self.stages['5_nir']['latency_ms'] = delta_ms
 
             if is_pet:
-                self.stages['5_exit']['status'] = 'active'
+                self.stages['6_exit']['status'] = 'active'
             else:
                 self.status = "REJECTED"
                 self.rejection_reason = nir_data.get('reason', 'NIR Spectrum Rejection')
                 self.rejection_code = nir_data.get('reason_code', 'invalid_nir')
 
         verdict = "PET Plastic Confirmed" if is_pet else "REJECT ({})".format(nir_data.get('reason', 'Non-PET'))
-        self.logger.measure("SENSOR", "STAGE 4: NIR Spectrometer Scan - Cal-W={:.2f} µW/cm² -> {} (+{}ms)".format(
-            cal_w, verdict, delta_ms), {'stage': 4, 'cal_w': cal_w, 'is_pet': is_pet, 'latency_ms': delta_ms, 'channels': channels})
-
-    def on_weight_scan(self, weight_data):
-        """Stage 3: Scale HX711 measurement (v2.3.18 flow)."""
-        now = time.time()
-        now_str = _format_time_ms()
-        weight_g = float(weight_data.get('weight_g', 0.0) or 0.0)
-        is_valid = bool(weight_data.get('is_valid', True))
-        if 'is_valid' not in weight_data:
-            bounds = self.stages['3_scale']['bounds']
-            is_valid = (bounds[0] <= weight_g <= bounds[1])
-
-        with self._lock:
-            delta_ms = int((now - self.last_event_epoch) * 1000) if self.last_event_epoch > 0 else 0
-            self.last_event_epoch = now
-            self.total_elapsed_ms = int((now - self.start_epoch) * 1000) if self.start_epoch > 0 else 0
-
-            self.current_stage = 3
-            self.stages['3_scale']['status'] = 'passed' if is_valid else 'failed'
-            self.stages['3_scale']['weight_g'] = round(weight_g, 1)
-            self.stages['3_scale']['is_valid'] = is_valid
-            self.stages['3_scale']['timestamp'] = now_str
-            self.stages['3_scale']['latency_ms'] = delta_ms
-
-            if is_valid:
-                self.stages['4_nir']['status'] = 'active'
-            else:
-                self.status = "REJECTED"
-                self.rejection_reason = "Weight Out of Bounds ({:.1f}g)".format(weight_g)
-                self.rejection_code = "invalid_weight"
-
-        verdict = "Weight Authentic" if is_valid else "Weight Out of Bounds"
-        self.logger.measure("SENSOR", "STAGE 3: Scale (HX711) - Mass: {:.1f}g -> {} (+{}ms)".format(
-            weight_g, verdict, delta_ms), {'stage': 3, 'weight_g': weight_g, 'is_valid': is_valid, 'latency_ms': delta_ms})
+        self.logger.measure("SENSOR", "STAGE 5: NIR Spectrometer Scan - Cal-W={:.2f} µW/cm² -> {} (+{}ms)".format(
+            cal_w, verdict, delta_ms), {'stage': 5, 'cal_w': cal_w, 'is_pet': is_pet, 'latency_ms': delta_ms, 'channels': channels})
 
     def on_drop_actuated(self, action='ACCEPT', angle=90):
-        """Stage 5: Drop exit servo actuated."""
-        now = time.time()
-        now_str = _format_time_ms()
-        with self._lock:
-            delta_ms = int((now - self.last_event_epoch) * 1000) if self.last_event_epoch > 0 else 0
-            self.last_event_epoch = now
-            self.total_elapsed_ms = int((now - self.start_epoch) * 1000) if self.start_epoch > 0 else 0
-
-            self.current_stage = 5
-            self.stages['5_exit']['status'] = 'passed' if action == 'ACCEPT' else 'active'
-            self.stages['5_exit']['angle'] = angle
-            self.stages['5_exit']['action'] = action
-            self.stages['5_exit']['timestamp'] = now_str
-            self.stages['5_exit']['latency_ms'] = delta_ms
-
-            self.stages['6_drop']['status'] = 'active'
-
-        self.logger.trigger("ACTUATOR", "STAGE 5: Drop Exit Servo ACTUATED - Action: {} (Angle: {}°) (+{}ms)".format(
-            action, angle, delta_ms), {'stage': 5, 'action': action, 'angle': angle, 'latency_ms': delta_ms})
-
-    def on_bottle_dropped(self, bottles_count=1):
-        """Stage 6: PIR Drop (Bottom IR) confirms bottle transit into storage bin."""
+        """Stage 6: Drop exit servo actuated."""
         now = time.time()
         now_str = _format_time_ms()
         with self._lock:
@@ -490,17 +511,38 @@ class ChuteSequenceTracker(object):
             self.total_elapsed_ms = int((now - self.start_epoch) * 1000) if self.start_epoch > 0 else 0
 
             self.current_stage = 6
+            self.stages['6_exit']['status'] = 'passed' if action == 'ACCEPT' else 'active'
+            self.stages['6_exit']['angle'] = angle
+            self.stages['6_exit']['action'] = action
+            self.stages['6_exit']['timestamp'] = now_str
+            self.stages['6_exit']['latency_ms'] = delta_ms
+
+            self.stages['7_drop']['status'] = 'active'
+
+        self.logger.trigger("ACTUATOR", "STAGE 6: Drop Exit Servo ACTUATED - Action: {} (Angle: {}°) (+{}ms)".format(
+            action, angle, delta_ms), {'stage': 6, 'action': action, 'angle': angle, 'latency_ms': delta_ms})
+
+    def on_bottle_dropped(self, bottles_count=1):
+        """Stage 7: PIR Drop (Bottom IR) confirms bottle transit into storage bin."""
+        now = time.time()
+        now_str = _format_time_ms()
+        with self._lock:
+            delta_ms = int((now - self.last_event_epoch) * 1000) if self.last_event_epoch > 0 else 0
+            self.last_event_epoch = now
+            self.total_elapsed_ms = int((now - self.start_epoch) * 1000) if self.start_epoch > 0 else 0
+
+            self.current_stage = 7
             self.status = "PASSED"
             self.bottles_processed += bottles_count
 
-            self.stages['6_drop']['status'] = 'passed'
-            self.stages['6_drop']['transit_verified'] = True
-            self.stages['6_drop']['timestamp'] = now_str
-            self.stages['6_drop']['latency_ms'] = delta_ms
+            self.stages['7_drop']['status'] = 'passed'
+            self.stages['7_drop']['transit_verified'] = True
+            self.stages['7_drop']['timestamp'] = now_str
+            self.stages['7_drop']['latency_ms'] = delta_ms
             run_id = self._sequence_run_id
 
-        self.logger.success("CHUTE", "STAGE 6: PIR Drop (Bottom IR Beam) TRANSIT CONFIRMED - Bottle saved! Total: {}ms".format(
-            self.total_elapsed_ms), {'stage': 6, 'total_elapsed_ms': self.total_elapsed_ms, 'latency_ms': delta_ms})
+        self.logger.success("CHUTE", "STAGE 7: PIR Drop (Bottom IR Beam) TRANSIT CONFIRMED - Bottle saved! Total: {}ms".format(
+            self.total_elapsed_ms), {'stage': 7, 'total_elapsed_ms': self.total_elapsed_ms, 'latency_ms': delta_ms})
         self._schedule_auto_reset(run_id, delay_sec=8.0)
 
     def on_rejected(self, reason='Item Rejected', code=None):
@@ -512,10 +554,9 @@ class ChuteSequenceTracker(object):
             self.status = "REJECTED"
             self.rejection_reason = reason
             self.rejection_code = code or 'item_rejected'
-            self.stages['5_exit']['action'] = 'REJECT'
-            self.stages['5_exit']['status'] = 'failed'
-            self.stages['5_exit']['timestamp'] = now_str
-            self.stages['5_exit']['latency_ms'] = delta_ms
+            self.stages['6_exit']['action'] = 'REJECT'
+            self.stages['6_exit']['status'] = 'failed'
+            self.stages['6_exit']['timestamp'] = now_str
             run_id = self._sequence_run_id
 
         self.logger.warn("CHUTE", "Chute Classification REJECTED: {} (+{}ms)".format(reason, delta_ms),
@@ -565,27 +606,38 @@ class ChuteSequenceTracker(object):
                 st_status = st.get('status', 'idle')
                 st['elapsed_ms'] = st.get('latency_ms', 0) if (self.status != 'IDLE' and st_status != 'idle') else 0
                 if k == '1_gate':
-                    st['detail'] = 'Open ({}°)'.format(st.get('angle', 0)) if st.get('angle', 0) > 0 else 'Closed (0°)'
+                    st['detail'] = 'Open ({}°)'.format(st.get('angle', 0)) if (self.status != 'IDLE' and st.get('angle', 0) > 0) else 'Closed (0°)'
                 elif k == '2_intake':
-                    st['detail'] = 'Intrusion (LOW)' if st.get('triggered') else 'Clear (HIGH)'
-                elif k == '3_scale':
-                    if st_status == 'idle' or st.get('is_valid') is None:
-                        st['detail'] = '0.0g (Standby)' if st_status == 'idle' else 'Measuring...'
+                    st['detail'] = '--' if self.status == 'IDLE' else ('Intrusion (LOW)' if st.get('triggered') else 'Clear (HIGH)')
+                elif k == '3_prox':
+                    if self.status == 'IDLE':
+                        st['detail'] = '--'
+                    elif st_status == 'idle' or st.get('is_metal') is None:
+                        st['detail'] = 'Checking...'
+                    else:
+                        st['detail'] = 'Metal Detected' if st.get('is_metal') else 'Clear (Non-Metal)'
+                elif k == '4_scale':
+                    if self.status == 'IDLE':
+                        st['detail'] = '--'
+                    elif st_status == 'idle' or st.get('is_valid') is None:
+                        st['detail'] = 'Measuring...'
                     else:
                         st['detail'] = 'Mass: {:.1f}g ({})'.format(st.get('weight_g', 0.0), 'Valid' if st.get('is_valid') else 'Wait')
-                elif k == '4_nir':
-                    if st_status == 'idle' or st.get('is_pet') is None:
-                        st['detail'] = 'Standby' if st_status == 'idle' else 'Scanning...'
+                elif k == '5_nir':
+                    if self.status == 'IDLE':
+                        st['detail'] = '--'
+                    elif st_status == 'idle' or st.get('is_pet') is None:
+                        st['detail'] = 'Scanning...'
                     else:
                         st['detail'] = 'Cal-W: {:.1f} uW/cm2 ({})'.format(st.get('cal_w', 0.0), 'PET' if st.get('is_pet') else 'REJECT')
-                elif k == '5_exit':
-                    if st_status == 'idle' or not st.get('action'):
-                        st['detail'] = 'Neutral (0°)'
+                elif k == '6_exit':
+                    if self.status == 'IDLE' or not st.get('action'):
+                        st['detail'] = 'Closed (0°)'
                     else:
                         st['detail'] = '{} ({}°)'.format(st.get('action') or 'Flap', st.get('angle', 0))
-                elif k == '6_drop':
-                    if st_status == 'idle':
-                        st['detail'] = 'Clear (Standby)'
+                elif k == '7_drop':
+                    if self.status == 'IDLE':
+                        st['detail'] = '--'
                     else:
                         st['detail'] = 'Transit OK (+1)' if st.get('transit_verified') else 'Awaiting Fall'
 
@@ -618,9 +670,9 @@ class ChuteSequenceTracker(object):
                 'recent_logs': events_copy
             }
 
-    def simulate_scan(self, is_pet=True, weight=35.0, cal_w=48.5, delay_ms=400):
+    def simulate_scan(self, is_metal=False, is_pet=True, weight=35.0, cal_w=48.5, delay_ms=400):
         """
-        Executes a background simulation of the 6-stage physical scanning sequence.
+        Executes a background simulation of the 7-stage physical scanning sequence.
         Permits testing and visual verification without physical hardware actuation.
         """
         def _sim_worker():
@@ -634,7 +686,20 @@ class ChuteSequenceTracker(object):
                 self.on_intake_triggered('SIM_SESSION')
                 time.sleep(sec * 0.6)
 
-                # Stage 3: Scale Weight Scan (v2.3.18 flow: evaluated first)
+                # Stage 3: Inductive Metal Proximity Check
+                prox_payload = {'metal': is_metal}
+                self.on_prox_scan(prox_payload)
+                time.sleep(sec * 0.4)
+
+                if is_metal:
+                    self.on_drop_actuated('REJECT', angle=0)
+                    time.sleep(sec * 0.5)
+                    self.on_rejected('Tin Can / Metal Detected', 'metal_detected')
+                    time.sleep(sec * 0.5)
+                    self.on_gate_closed()
+                    return
+
+                # Stage 4: Scale Weight Scan
                 scale_payload = {
                     'weight_g': weight,
                     'is_valid': (20.0 <= weight <= 90.0)
@@ -650,7 +715,7 @@ class ChuteSequenceTracker(object):
                     self.on_gate_closed()
                     return
 
-                # Stage 4: NIR Spectrometer Scan (evaluated on valid-weight items)
+                # Stage 5: NIR Spectrometer Scan (evaluated on valid-weight items)
                 nir_payload = {
                     'calibrated_w': cal_w,
                     'is_pet': is_pet,
@@ -678,11 +743,11 @@ class ChuteSequenceTracker(object):
                     self.on_gate_closed()
                     return
 
-                # Stage 5: Drop Exit Flap Actuation
+                # Stage 6: Drop Exit Flap Actuation
                 self.on_drop_actuated('ACCEPT', angle=90)
                 time.sleep(sec * 0.8)
 
-                # Stage 6: PIR Drop Bottom IR Transit Confirmation
+                # Stage 7: PIR Drop Bottom IR Transit Confirmation
                 self.on_bottle_dropped(1)
                 time.sleep(sec * 0.5)
                 self.on_gate_closed()

@@ -480,6 +480,79 @@ int getBinDistanceCm() {
 }
 
 // -----------------------------------------------------------------------------
+// HARDENED LOAD CELL (HX711) DIGITAL FILTER & SAFE ZEROING
+// -----------------------------------------------------------------------------
+float readFilteredWeightG(uint8_t sampleCount = 5) {
+    if (!hx711Found) return 0.0f;
+    if (sampleCount < 3) sampleCount = 3;
+    if (sampleCount > 9) sampleCount = 9;
+
+    float samples[9];
+    uint8_t validCount = 0;
+
+    for (uint8_t i = 0; i < sampleCount; ++i) {
+        if (scale.wait_ready_timeout(150)) {
+            samples[validCount++] = scale.get_units(1);
+        }
+    }
+
+    if (validCount == 0) return lastMeasuredWeightG;
+    if (validCount < 3) {
+        float sum = 0.0f;
+        for (uint8_t i = 0; i < validCount; ++i) sum += samples[i];
+        return sum / validCount;
+    }
+
+    // Insertion sort to extract trimmed median
+    for (uint8_t i = 1; i < validCount; ++i) {
+        float key = samples[i];
+        int j = i - 1;
+        while (j >= 0 && samples[j] > key) {
+            samples[j + 1] = samples[j];
+            j = j - 1;
+        }
+        samples[j + 1] = key;
+    }
+
+    // Discard min and max outliers; average the middle samples
+    float sum = 0.0f;
+    for (uint8_t i = 1; i < validCount - 1; ++i) {
+        sum += samples[i];
+    }
+    float result = sum / (validCount - 2);
+
+    // Deadband zero clamp: clamp ±2.5g around zero to 0.0g to eliminate ambient noise / air drift
+    if (fabs(result) < 2.5f) {
+        result = 0.0f;
+    }
+
+    return result;
+}
+
+bool safeTareScale(unsigned long settleMs = 400, float maxLoadGuardG = 8.0f) {
+    if (!hx711Found) return false;
+    if (settleMs > 0) {
+        delay(settleMs);
+    }
+    // Sanity Guard: Never zero-calibrate if cradle has an object (> maxLoadGuardG) resting on it!
+    // If maxLoadGuardG <= 0.0f, guard is disabled (e.g. boot tare or explicit admin tare).
+    if (maxLoadGuardG > 0.0f) {
+        float curReading = readFilteredWeightG(5);
+        if (fabs(curReading) > maxLoadGuardG) {
+            logWarn("SCALE", "Tare ABORTED: Cradle occupied or non-zero load (%.1f g > %.1fg). Preserving zero reference.", curReading, maxLoadGuardG);
+            return false;
+        }
+    }
+    if (scale.wait_ready_timeout(250)) {
+        scale.tare(5);
+        lastMeasuredWeightG = 0.0f;
+        logDebug("SCALE", "Scale safely zero-calibrated. New Offset=%ld", scale.get_offset());
+        return true;
+    }
+    return false;
+}
+
+// -----------------------------------------------------------------------------
 // NVS PREFERENCES CONFIGURATION
 // -----------------------------------------------------------------------------
 void loadPreferences() {
@@ -492,7 +565,7 @@ void loadPreferences() {
     config.pet_nir_w_max = preferences.getInt("nir_max", 120);
     config.entrance_gate_timeout = preferences.getInt("ent_tout", 65);
     config.settle_time_ms = preferences.getInt("stl_ms", 1000);
-    config.success_drop_tout_ms = preferences.getInt("suc_tout", 3100);
+    config.success_drop_tout_ms = preferences.getInt("suc_tout", 7500);
     config.retrieval_timeout_s = preferences.getInt("ret_tout", 50);
     config.ent_open_angle = preferences.getInt("ent_open", 90);
     config.ent_close_angle = preferences.getInt("ent_close", 0);
@@ -664,10 +737,10 @@ void sensorTaskCode(void* parameter) {
         if (entranceGateRequested.exchange(false)) {
             xSemaphoreTake(creditMutex, portMAX_DELAY);
             bool sensorReady = !config.require_nir_sensor || spectrometerFound;
-            bool permitted = creditStorageOk && (creditJournal.phase == 0 || creditJournal.phase == 2) &&
+            bool permitted = creditStorageOk && (creditJournal.phase == 0 || creditJournal.phase == 2 || creditJournal.phase == 3) &&
                 creditJournal.session[0] && !finishRequested && pca9685Found && sensorReady;
             if (permitted) {
-                if (creditJournal.phase == 2) {
+                if (creditJournal.phase == 2 || creditJournal.phase == 3) {
                     creditJournal.phase = 0;
                     saveCreditJournal();
                 }
@@ -694,19 +767,17 @@ void sensorTaskCode(void* parameter) {
 
             logDebug("CYCLE", "Starting deposit cycle for session '%s'...", curSession);
             manualGateTestOpen = false;
-            setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle); // Ensure drop flap is locked closed before entrance opens
+            
+            // Ensure drop flap is locked closed before entrance opens, but never crush an active obstruction!
+            if (digitalRead(PIN_IR_BOTTOM) == HIGH) {
+                setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
+                vTaskDelay(pdMS_TO_TICKS(100));
+            } else {
+                logWarn("AIRLOCK", "Bottom IR still obstructed (LOW)! Drop flap held open to prevent bottle jam.");
+            }
+            
             setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_open_angle); // Open entrance
             gateStateEvent(true);
-
-            // Tare scale cleanly right after entrance servo actuation settles to eliminate prior noise / mechanical drift
-            vTaskDelay(pdMS_TO_TICKS(150)); // Allow entrance servo transit vibration to settle
-            if (hx711Found && scale.wait_ready_timeout(200)) {
-                scale.tare(3); // Fast 3-sample zero calibration
-                lastMeasuredWeightG = 0.0f;
-                logDebug("SCALE", "Scale tared cleanly after entrance servo opened. Offset=%ld", scale.get_offset());
-            } else {
-                logDebug("SCALE", "Scale tare bypassed (hx711Found=%d)", hx711Found);
-            }
             topIrTriggered = false; // Clear any latch from servo movement vibration
             
             unsigned long openTime = millis();
@@ -730,6 +801,9 @@ void sensorTaskCode(void* parameter) {
                 if (topIrTriggered || digitalRead(PIN_IR_TOP) == LOW) {
                     dropped = true;
                     topIrTriggered = false;
+                    char intakeBuf[96];
+                    snprintf(intakeBuf, sizeof(intakeBuf), "{\"event\":\"INTAKE\",\"session_id\":\"%s\"}", curSession);
+                    emitSerialLine(intakeBuf);
                     logDebug("AIRLOCK", "Top IR beam broken at +%lu ms! Bottle insertion detected.", millis() - openTime);
                     break;
                 }
@@ -770,8 +844,8 @@ void sensorTaskCode(void* parameter) {
             if (dropped && !wasForced) {
                 logDebug("AIRLOCK", "Bottle detected at gate. Waiting for bottle/hand to fully clear entrance doorway...");
                 unsigned long passageStart = millis();
-                const unsigned long PASSAGE_TIMEOUT_MS = 8000; // Up to 8 seconds for insertion
-                const unsigned long CLEAR_STABLE_MS = 500;     // Beam must be clear continuously for 500ms
+                const unsigned long PASSAGE_TIMEOUT_MS = 2800; // Responsive window (2.8s) for long PET bottles & hand clearance
+                const unsigned long CLEAR_STABLE_MS = 350;     // Beam must be clear continuously for 350ms
                 unsigned long clearStartTime = 0;
                 bool passageCompleted = false;
 
@@ -820,13 +894,8 @@ void sensorTaskCode(void* parameter) {
                     scopedEvent("TIMEOUT", curSession);
                 }
 
-                // Tare to 0 as well when inserting is done and entrance gate closed safely
-                vTaskDelay(pdMS_TO_TICKS(150)); // Allow entrance servo physical travel to settle
-                if (hx711Found && scale.wait_ready_timeout(200)) {
-                    scale.tare(3);
-                    lastMeasuredWeightG = 0.0f;
-                    logDebug("SCALE", "Scale tared to 0 after inserting finished / gate closed. Offset=%ld", scale.get_offset());
-                }
+                // Zero-calibrate scale if empty after inserting timeout
+                safeTareScale(400);
 
                 depositCycleBusy = false;
                 continue;
@@ -844,10 +913,17 @@ void sensorTaskCode(void* parameter) {
             float lastNirAbsorption = 0.0f;
 
             int metalReading = digitalRead(PIN_PROX_METAL);
+            bool isMetal = (metalReading == LOW);
             logDebug("SENSOR", "Proximity: Metal(GPIO%d)=%s (raw=%d)",
-                     PIN_PROX_METAL, metalReading == LOW ? "TRIGGERED (METAL)" : "CLEAR (NO METAL)", metalReading);
+                     PIN_PROX_METAL, isMetal ? "TRIGGERED (METAL)" : "CLEAR (NO METAL)", metalReading);
 
-            if (metalReading == LOW) {
+            // Emit live inductive proximity sample telemetry to Linux host
+            char proxBuf[96];
+            snprintf(proxBuf, sizeof(proxBuf), "{\"event\":\"PROX_SAMPLE\",\"metal\":%s,\"is_valid\":%s}",
+                     isMetal ? "true" : "false", !isMetal ? "true" : "false");
+            emitSerialLine(proxBuf);
+
+            if (isMetal) {
                 isValid = false;
                 rejectReason = MSG_REJECT_TIN;
                 rejectReasonCode = "metal_detected";
@@ -857,9 +933,9 @@ void sensorTaskCode(void* parameter) {
             // 3b. HX711 Mass & Weight Discrimination (Sampled Unconditionally)
             float weightG = 0.0f;
             if (hx711Found) {
-                weightG = scale.get_units(5);
+                weightG = readFilteredWeightG(5);
                 lastMeasuredWeightG = weightG;
-                logDebug("WEIGHT", "Measured Bottle Weight: %.1f g (Valid Range: [%d - %d g])",
+                logDebug("WEIGHT", "Measured Bottle Weight: %.1f g (Filtered, Valid Range: [%d - %d g])",
                          weightG, config.min_bottle_weight_g, config.max_bottle_weight_g);
 
                 if (isValid && config.require_weight_sensor) {
@@ -890,6 +966,15 @@ void sensorTaskCode(void* parameter) {
                 logWarn("DECISION", "REJECT: %s", rejectReasonDesc);
             }
 
+            // Emit live weight sample telemetry to Linux host
+            if (hx711Found) {
+                bool wtValid = (!config.require_weight_sensor || (weightG >= (float)config.min_bottle_weight_g && weightG <= (float)config.max_bottle_weight_g));
+                char wtBuf[128];
+                snprintf(wtBuf, sizeof(wtBuf), "{\"event\":\"WEIGHT_SAMPLE\",\"weight_g\":%.1f,\"is_valid\":%s}",
+                         weightG, wtValid ? "true" : "false");
+                emitSerialLine(wtBuf);
+            }
+
             // 3c. AS7263 NIR Optical Spectroscopy (Evaluated on Valid-Weight Items)
             if (isValid) {
                 if (spectrometerFound) {
@@ -917,6 +1002,12 @@ void sensorTaskCode(void* parameter) {
                     logDebug("NIR", "Ratios: W/V=%.2f, S/R=%.2f, T/W=%.2f | Cal-W: %.2f | Verdict: %s (%s)",
                              eval.wv_ratio, eval.sr_ratio, eval.tw_ratio, nirAbsorption,
                              eval.is_pet ? "ACCEPT" : "REJECT", eval.reason_desc);
+
+                    char nirBuf[256];
+                    snprintf(nirBuf, sizeof(nirBuf),
+                             "{\"event\":\"NIR_SAMPLE\",\"calibrated_w\":%.2f,\"is_pet\":%s,\"r\":%d,\"s\":%d,\"t\":%d,\"u\":%d,\"v\":%d,\"w\":%d,\"wv_ratio\":%.2f,\"sr_ratio\":%.2f,\"tw_ratio\":%.2f,\"reason\":\"%s\",\"reason_code\":\"%s\"}",
+                             nirAbsorption, eval.is_pet ? "true" : "false", r, s, t, u, v, w, eval.wv_ratio, eval.sr_ratio, eval.tw_ratio, eval.reason_desc, eval.reason_code);
+                    emitSerialLine(nirBuf);
 
                     if (config.require_nir_sensor) {
                         if (!eval.is_pet) {
@@ -956,6 +1047,9 @@ void sensorTaskCode(void* parameter) {
                 logDebug("ACTUATION", "Opening success flap (Ch 1 -> %d deg). Awaiting drop transit & clear (tout=%d ms)...",
                          config.suc_open_angle, config.success_drop_tout_ms);
                 setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_open_angle);
+                char dropBuf[96];
+                snprintf(dropBuf, sizeof(dropBuf), "{\"event\":\"DROP_ACTUATED\",\"angle\":%d,\"action\":\"ACCEPT\"}", config.suc_open_angle);
+                emitSerialLine(dropBuf);
 
                 unsigned long gateOpenTime = millis();
                 bool passedDrop = false;
@@ -987,28 +1081,24 @@ void sensorTaskCode(void* parameter) {
                     vTaskDelay(pdMS_TO_TICKS(20));
                 }
 
-                // Drop flap closes ONLY after object is no longer detected + hold moment, or on watchdog timeout
-                setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
-                logDebug("ACTUATION", "Closed success flap (Ch 1 -> %d deg). Drop Passed=%d",
-                         config.suc_close_angle, passedDrop);
-
+                // Drop flap closes ONLY after object was confirmed passed through PIR drop and cleared!
                 if (passedDrop) {
+                    setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
+                    logDebug("ACTUATION", "Drop transit verified. Success flap closed (Ch 1 -> %d deg).", config.suc_close_angle);
                     completeDrop(true);
                     EventMsg okMsg = MSG_BOTTLE_SAVED;
                     postEvent(okMsg);
                     logDebug("CYCLE", "Deposit cycle successfully completed. Session bottles: %d",
                              currentSessionBottles.load());
 
-                    // Tare to 0 as well after bottle has dropped into storage bin and cradle is empty
-                    vTaskDelay(pdMS_TO_TICKS(100));
-                    if (hx711Found && scale.wait_ready_timeout(200)) {
-                        scale.tare(3);
-                        lastMeasuredWeightG = 0.0f;
-                        logDebug("SCALE", "Scale tared to 0 after bottle drop into bin. Offset=%ld", scale.get_offset());
-                    }
+                    // Mechanical settle delay before tare to let servo and load cell vibrations decay
+                    safeTareScale(500);
                 } else {
-                    logWarn("ACTUATION", "Drop TIMEOUT! Bottom IR was not cleared/triggered within %d ms. Chute jam possible!",
-                            config.success_drop_tout_ms);
+                    // CRITICAL: Bottle did NOT complete drop transit within timeout.
+                    // The servo drop MUST NOT close once the PIR drop didn't detect an object passed!
+                    // Leaving the flap OPEN allows gravity to finish clearing the bottle without crushing or wedging it!
+                    logWarn("ACTUATION", "Drop transit not confirmed by bottom PIR within %d ms (seen=%d, rawBottom=%d)! Flap kept OPEN to prevent bottle strike.",
+                            config.success_drop_tout_ms, bottleSeenInChute, digitalRead(PIN_IR_BOTTOM));
                     completeDrop(false);
                     EventMsg failMsg = MSG_DROP_TIMEOUT; // Blocked in chute
                     postEvent(failMsg);
@@ -1104,8 +1194,8 @@ void sensorTaskCode(void* parameter) {
 
                         // Analyze current weight vs previous
                         float currWeight = 0.0f;
-                        if (hx711Found && scale.wait_ready_timeout(100)) {
-                            currWeight = scale.get_units(3);
+                        if (hx711Found) {
+                            currWeight = readFilteredWeightG(3);
                             lastMeasuredWeightG = currWeight;
                         }
                         float weightDiff = initialWeightG - currWeight; // prev - current
@@ -1169,6 +1259,9 @@ void sensorTaskCode(void* parameter) {
                     String clrOutput;
                     serializeJson(clrDoc, clrOutput);
                     emitSerialLine(clrOutput);
+
+                    // Zero-calibrate scale once item is verified removed
+                    safeTareScale(300);
 
                     // Re-arm entrance gate for immediate next bottle insert
                     entranceGateRequested = true;
@@ -1471,11 +1564,11 @@ void setup() {
 
     logDebug("SCALE", "Probing HX711 Load Cell on DOUT=GPIO %d, SCK=GPIO %d...", PIN_HX711_DOUT, PIN_HX711_SCK);
     scale.begin(PIN_HX711_DOUT, PIN_HX711_SCK);
-    if (scale.wait_ready_timeout(200)) {
+    if (scale.wait_ready_timeout(500)) {
         hx711Found = true;
         scale.set_scale(config.weight_cal_factor > 0 ? (float)config.weight_cal_factor : 260.0f);
-        scale.tare();
-        logDebug("SCALE", "HX711 Load Cell detected and tared successfully!");
+        safeTareScale(200, 0.0f);
+        logDebug("SCALE", "HX711 Load Cell detected and safely zeroed!");
     } else {
         hx711Found = false;
         logDebug("SCALE", "HX711 Load Cell not detected (running in NIR-only mode).");
@@ -1493,7 +1586,12 @@ void setup() {
 
     logDebug("SERVO", "Aligning entrance and success servos to initial closed angles...");
     setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_close_angle);
-    setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
+    if (digitalRead(PIN_IR_BOTTOM) == HIGH) {
+        setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_close_angle);
+    } else {
+        logWarn("SERVO", "Object in bottom chute sensor at boot; keeping success flap open to prevent crushing.");
+        setServoAngle(PCA_CHANNEL_SUCCESS, config.suc_open_angle);
+    }
 
     logDebug("NVS", "Initializing credit journal storage...");
     creditMutex = xSemaphoreCreateMutex();
@@ -1506,6 +1604,11 @@ void setup() {
         } else if (length == sizeof(creditJournal)) {
             creditStore.getBytes("receipt", &creditJournal, sizeof(creditJournal));
             creditStorageOk = creditJournal.version == 2 && creditJournal.phase <= 3 && creditJournal.session[36] == 0;
+            if (creditStorageOk && (creditJournal.phase == 1 || creditJournal.phase == 3)) {
+                logWarn("BOOT", "Recovering from interrupted/unconfirmed phase %d at boot -> resetting to phase 0.", creditJournal.phase);
+                creditJournal.phase = 0;
+                saveCreditJournal();
+            }
             logDebug("NVS", "Loaded existing journal: ver=%u, seq=%llu, total=%u, phase=%d, session='%s', valid=%d",
                      creditJournal.version, (unsigned long long)creditJournal.sequence,
                      creditJournal.total, creditJournal.phase, creditJournal.session, creditStorageOk.load());
@@ -1588,13 +1691,13 @@ void loop() {
             int timeout = command["timeout"] | desiredConfig.entrance_gate_timeout;
             xSemaphoreTake(creditMutex, portMAX_DELAY);
             bool same = strcmp(sid, creditJournal.session) == 0;
-            bool phaseOk = (creditJournal.phase == 0) || (same && creditJournal.phase == 2);
+            bool phaseOk = (creditJournal.phase == 0) || (same && creditJournal.phase == 2) || (creditJournal.phase == 3 && !depositCycleBusy.load()) || (!same && !depositCycleBusy.load());
             logDebug("CMD", "OPEN_GATE received. session='%s' (same=%d, phaseOk=%d), timeout=%d, phase=%d, busy=%d",
                      sid, same, phaseOk, timeout, creditJournal.phase, depositCycleBusy.load());
             if (command["protocol"] == 2 && strlen(sid) > 0 && strlen(sid) <= 36 &&
                 creditStorageOk && phaseOk && (!depositCycleBusy || same) &&
                 !finishRequested && timeout >= 1 && timeout <= 600) {
-                if (creditJournal.phase == 2) {
+                if (creditJournal.phase == 2 || creditJournal.phase == 3) {
                     creditJournal.phase = 0;
                     saveCreditJournal();
                 }
@@ -1603,6 +1706,7 @@ void loop() {
                              sid, creditJournal.session);
                     strlcpy(creditJournal.session, sid, sizeof(creditJournal.session));
                     creditJournal.total = 0;
+                    creditJournal.phase = 0;
                     currentSessionBottles = 0;
                     saveCreditJournal();
                 }
@@ -1650,7 +1754,9 @@ void loop() {
             }
             if (pca9685Found && !depositCycleBusy && !manualGateTestOpen.load()) {
                 setServoAngle(PCA_CHANNEL_ENTRANCE, desiredConfig.ent_close_angle);
-                setServoAngle(PCA_CHANNEL_SUCCESS, desiredConfig.suc_close_angle);
+                if (digitalRead(PIN_IR_BOTTOM) == HIGH) {
+                    setServoAngle(PCA_CHANNEL_SUCCESS, desiredConfig.suc_close_angle);
+                }
                 gateStateEvent(false);
             }
             xSemaphoreGive(creditMutex);
@@ -1905,11 +2011,21 @@ void loop() {
                          !spectrometerFound ? "spectrometer_offline" : "machine_busy");
                 emitSerialLine(nirBuf);
             }
+        } else if (strcmp(cmd, "TEST_PROX") == 0) {
+            int metalReading = digitalRead(PIN_PROX_METAL);
+            bool isMetal = (metalReading == LOW);
+            logDebug("SENSOR", "--- On-Demand LJ12A3 Proximity Scan: %s (raw=%d) ---",
+                     isMetal ? "TRIGGERED (METAL)" : "CLEAR (NO METAL)", metalReading);
+            char proxBuf[128];
+            snprintf(proxBuf, sizeof(proxBuf),
+                     "{\"event\":\"PROX_TEST\",\"success\":true,\"metal\":%s,\"pin\":%d,\"raw\":%d}",
+                     isMetal ? "true" : "false", PIN_PROX_METAL, metalReading);
+            emitSerialLine(proxBuf);
         } else if (strcmp(cmd, "TEST_WEIGHT") == 0) {
             if (hx711Found && !depositCycleBusy) {
-                float weightG = scale.get_units(2);
+                float weightG = readFilteredWeightG(5);
                 lastMeasuredWeightG = weightG;
-                logDebug("SCALE", "--- Live HX711 Load Cell Scan: %.1f g ---", weightG);
+                logDebug("SCALE", "--- Live HX711 Load Cell Scan: %.1f g (Filtered) ---", weightG);
                 char wtBuf[192];
                 snprintf(wtBuf, sizeof(wtBuf),
                          "{\"event\":\"WEIGHT_TEST\",\"success\":true,\"weight_g\":%.1f,\"min_g\":%d,\"max_g\":%d,\"cal_factor\":%d}",
@@ -1925,8 +2041,8 @@ void loop() {
             }
         } else if (strcmp(cmd, "TARE_WEIGHT") == 0) {
             if (hx711Found && !depositCycleBusy) {
-                scale.tare();
-                logDebug("SCALE", "--- HX711 Scale Tared (Zeroed) ---");
+                bool ok = safeTareScale(100, 0.0f);
+                logDebug("SCALE", "--- HX711 Scale Tared (Zeroed, ok=%d) ---", ok);
                 emitSerialLine("{\"event\":\"TARE_OK\",\"success\":true}");
             } else {
                 emitSerialLine("{\"event\":\"TARE_REJECTED\",\"success\":false}");

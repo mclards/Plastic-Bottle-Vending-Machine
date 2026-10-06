@@ -586,6 +586,11 @@ class TimePortal(object):
         self.p.active_depositor_ip=ip;self.p.active_depositor_mac=mac;self.p.active_depositor_sid=sid
         self.p.active_depositor_last_seen=now;self.p.active_depositor_timeout=now+timeout+5
         self.p.active_deposit_rejection=None
+        try:
+            if hasattr(self.p, 'chute_tracker') and self.p.chute_tracker:
+                self.p.chute_tracker.on_gate_open(session_id=sid, angle=90)
+        except Exception:
+            pass
         if self.p.transmit_to_esp32({'cmd':'OPEN_GATE','timeout':timeout,'session_id':sid,'protocol':2}) is False:
             with self.p.db_connection() as conn:
                 conn.execute("UPDATE deposit_sessions SET status='HOLD',error='Hardware unavailable' WHERE id=?",(sid,))
