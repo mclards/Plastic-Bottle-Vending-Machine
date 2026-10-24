@@ -243,8 +243,9 @@ class ChuteSequenceTracker(object):
         """Schedules a graceful auto-reset back to IDLE after a view window."""
         def _timer_worker():
             time.sleep(delay_sec)
+            reset_performed = False
             with self._lock:
-                if self._sequence_run_id == run_id and self.status in ('PASSED', 'REJECTED', 'TIMEOUT'):
+                if self._sequence_run_id == run_id:
                     self.status = "IDLE"
                     self.current_stage = 0
                     self.active_session_id = None
@@ -254,7 +255,9 @@ class ChuteSequenceTracker(object):
                     self.rejection_reason = None
                     self.rejection_code = None
                     self.stages = self._build_default_stages()
-            self.logger.info("CHUTE", "Chute sequence monitor returned to STANDBY")
+                    reset_performed = True
+            if reset_performed:
+                self.logger.info("CHUTE", "Chute sequence monitor returned to STANDBY")
 
         t = threading.Thread(target=_timer_worker)
         t.daemon = True
@@ -359,11 +362,10 @@ class ChuteSequenceTracker(object):
             self.rejection_reason = None
             self.rejection_code = None
 
-            # Reset subsequent stages
+            # Reset all stages to clean defaults so no stale readings bleed over
+            self.stages = self._build_default_stages()
             for k in ['2_intake', '3_prox', '4_scale', '5_nir', '6_exit', '7_drop']:
                 self.stages[k]['status'] = 'waiting'
-                self.stages[k]['timestamp'] = None
-                self.stages[k]['latency_ms'] = 0
 
             self.stages['1_gate']['status'] = 'active'
             self.stages['1_gate']['angle'] = angle
@@ -630,14 +632,18 @@ class ChuteSequenceTracker(object):
         """Entrance gate closed."""
         with self._lock:
             self.stages['1_gate']['angle'] = 0
-            if self.status == 'SCANNING' and self.current_stage == 1:
+            if self.current_stage >= 1:
                 self.stages['1_gate']['status'] = 'passed'
             curr_status = self.status
+            curr_stage = self.current_stage
             run_id = self._sequence_run_id
 
         self.logger.info("CHUTE", "Servo Entrance Gate CLOSED (Angle: 0°)")
-        if curr_status in ('PASSED', 'REJECTED', 'TIMEOUT'):
-            self._schedule_auto_reset(run_id, delay_sec=7.0)
+        # If gate closed with no bottle transit (stage <= 1), reset quickly; otherwise graceful view window
+        if curr_stage <= 1:
+            self._schedule_auto_reset(run_id, delay_sec=2.0)
+        elif curr_status in ('PASSED', 'REJECTED', 'TIMEOUT', 'IDLE'):
+            self._schedule_auto_reset(run_id, delay_sec=6.0)
 
     def get_state(self):
         """Returns deep snapshot of current state."""
@@ -657,40 +663,36 @@ class ChuteSequenceTracker(object):
             for k, st in st_copy.items():
                 st_status = st.get('status', 'idle')
                 st['elapsed_ms'] = st.get('latency_ms', 0) if (self.status != 'IDLE' and st_status != 'idle') else 0
-                if k == '1_gate':
-                    st['detail'] = 'Open ({}°)'.format(st.get('angle', 0)) if (self.status != 'IDLE' and st.get('angle', 0) > 0) else 'Closed (0°)'
-                elif k == '2_intake':
-                    st['detail'] = '--' if self.status == 'IDLE' else ('Intrusion (LOW)' if st.get('triggered') else 'Clear (HIGH)')
-                elif k == '3_prox':
-                    if self.status == 'IDLE':
+                if self.status == 'IDLE' or st_status in ('idle', 'waiting'):
+                    if k == '1_gate':
+                        st['detail'] = 'Open ({}°)'.format(st.get('angle', 0)) if (self.status != 'IDLE' and st.get('angle', 0) > 0) else 'Closed (0°)'
+                    elif k == '6_exit':
+                        st['detail'] = '{} ({}°)'.format(st.get('action') or 'Flap', st.get('angle', 0)) if (self.status != 'IDLE' and st.get('action')) else 'Closed (0°)'
+                    else:
                         st['detail'] = '--'
-                    elif st_status == 'idle' or st.get('is_metal') is None:
-                        st['detail'] = 'Checking...'
-                    else:
-                        st['detail'] = 'Metal Detected' if st.get('is_metal') else 'Clear (Non-Metal)'
-                elif k == '4_scale':
-                    if self.status == 'IDLE':
-                        st['detail'] = '--'
-                    elif st_status == 'idle' or st.get('is_valid') is None:
-                        st['detail'] = 'Measuring...'
-                    else:
-                        st['detail'] = 'Mass: {:.1f}g ({})'.format(st.get('weight_g', 0.0), 'Valid' if st.get('is_valid') else 'Wait')
-                elif k == '5_nir':
-                    if self.status == 'IDLE':
-                        st['detail'] = '--'
-                    elif st_status == 'idle' or st.get('is_pet') is None:
-                        st['detail'] = 'Scanning...'
-                    else:
-                        st['detail'] = 'Cal-W: {:.1f} uW/cm2 ({})'.format(st.get('cal_w', 0.0), 'PET' if st.get('is_pet') else 'REJECT')
-                elif k == '6_exit':
-                    if self.status == 'IDLE' or not st.get('action'):
-                        st['detail'] = 'Closed (0°)'
-                    else:
+                else:
+                    if k == '1_gate':
+                        st['detail'] = 'Open ({}°)'.format(st.get('angle', 0)) if st.get('angle', 0) > 0 else 'Closed (0°)'
+                    elif k == '2_intake':
+                        st['detail'] = 'Intrusion (LOW)' if st.get('triggered') else 'Clear (HIGH)'
+                    elif k == '3_prox':
+                        if st.get('is_metal') is None:
+                            st['detail'] = 'Checking...'
+                        else:
+                            st['detail'] = 'Metal Detected' if st.get('is_metal') else 'Clear (Non-Metal)'
+                    elif k == '4_scale':
+                        if st.get('is_valid') is None:
+                            st['detail'] = 'Measuring...'
+                        else:
+                            st['detail'] = 'Mass: {:.1f}g ({})'.format(st.get('weight_g', 0.0), 'Valid' if st.get('is_valid') else 'Wait')
+                    elif k == '5_nir':
+                        if st.get('is_pet') is None:
+                            st['detail'] = 'Scanning...'
+                        else:
+                            st['detail'] = 'Cal-W: {:.1f} uW/cm2 ({})'.format(st.get('cal_w', 0.0), 'PET' if st.get('is_pet') else 'REJECT')
+                    elif k == '6_exit':
                         st['detail'] = '{} ({}°)'.format(st.get('action') or 'Flap', st.get('angle', 0))
-                elif k == '7_drop':
-                    if self.status == 'IDLE':
-                        st['detail'] = '--'
-                    else:
+                    elif k == '7_drop':
                         st['detail'] = 'Transit OK (+1)' if st.get('transit_verified') else 'Awaiting Fall'
 
             events_copy = []

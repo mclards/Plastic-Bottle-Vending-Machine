@@ -1170,28 +1170,20 @@ void sensorTaskCode(void* parameter) {
                 // 4. Ensure entrance gate is OPEN so user can reach into cradle to retrieve item
                 setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_open_angle);
                 gateStateEvent(true);
+                // Allow gate opening movement to physically complete and settle vibration
+                vTaskDelay(pdMS_TO_TICKS(300));
+                topIrTriggered = false; // Discard mechanical transit / servo vibration
 
                 // 5. Await manual removal within retrieval_timeout_s
                 const uint32_t retrievalTimeoutMs = static_cast<uint32_t>(config.retrieval_timeout_s) * 1000UL;
                 unsigned long startWait = millis();
 
-                // Chute with invalid object: mark current weight, spectrum, and metal state as reference
-                float initialWeightG = 0.0f;
-                if (hx711Found) {
-                    initialWeightG = scale.is_ready() ? scale.get_units(3) : lastMeasuredWeightG;
-                    if (lastMeasuredWeightG > initialWeightG) {
-                        initialWeightG = lastMeasuredWeightG;
-                    }
-                }
-                float initialNirW = lastNirAbsorption;
-                int initialMetal = metalReading;
+                logDebug("RETRIEVAL", "Awaiting retrieval of invalid object. Scale & NIR recovery hardened. Waiting up to %u ms...",
+                         retrievalTimeoutMs);
 
-                logDebug("RETRIEVAL", "Baseline with invalid object: Wt=%.1f g, NIR Cal-W=%.2f, Metal=%d. Waiting up to %u ms...",
-                         initialWeightG, initialNirW, initialMetal, retrievalTimeoutMs);
-
-                bool passageDetected = false;
-                unsigned long passageClearStart = 0;
-                const unsigned long PASSAGE_HOLD_MS = 400; // Entrance beam must be clear for 400ms after passage
+                bool userHandEntered = false;
+                unsigned long handClearStartTime = 0;
+                const unsigned long HAND_CLEAR_STABLE_MS = 600; // Hand must be clear of doorway for >= 600ms
                 bool itemCleared = false;
                 unsigned long lastAnalysisTime = 0;
 
@@ -1204,38 +1196,36 @@ void sensorTaskCode(void* parameter) {
                     int topIrVal = digitalRead(PIN_IR_TOP);
                     int metalVal = digitalRead(PIN_PROX_METAL);
 
-                    // 1. Entrance PIR / IR detection of hand & object passage
+                    // 1. Entrance PIR / IR detection of user hand reaching in
                     if (topIrVal == LOW || topIrTriggered) {
-                        passageDetected = true;
+                        userHandEntered = true;
                         topIrTriggered = false;
-                        passageClearStart = 0; // Hand/object currently passing through doorway
-                    } else if (passageDetected) {
-                        // Hand/object has cleared doorway; start debounce moment
-                        if (passageClearStart == 0) {
-                            passageClearStart = millis();
+                        handClearStartTime = 0; // Hand/object actively inside doorway
+                    } else if (userHandEntered) {
+                        // Hand has cleared doorway; start debounce stability timer
+                        if (handClearStartTime == 0) {
+                            handClearStartTime = millis();
                         }
                     }
 
-                    // 2. Once passage is confirmed after a moment, analyze current weight vs previous, and trigger NIR
-                    bool passageMomentElapsed = passageDetected && (passageClearStart > 0) && (millis() - passageClearStart >= PASSAGE_HOLD_MS);
+                    // 2. Once hand movement is verified and doorway has cleared for at least HAND_CLEAR_STABLE_MS:
+                    bool handWithdrawnStable = userHandEntered && (handClearStartTime > 0) && ((millis() - handClearStartTime) >= HAND_CLEAR_STABLE_MS);
 
-                    if (passageMomentElapsed && (millis() - lastAnalysisTime >= 250)) {
+                    if (handWithdrawnStable && (millis() - lastAnalysisTime >= 250)) {
                         lastAnalysisTime = millis();
 
-                        // Analyze current weight vs previous
+                        // A. Inductive Metal Sensor MUST be clear (HIGH)
+                        bool metalCleared = (metalVal == HIGH);
+
+                        // B. Weight Scale Check: Weight MUST be closest to empty (<= 5.0g)
                         float currWeight = 0.0f;
                         if (hx711Found) {
-                            currWeight = readFilteredWeightG(3);
+                            currWeight = readFilteredWeightG(5);
                             lastMeasuredWeightG = currWeight;
                         }
-                        float weightDiff = initialWeightG - currWeight; // prev - current
+                        bool weightClosestToEmpty = (!hx711Found) || (fabs(currWeight) <= 5.0f);
 
-                        // Weight condition: close to zero, or negative, or significantly large positive difference (weight dropped)
-                        bool weightIndicatesEmpty = (currWeight <= 5.0f) ||
-                                                    (weightDiff >= 8.0f) ||
-                                                    (initialWeightG > 10.0f && currWeight <= initialWeightG * 0.35f);
-
-                        // Trigger NIR and compare previous vs current
+                        // C. NIR Spectrometer Check: NIR MUST detect empty chute
                         float currNirW = 0.0f;
                         if (spectrometerFound) {
                             spectrometer.enableBulb();
@@ -1244,25 +1234,27 @@ void sensorTaskCode(void* parameter) {
                             spectrometer.disableBulb();
                             currNirW = spectrometer.getCalibratedW();
                         }
+                        // Empty air baseline: Calibrated W is bounded in [15.0 - 28.0] uW/cm2, or <= 8.0 uW/cm2 (dark/shadowed)
+                        // Paper / cardboard spikes > 100 uW/cm2, and PET bottles produce 35 - 65 uW/cm2
+                        bool nirEmptyChute = (!spectrometerFound) || (currNirW <= 28.0f);
 
-                        // Empty chute baseline is tightly bounded in [18.0 - 30.0] uW/cm^2
-                        bool nirIndicatesEmpty = spectrometerFound ? (currNirW >= 18.0f && currNirW <= 30.0f) : true;
-                        bool nirDiffIndicatesEmpty = spectrometerFound ? (fabs(initialNirW - currNirW) >= 10.0f && currNirW <= 32.0f) : false;
-
-                        // Inductive metal sensor must also be clear
-                        bool metalCleared = (metalVal == HIGH);
-
-                        logDebug("RETRIEVAL", "Analysis: PrevWt=%.1f, CurrWt=%.1f (diff=%.1f, ok=%d) | PrevNIR=%.2f, CurrNIR=%.2f (empty=%d) | Metal=%s",
-                                 initialWeightG, currWeight, weightDiff, weightIndicatesEmpty,
-                                 initialNirW, currNirW, (nirIndicatesEmpty || nirDiffIndicatesEmpty),
+                        logDebug("RETRIEVAL", "Sensor Check: HandWithdrawn=OK | Wt=%.1fg (empty=%d) | NIR=%.2f (empty=%d) | Metal=%s",
+                                 currWeight, weightClosestToEmpty, currNirW, nirEmptyChute,
                                  metalCleared ? "CLEAR" : "DETECTED");
 
-                        // OR LOGIC as specified: weight indicates empty OR NIR confirms empty chute -> retrieval success!
-                        if ((weightIndicatesEmpty || nirIndicatesEmpty || nirDiffIndicatesEmpty) && metalCleared) {
+                        // STRICT CONJUNCTION (AND LOGIC):
+                        // "only be said empty once the NIR detected empty chute, weight is closest to empty, and lastly the entrance PIR detected movement again for the last time"
+                        if (metalCleared && weightClosestToEmpty && nirEmptyChute) {
                             itemCleared = true;
-                            logDebug("RETRIEVAL", ">>> RETRIEVAL CONFIRMED! Item cleared successfully (WeightEmpty=%d, NirEmpty=%d) <<<",
-                                     weightIndicatesEmpty, (nirIndicatesEmpty || nirDiffIndicatesEmpty));
+                            logDebug("RETRIEVAL", ">>> RETRIEVAL CONFIRMED: Object removed! Wt=%.1fg, NIR=%.2f, Metal=CLEAR, Doorway Clear <<<",
+                                     currWeight, currNirW);
                             break;
+                        } else {
+                            // Object is still detected inside the cradle!
+                            // Reset hand detection state so another explicit retrieval movement is required
+                            logDebug("RETRIEVAL", "Chute NOT empty! Resetting hand latch. Waiting for user to remove object...");
+                            userHandEntered = false;
+                            handClearStartTime = 0;
                         }
                     }
 

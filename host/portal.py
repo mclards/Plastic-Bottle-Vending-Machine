@@ -2371,6 +2371,9 @@ def admin_api_esp32_close_entrance():
 def admin_api_esp32_sequence_monitor():
     if not session.get('admin_logged_in'):
         return (jsonify({'error': 'unauthorized'}), 401)
+    # Ensure chute tracker resets to IDLE if no deposit session is active and gate is closed
+    if not is_deposit_session_active() and not physical_esp32_state.get('gate_open', False) and chute_tracker.status == 'SCANNING' and chute_tracker.current_stage <= 1:
+        chute_tracker.reset()
     return jsonify({'success': True, 'data': chute_tracker.get_state()})
 
 @app.route('/admin/api/esp32/sequence/simulate', methods=['POST'])

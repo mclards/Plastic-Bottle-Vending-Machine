@@ -69,6 +69,30 @@ class TestChuteFlowAndLogger(unittest.TestCase):
         self.assertIn('ACTUATOR', categories)
         self.assertNotIn('SYSTEM', categories)
 
+    def test_clean_gate_open_and_idle_reset(self):
+        # 1. Simulate a scan that leaves sensor values
+        self.tracker.simulate_scan(is_pet=True, is_metal=False, weight=35.0, cal_w=48.5, delay_ms=20)
+        time.sleep(0.3)
+        st1 = self.tracker.get_state()
+        self.assertEqual(st1['stages']['4_scale']['status'], 'passed')
+
+        # 2. Open gate for new bottle - must wipe previous sensor values clean!
+        self.tracker.on_gate_open(session_id='test-sess-123')
+        st2 = self.tracker.get_state()
+        self.assertEqual(st2['status'], 'SCANNING')
+        self.assertEqual(st2['current_stage'], 1)
+        self.assertEqual(st2['stages']['4_scale']['detail'], '--')
+        self.assertEqual(st2['stages']['5_nir']['detail'], '--')
+        self.assertEqual(st2['stages']['7_drop']['detail'], '--')
+
+        # 3. Close gate with no bottle inserted - must auto-reset to IDLE after 2s
+        self.tracker.on_gate_closed()
+        time.sleep(2.3)
+        st3 = self.tracker.get_state()
+        self.assertEqual(st3['status'], 'IDLE')
+        self.assertEqual(st3['total_elapsed_ms'], 0)
+        self.assertIsNone(st3['active_session_id'])
+
 
 if __name__ == '__main__':
     unittest.main()

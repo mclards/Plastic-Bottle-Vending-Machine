@@ -638,6 +638,9 @@ class TimePortal(object):
         self.p.active_depositor_last_seen=0;self.p.active_depositor_timeout=0
         self.p.active_deposit_rejection=None
         self.p.transmit_to_esp32({'cmd':'CLOSE_GATE','session_id':deposit['id'],'protocol':2})
+        if getattr(self.p, 'chute_tracker', None):
+            try: self.p.chute_tracker.reset()
+            except Exception: pass
         self.restore_projections();self.reconcile()
         return jsonify(result)
 
@@ -663,6 +666,9 @@ class TimePortal(object):
         self.p.active_depositor_timeout = 0
         self.p.active_deposit_rejection = None
         self.p.transmit_to_esp32({'cmd': 'CLOSE_GATE', 'session_id': sid_to_close, 'protocol': 2})
+        if getattr(self.p, 'chute_tracker', None):
+            try: self.p.chute_tracker.reset()
+            except Exception: pass
         self.restore_projections()
         self.reconcile()
 
