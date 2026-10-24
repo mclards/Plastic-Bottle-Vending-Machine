@@ -248,6 +248,8 @@ class TimePortal(object):
             for intent in intents:
                 with self.p.db_connection() as conn:
                     cd=engine.connection(conn,intent['connection_id'])
+                    if not cd:
+                        conn.execute("UPDATE network_intents SET status='STALE' WHERE id=?",(intent['id'],));continue
                     current=(cd['binding_version']==intent['version'] and cd['ip']==intent['ip'])
                     if intent['desired_state']=='ACTIVE' and (not current or not healthy):
                         conn.execute("UPDATE network_intents SET status='STALE' WHERE id=?",(intent['id'],));continue

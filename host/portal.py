@@ -620,6 +620,15 @@ def setup_firewall():
     gateway_network.setup(get_lan_interface(), os.environ.get('ECOFI_WAN_IFACE', 'eth0'))
     gateway_network.set_license(license_valid())
     apply_walled_garden_and_macs()
+    try:
+        cfg = get_all_config()
+        gateway_network.set_gaming_qos(cfg.get('qos_gaming_enabled', '1') == '1', int(cfg.get('qos_gaming_percent', 20)))
+        gateway_network.set_anti_tethering(cfg.get('anti_tethering', '0') == '1')
+        gateway_network.set_starlink_blocker(cfg.get('starlink_blocker', '0') == '1')
+        gw_ip = cfg.get('isp_gateway_ip', '192.168.1.1')
+        gateway_network.set_isp_gateway_access(cfg.get('isp_gateway_access', '1') == '1', gw_ip)
+    except Exception as e:
+        log.warning('setup_firewall policy restoration error: %s', e)
 
 
 import math

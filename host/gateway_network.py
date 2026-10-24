@@ -314,6 +314,16 @@ def set_gaming_qos(enabled, percent=20):
                 pass
             if enabled:
                 ipt('-t', 'mangle', '-A', 'PREROUTING', '-p', 'udp', '-m', 'multiport', '--dports', '5000:5500,7000:8000,27000:27050,30000:30010', '-j', 'MARK', '--set-mark', '10', check=False)
+                for device in [LAN, 'ifb0']:
+                    rate = '{}mbit'.format(max(1, int(percent)))
+                    run(['tc', 'class', 'replace', 'dev', device, 'parent', '1:1', 'classid', '1:10', 'htb', 'rate', rate, 'ceil', '100mbit', 'prio', '0'], check=False)
+                    run(['tc', 'qdisc', 'replace', 'dev', device, 'parent', '1:10', 'handle', '10:', 'sfq', 'perturb', '10'], check=False)
+                    run(['tc', 'filter', 'del', 'dev', device, 'protocol', 'ip', 'parent', '1:', 'prio', '1', 'handle', '10', 'fw'], check=False)
+                    run(['tc', 'filter', 'add', 'dev', device, 'protocol', 'ip', 'parent', '1:', 'prio', '1', 'handle', '10', 'fw', 'flowid', '1:10'], check=False)
+            else:
+                for device in [LAN, 'ifb0']:
+                    run(['tc', 'filter', 'del', 'dev', device, 'protocol', 'ip', 'parent', '1:', 'prio', '1', 'handle', '10', 'fw'], check=False)
+                    run(['tc', 'class', 'del', 'dev', device, 'parent', '1:1', 'classid', '1:10'], check=False)
         except Exception as e:
             log.warning('set_gaming_qos error: {}'.format(e))
 
