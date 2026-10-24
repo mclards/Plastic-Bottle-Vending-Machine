@@ -6,6 +6,7 @@ import os
 import re
 import sqlite3
 import threading
+import time
 import uuid
 from datetime import datetime
 from flask import request, jsonify, session
@@ -69,6 +70,7 @@ class TimePortal(object):
         'storage_bin_full': 'The machine is full. Please contact the administrator.',
         'unknown_deposit': 'Deposit session not found.',
         'hardware_unavailable': 'Hardware unavailable. Please check back later.',
+        'hardware_not_responding': 'The chute airlock did not respond. Please try again or notify the operator.',
         'actuators_offline': 'Machine servo actuators are currently offline.',
         'sensors_offline': 'Machine optical sensors are initializing or offline.',
         'hardware_not_ready': 'The vending machine hardware is currently initializing or in maintenance mode.',
@@ -586,6 +588,11 @@ class TimePortal(object):
         self.p.active_depositor_ip=ip;self.p.active_depositor_mac=mac;self.p.active_depositor_sid=sid
         self.p.active_depositor_last_seen=now;self.p.active_depositor_timeout=now+timeout+5
         self.p.active_deposit_rejection=None
+
+        already_open = bool(getattr(self.p, 'physical_esp32_state', {}).get('gate_open', False))
+        if opened and already_open:
+            return jsonify(success=True,timeout=timeout,deposit_session_id=sid,already_open=True)
+
         try:
             if hasattr(self.p, 'chute_tracker') and self.p.chute_tracker:
                 self.p.chute_tracker.on_gate_open(session_id=sid, angle=90)
@@ -598,6 +605,23 @@ class TimePortal(object):
             self.p.active_depositor_last_seen=0;self.p.active_depositor_timeout=0
             session.pop('deposit_session_id',None)
             raise ValueError('hardware_unavailable')
+
+        # Real-time hardware actuation verification:
+        if not getattr(self.p.app, 'testing', False) and self.p.get_config('simulator_enabled', '0') != '1':
+            gate_confirmed = False
+            for _ in range(30):
+                time.sleep(0.025)
+                if getattr(self.p, 'physical_esp32_state', {}).get('gate_open'):
+                    gate_confirmed = True
+                    break
+            if not gate_confirmed:
+                with self.p.db_connection() as c2:
+                    c2.execute("UPDATE deposit_sessions SET status='HOLD',error='Chute failed to open' WHERE id=?", (sid,))
+                self.p.active_depositor_ip=None;self.p.active_depositor_mac=None;self.p.active_depositor_sid=None
+                self.p.active_depositor_last_seen=0;self.p.active_depositor_timeout=0
+                session.pop('deposit_session_id',None)
+                raise ValueError('hardware_not_responding')
+
         return jsonify(success=True,timeout=timeout,deposit_session_id=sid)
 
     def reward_seconds(self,pricing,bottles):

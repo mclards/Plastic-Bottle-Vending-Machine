@@ -1509,6 +1509,7 @@ void commTaskCode(void* parameter) {
 // SETUP (SYSTEM INITIALIZATION)
 // -----------------------------------------------------------------------------
 void setup() {
+    Serial.setRxBufferSize(2048);
     Serial.begin(115200);
     serialMutex = xSemaphoreCreateMutex();
 
@@ -1743,11 +1744,15 @@ void loop() {
                 }
                 if (creditStorageOk) {
                     manualGateTestOpen = false;
-                    if (!depositCycleBusy) forceGateClose = false;
                     requestedGateTimeout = timeout;
-                    entranceGateRequested = true;
-                    if (sensorTaskHandle) xTaskNotifyGive(sensorTaskHandle);
-                    logDebug("CMD", "Entrance gate request queued successfully (timeout=%d s).", timeout);
+                    if (!depositCycleBusy.load()) {
+                        forceGateClose = false;
+                        entranceGateRequested = true;
+                        if (sensorTaskHandle) xTaskNotifyGive(sensorTaskHandle);
+                        logDebug("CMD", "Entrance gate request queued successfully (timeout=%d s).", timeout);
+                    } else {
+                        logDebug("CMD", "Session '%s' gate already active; timeout updated without re-triggering servo.", sid);
+                    }
                 }
             } else {
                 logWarn("CMD", "OPEN_GATE rejected! Check session='%s', protocol=%d, phase=%d, storageOk=%d, busy=%d",
