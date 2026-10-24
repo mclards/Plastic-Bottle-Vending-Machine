@@ -293,32 +293,13 @@ inline NirEvaluation evaluateNirSpectrum(int r, int s, int t, int u, int v, int 
     res.sr_ratio = (r > 0) ? ((float)s / (float)r) : 0.0f;
     res.tw_ratio = (w > 0) ? ((float)t / (float)w) : 0.0f;
 
-    // 1. Empty Chute Baseline (cal_w <= 8.0 uW/cm2)
-    // Minimal background reflection when the chute is empty or black matte.
-    if (cal_w <= 8.0f) {
-        res.is_pet = false;
-        res.reason_code = "empty_chute";
-        res.reason_desc = "Empty Chute / No Object";
-        return res;
-    }
+    // Multimodal Sensor Fusion:
+    // If physical weight is verified within authentic plastic bottle bounds (15g - 90g),
+    // this container physically CANNOT be an empty chute and CANNOT be glass (glass bottles weigh > 180g).
+    bool isAuthenticPlasticWeight = (weightKnown && weightG >= 15.0f && weightG <= 90.0f);
 
-    // 2. Weight Discrimination:
-    // If physical weight is verified within lightweight plastic bottle bounds (e.g. 10g - 65g),
-    // this container physically CANNOT be a glass bottle (glass bottles weigh > 150g).
-    bool isAuthenticPlasticWeight = (weightKnown && weightG >= 10.0f && weightG <= 65.0f);
-
-    // 3. Absolute calibrated irradiance bounds [nir_min - nir_max]
-    if (cal_w < (float)nir_min) {
-        res.is_pet = false;
-        if (isAuthenticPlasticWeight) {
-            res.reason_code = "nir_low_absorption";
-            res.reason_desc = "Optical Signal Too Weak / Dark Tint";
-        } else {
-            res.reason_code = (cal_w < 22.0f) ? "colored_glass" : "nir_low_absorption";
-            res.reason_desc = (cal_w < 22.0f) ? "Colored Glass Detected" : "Optical Signal Too Weak";
-        }
-        return res;
-    }
+    // 1. High Diffuse Scatter Check (Paper / Cardboard / Opaque Trash)
+    // Saturated diffuse scattering from cellulose fibers spikes above nir_max (typically > 120 - 220).
     if (cal_w > (float)nir_max) {
         res.is_pet = false;
         res.reason_code = "nir_high_scatter";
@@ -326,8 +307,43 @@ inline NirEvaluation evaluateNirSpectrum(int r, int s, int t, int u, int v, int 
         return res;
     }
 
-    // 4. Minimum channel noise floor
-    if (r < 100 || s < 50 || v < 15 || w < 10) {
+    // 2. Empty Chute Baseline:
+    // Minimal background reflection when the chute is genuinely empty (cal_w <= 8.0 uW/cm2).
+    // CRITICAL FIX: If scale detected a valid bottle mass, the chute is NOT empty!
+    // Clean transparent PET transmits >90% of NIR, producing low backscatter (5 - 10 uW/cm2).
+    if (cal_w <= 8.0f) {
+        if (!isAuthenticPlasticWeight) {
+            res.is_pet = false;
+            res.reason_code = "empty_chute";
+            res.reason_desc = "Empty Chute / No Object";
+            return res;
+        } else {
+            // Authentic weight confirms transparent PET bottle presence
+            res.is_pet = true;
+            res.reason_code = "pet_confirmed";
+            res.reason_desc = "Clear Transparent PET Confirmed";
+            return res;
+        }
+    }
+
+    // 3. Absolute Calibrated Irradiance Lower Bound [nir_min]:
+    if (cal_w < (float)nir_min) {
+        if (isAuthenticPlasticWeight) {
+            // Authentic weight confirms transparent PET bottle
+            res.is_pet = true;
+            res.reason_code = "pet_confirmed";
+            res.reason_desc = "Clear Transparent PET Confirmed";
+            return res;
+        } else {
+            res.is_pet = false;
+            res.reason_code = (cal_w < 22.0f) ? "colored_glass" : "nir_low_absorption";
+            res.reason_desc = (cal_w < 22.0f) ? "Colored Glass Detected" : "Optical Signal Too Weak";
+            return res;
+        }
+    }
+
+    // 4. Optical Noise Floor Check (only enforced when weight is unverified):
+    if (!isAuthenticPlasticWeight && (r < 100 || s < 50 || v < 15 || w < 10)) {
         res.is_pet = false;
         res.reason_code = "nir_signal_noise";
         res.reason_desc = "Optical Signal Below Noise Floor";
@@ -336,7 +352,7 @@ inline NirEvaluation evaluateNirSpectrum(int r, int s, int t, int u, int v, int 
 
     // Note on Clear Glass: Both smooth clear glass and smooth clear PET exhibit ~4%
     // Fresnel reflection at 860nm. Clear glass passes NIR and is authoritatively
-    // rejected by the physical HX711 scale (> 65g, typically 250g - 450g).
+    // rejected by the physical HX711 scale (> 90g, typically 250g - 450g).
     res.is_pet = true;
     res.reason_code = "pet_confirmed";
     res.reason_desc = "PET Plastic Confirmed";
@@ -534,8 +550,12 @@ bool safeTareScale(unsigned long settleMs = 400, float maxLoadGuardG = 8.0f) {
     if (settleMs > 0) {
         delay(settleMs);
     }
+    // If scale was never zeroed since power-on (offset == 0), bypass guard to tare initial deadweight
+    if (scale.get_offset() == 0) {
+        maxLoadGuardG = 0.0f;
+    }
     // Sanity Guard: Never zero-calibrate if cradle has an object (> maxLoadGuardG) resting on it!
-    // If maxLoadGuardG <= 0.0f, guard is disabled (e.g. boot tare or explicit admin tare).
+    // If maxLoadGuardG <= 0.0f, guard is disabled (e.g. boot tare, pre-gate tare, or explicit admin tare).
     if (maxLoadGuardG > 0.0f) {
         float curReading = readFilteredWeightG(5);
         if (fabs(curReading) > maxLoadGuardG) {
@@ -543,7 +563,7 @@ bool safeTareScale(unsigned long settleMs = 400, float maxLoadGuardG = 8.0f) {
             return false;
         }
     }
-    if (scale.wait_ready_timeout(250)) {
+    if (scale.wait_ready_timeout(350)) {
         scale.tare(5);
         lastMeasuredWeightG = 0.0f;
         logDebug("SCALE", "Scale safely zero-calibrated. New Offset=%ld", scale.get_offset());
@@ -776,6 +796,13 @@ void sensorTaskCode(void* parameter) {
                 logWarn("AIRLOCK", "Bottom IR still obstructed (LOW)! Drop flap held open to prevent bottle jam.");
             }
             
+            // PRE-GATE TARE HARDENING:
+            // Chute is sealed, cradle is at complete rest, and both optical IR beams are clear.
+            // Tare unconditionally so any mechanical drift or initial deadweight is cleanly zeroed to 0.0g before bottle insertion.
+            if (digitalRead(PIN_IR_BOTTOM) == HIGH && digitalRead(PIN_IR_TOP) == HIGH) {
+                safeTareScale(50, 0.0f);
+            }
+
             setServoAngle(PCA_CHANNEL_ENTRANCE, config.ent_open_angle); // Open entrance
             gateStateEvent(true);
             topIrTriggered = false; // Clear any latch from servo movement vibration
@@ -1005,8 +1032,8 @@ void sensorTaskCode(void* parameter) {
 
                     char nirBuf[256];
                     snprintf(nirBuf, sizeof(nirBuf),
-                             "{\"event\":\"NIR_SAMPLE\",\"calibrated_w\":%.2f,\"is_pet\":%s,\"r\":%d,\"s\":%d,\"t\":%d,\"u\":%d,\"v\":%d,\"w\":%d,\"wv_ratio\":%.2f,\"sr_ratio\":%.2f,\"tw_ratio\":%.2f,\"reason\":\"%s\",\"reason_code\":\"%s\"}",
-                             nirAbsorption, eval.is_pet ? "true" : "false", r, s, t, u, v, w, eval.wv_ratio, eval.sr_ratio, eval.tw_ratio, eval.reason_desc, eval.reason_code);
+                             "{\"event\":\"NIR_SAMPLE\",\"calibrated_w\":%.2f,\"weight_g\":%.1f,\"is_pet\":%s,\"r\":%d,\"s\":%d,\"t\":%d,\"u\":%d,\"v\":%d,\"w\":%d,\"wv_ratio\":%.2f,\"sr_ratio\":%.2f,\"tw_ratio\":%.2f,\"reason\":\"%s\",\"reason_code\":\"%s\"}",
+                             nirAbsorption, weightG, eval.is_pet ? "true" : "false", r, s, t, u, v, w, eval.wv_ratio, eval.sr_ratio, eval.tw_ratio, eval.reason_desc, eval.reason_code);
                     emitSerialLine(nirBuf);
 
                     if (config.require_nir_sensor) {
@@ -1133,6 +1160,9 @@ void sensorTaskCode(void* parameter) {
                 rejDoc["protocol"] = 2;
                 rejDoc["reason"] = rejectReasonCode;
                 rejDoc["desc"] = rejectReasonDesc;
+                rejDoc["weight_g"] = weightG;
+                rejDoc["cal_w"] = lastNirAbsorption;
+                rejDoc["is_metal"] = isMetal;
                 String rejOutput;
                 serializeJson(rejDoc, rejOutput);
                 emitSerialLine(rejOutput);
@@ -1564,11 +1594,20 @@ void setup() {
 
     logDebug("SCALE", "Probing HX711 Load Cell on DOUT=GPIO %d, SCK=GPIO %d...", PIN_HX711_DOUT, PIN_HX711_SCK);
     scale.begin(PIN_HX711_DOUT, PIN_HX711_SCK);
-    if (scale.wait_ready_timeout(500)) {
-        hx711Found = true;
+    // Allow up to 2000ms for load cell power rail and ADC oscillator stabilization on cold startup
+    for (int retry = 0; retry < 5; ++retry) {
+        if (scale.wait_ready_timeout(400)) {
+            hx711Found = true;
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    if (hx711Found) {
         scale.set_scale(config.weight_cal_factor > 0 ? (float)config.weight_cal_factor : 260.0f);
-        safeTareScale(200, 0.0f);
-        logDebug("SCALE", "HX711 Load Cell detected and safely zeroed!");
+        vTaskDelay(pdMS_TO_TICKS(200));
+        scale.tare(10);
+        lastMeasuredWeightG = 0.0f;
+        logDebug("SCALE", "HX711 Load Cell detected and safely zeroed! Initial Offset=%ld", scale.get_offset());
     } else {
         hx711Found = false;
         logDebug("SCALE", "HX711 Load Cell not detected (running in NIR-only mode).");

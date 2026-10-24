@@ -35,6 +35,7 @@ Thumbs.db
 resources/*.img
 resources/unpacked_img/
 resources/pisofi_firmware_dump/
+*.zip
 
 # Scratch files
 scratch/

@@ -1503,6 +1503,10 @@ def handle_physical_esp32_packet(data):
         active_depositor_last_seen = 0
         active_depositor_timeout = 0
         active_deposit_rejection = None
+        try:
+            transmit_to_esp32({'cmd': 'TARE_WEIGHT'})
+        except Exception:
+            pass
     elif ev == 'HARDWARE_ALERT':
         reason = data.get('reason', 'offline')
         physical_esp32_state['sensor_bus_status'] = 'Hardware Alert ({})'.format(reason)
@@ -1574,7 +1578,9 @@ def handle_physical_esp32_packet(data):
             if ev == 'GATE_OPEN':
                 chute_tracker.on_gate_open(session_id=data.get('session_id'), angle=90)
             else:
-                chute_tracker.on_rejected(reason=data.get('desc') or data.get('message') or 'Item Rejected')
+                desc = data.get('desc') or data.get('message') or 'Item Rejected'
+                code = data.get('reason') or data.get('code')
+                chute_tracker.on_rejected(reason=desc, code=code, sensor_data=data)
         except Exception:
             pass
         if ev == 'REJECTED':

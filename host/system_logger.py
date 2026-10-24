@@ -169,7 +169,12 @@ class SystemLogger(object):
     def get_entries(self, since_id=0, limit=200, category=None, level=None, search=None):
         """Retrieve recent entries matching optional filters."""
         result = []
-        cat_filter = str(category).upper() if category and category != 'ALL' else None
+        if isinstance(category, (list, tuple, set)):
+            cat_filters = {str(c).upper() for c in category if c and c != 'ALL'}
+        elif category and category != 'ALL':
+            cat_filters = {str(category).upper()}
+        else:
+            cat_filters = None
         lvl_filter = str(level).upper() if level and level != 'ALL' else None
         search_filter = str(search).lower() if search else None
 
@@ -177,7 +182,7 @@ class SystemLogger(object):
             for item in self._entries:
                 if item['id'] <= since_id:
                     continue
-                if cat_filter and item['category'] != cat_filter:
+                if cat_filters and item['category'] not in cat_filters:
                     continue
                 if lvl_filter and item['level'] != lvl_filter:
                     continue
@@ -541,11 +546,28 @@ class ChuteSequenceTracker(object):
             self.stages['7_drop']['latency_ms'] = delta_ms
             run_id = self._sequence_run_id
 
-        self.logger.success("CHUTE", "STAGE 7: PIR Drop (Bottom IR Beam) TRANSIT CONFIRMED - Bottle saved! Total: {}ms".format(
-            self.total_elapsed_ms), {'stage': 7, 'total_elapsed_ms': self.total_elapsed_ms, 'latency_ms': delta_ms})
+            wt = self.stages['4_scale'].get('weight_g')
+            cal_w = self.stages['5_nir'].get('cal_w')
+
+        sensor_parts = []
+        sensor_details = {}
+        if wt is not None:
+            sensor_parts.append("Mass: {:.1f}g".format(wt))
+            sensor_details['weight_g'] = wt
+        if cal_w is not None:
+            sensor_parts.append("Cal-W: {:.1f} µW/cm²".format(cal_w))
+            sensor_details['cal_w'] = cal_w
+
+        summary = " [" + ", ".join(sensor_parts) + "]" if sensor_parts else ""
+        log_msg = "STAGE 7: PIR Drop (Bottom IR Beam) TRANSIT CONFIRMED - Bottle saved! Total: {}ms{}".format(
+            self.total_elapsed_ms, summary)
+        log_details = {'stage': 7, 'total_elapsed_ms': self.total_elapsed_ms, 'latency_ms': delta_ms}
+        log_details.update(sensor_details)
+
+        self.logger.success("CHUTE", log_msg, log_details)
         self._schedule_auto_reset(run_id, delay_sec=8.0)
 
-    def on_rejected(self, reason='Item Rejected', code=None):
+    def on_rejected(self, reason='Item Rejected', code=None, sensor_data=None):
         """Item rejected event."""
         now = time.time()
         now_str = _format_time_ms()
@@ -559,8 +581,38 @@ class ChuteSequenceTracker(object):
             self.stages['6_exit']['timestamp'] = now_str
             run_id = self._sequence_run_id
 
-        self.logger.warn("CHUTE", "Chute Classification REJECTED: {} (+{}ms)".format(reason, delta_ms),
-                         {'reason': reason, 'code': code, 'latency_ms': delta_ms})
+            wt = self.stages['4_scale'].get('weight_g')
+            cal_w = self.stages['5_nir'].get('cal_w')
+            is_metal = self.stages['3_prox'].get('is_metal')
+
+        if sensor_data and isinstance(sensor_data, dict):
+            if wt is None and sensor_data.get('weight_g') is not None:
+                try: wt = round(float(sensor_data.get('weight_g')), 1)
+                except Exception: pass
+            if cal_w is None and sensor_data.get('cal_w') is not None:
+                try: cal_w = round(float(sensor_data.get('cal_w')), 2)
+                except Exception: pass
+            if is_metal is None and sensor_data.get('is_metal') is not None:
+                is_metal = bool(sensor_data.get('is_metal'))
+
+        sensor_parts = []
+        sensor_details = {}
+        if wt is not None:
+            sensor_parts.append("Mass: {:.1f}g".format(wt))
+            sensor_details['weight_g'] = wt
+        if cal_w is not None:
+            sensor_parts.append("Cal-W: {:.2f} µW/cm²".format(cal_w))
+            sensor_details['cal_w'] = cal_w
+        if is_metal is not None:
+            sensor_parts.append("Metal: {}".format("YES" if is_metal else "NO"))
+            sensor_details['is_metal'] = is_metal
+
+        summary = " [" + ", ".join(sensor_parts) + "]" if sensor_parts else ""
+        log_msg = "Chute Classification REJECTED: {}{} (+{}ms)".format(reason, summary, delta_ms)
+        log_details = {'stage': 6, 'reason': reason, 'code': code, 'latency_ms': delta_ms}
+        log_details.update(sensor_details)
+
+        self.logger.warn("CHUTE", log_msg, log_details)
         self._schedule_auto_reset(run_id, delay_sec=8.0)
 
     def on_timeout(self, reason='Intake Timeout'):
@@ -597,9 +649,9 @@ class ChuteSequenceTracker(object):
             elif self.status == 'IDLE':
                 elapsed = 0
 
-            recent_logs = self.logger.get_entries(limit=40, category='CHUTE')
+            recent_logs = self.logger.get_entries(limit=60, category=['CHUTE', 'SENSOR', 'ACTUATOR'])
             if len(recent_logs) < 15:
-                recent_logs = self.logger.get_entries(limit=40)
+                recent_logs = self.logger.get_entries(limit=60)
 
             st_copy = json.loads(json.dumps(self.stages))
             for k, st in st_copy.items():
