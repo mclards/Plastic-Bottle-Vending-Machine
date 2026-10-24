@@ -94,6 +94,15 @@ def main():
                     print("  -> Uploading static/{} ({:,} bytes)...".format(sfile.name, sfile.stat().st_size), flush=True)
                     sftp.put(str(sfile), "/opt/ecofi/static/{}".format(sfile.name))
 
+            # Upload static audio assets
+            audio_dir = static_dir / 'audio'
+            if audio_dir.exists():
+                execute(client, "mkdir -p /opt/ecofi/static/audio/uploads")
+                for afile in audio_dir.glob('*.*'):
+                    if afile.is_file():
+                        print("  -> Uploading static/audio/{} ({:,} bytes)...".format(afile.name, afile.stat().st_size), flush=True)
+                        sftp.put(str(afile), "/opt/ecofi/static/audio/{}".format(afile.name))
+
             # Step 3: SFTP upload latest ESP32 firmware binary
             if not host_only:
                 print("[4/7] Uploading latest ESP32 factory firmware binary...", flush=True)
