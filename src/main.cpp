@@ -430,7 +430,7 @@ void completeDrop(bool accepted) {
 void replayCredit() {
     JsonDocument doc;
     xSemaphoreTake(creditMutex, portMAX_DELAY);
-    if (!creditStorageOk || creditJournal.phase == 0 || (creditJournal.phase == 1 && depositCycleBusy)) {
+    if (!creditStorageOk || creditJournal.phase == 0 || creditJournal.phase == 1) {
         xSemaphoreGive(creditMutex);
         return;
     }
@@ -780,6 +780,10 @@ void sensorTaskCode(void* parameter) {
                     emitSerialLine("{\"event\":\"HARDWARE_ALERT\",\"reason\":\"actuators_offline\"}");
                 } else if (config.require_nir_sensor && !spectrometerFound) {
                     emitSerialLine("{\"event\":\"HARDWARE_ALERT\",\"reason\":\"spectrometer_offline\"}");
+                } else {
+                    char blkBuf[160];
+                    snprintf(blkBuf, sizeof(blkBuf), "{\"event\":\"CYCLE_NOT_PERMITTED\",\"session\":\"%s\",\"phase\":%d,\"finish\":%d}", curSession, curPhase, finishRequested.load());
+                    emitSerialLine(blkBuf);
                 }
                 vTaskDelay(pdMS_TO_TICKS(20));
                 continue;
@@ -1117,6 +1121,9 @@ void sensorTaskCode(void* parameter) {
                     postEvent(okMsg);
                     logDebug("CYCLE", "Deposit cycle successfully completed. Session bottles: %d",
                              currentSessionBottles.load());
+
+                    // Immediately transmit CREDIT_ADD to host gateway with zero delay
+                    replayCredit();
 
                     // Mechanical settle delay before tare to let servo and load cell vibrations decay
                     safeTareScale(500);
@@ -1704,6 +1711,9 @@ void loop() {
             break;
         }
         if (ch != '\r' && !serialOverflow) {
+            if (serialLength == 0 && ch != '{') {
+                continue;
+            }
             if (serialLength < sizeof(serialLine) - 1) serialLine[serialLength++] = ch;
             else serialOverflow = true;
         }
@@ -1723,40 +1733,57 @@ void loop() {
             int timeout = command["timeout"] | desiredConfig.entrance_gate_timeout;
             xSemaphoreTake(creditMutex, portMAX_DELAY);
             bool same = strcmp(sid, creditJournal.session) == 0;
-            bool phaseOk = (creditJournal.phase == 0) || (same && creditJournal.phase == 2) || (creditJournal.phase == 3 && !depositCycleBusy.load()) || (!same && !depositCycleBusy.load());
-            logDebug("CMD", "OPEN_GATE received. session='%s' (same=%d, phaseOk=%d), timeout=%d, phase=%d, busy=%d",
-                     sid, same, phaseOk, timeout, creditJournal.phase, depositCycleBusy.load());
-            if (command["protocol"] == 2 && strlen(sid) > 0 && strlen(sid) <= 36 &&
-                creditStorageOk && phaseOk && (!depositCycleBusy || same) &&
-                !finishRequested && timeout >= 1 && timeout <= 600) {
+
+            // Auto-recovery for customer sessions:
+            // An incoming OPEN_GATE command from the authoritative host gateway
+            // immediately clears any stale finish or close flags.
+            if (!same) {
+                finishRequested = false;
+                forceGateClose = false;
+                if (digitalRead(PIN_IR_TOP) == HIGH && digitalRead(PIN_IR_BOTTOM) == HIGH) {
+                    depositCycleBusy = false;
+                    activeLcdMode = LCD_MODE_IDLE;
+                }
+                if (creditJournal.phase != 0) {
+                    creditJournal.phase = 0;
+                }
+                strlcpy(creditJournal.session, sid, sizeof(creditJournal.session));
+                creditJournal.total = 0;
+                currentSessionBottles = 0;
+                saveCreditJournal();
+            } else {
+                finishRequested = false;
+                forceGateClose = false;
                 if (creditJournal.phase == 2 || creditJournal.phase == 3) {
                     creditJournal.phase = 0;
                     saveCreditJournal();
                 }
-                if (!same) {
-                    logDebug("CMD", "New session '%s' replacing previous '%s'. Resetting session bottle count.",
-                             sid, creditJournal.session);
-                    strlcpy(creditJournal.session, sid, sizeof(creditJournal.session));
-                    creditJournal.total = 0;
-                    creditJournal.phase = 0;
-                    currentSessionBottles = 0;
-                    saveCreditJournal();
+            }
+
+            bool phaseOk = (creditJournal.phase == 0) || (same && creditJournal.phase == 2) || (creditJournal.phase == 3 && !depositCycleBusy.load()) || (!same && !depositCycleBusy.load());
+            bool permitted = (command["protocol"] == 2 && strlen(sid) > 0 && strlen(sid) <= 36 &&
+                              creditStorageOk && (!depositCycleBusy || same) &&
+                              timeout >= 1 && timeout <= 600);
+
+            if (permitted) {
+                manualGateTestOpen = false;
+                requestedGateTimeout = timeout;
+                forceGateClose = false;
+                // Always initialize Success Drop Gate Servo to closed angle right after trigger
+                if (pca9685Found && digitalRead(PIN_IR_BOTTOM) == HIGH) {
+                    setServoAngle(PCA_CHANNEL_SUCCESS, desiredConfig.suc_close_angle);
                 }
-                if (creditStorageOk) {
-                    manualGateTestOpen = false;
-                    requestedGateTimeout = timeout;
-                    if (!depositCycleBusy.load()) {
-                        forceGateClose = false;
-                        entranceGateRequested = true;
-                        if (sensorTaskHandle) xTaskNotifyGive(sensorTaskHandle);
-                        logDebug("CMD", "Entrance gate request queued successfully (timeout=%d s).", timeout);
-                    } else {
-                        logDebug("CMD", "Session '%s' gate already active; timeout updated without re-triggering servo.", sid);
-                    }
-                }
+                entranceGateRequested = true;
+                if (sensorTaskHandle) xTaskNotifyGive(sensorTaskHandle);
+                char ackBuf[128];
+                snprintf(ackBuf, sizeof(ackBuf), "{\"event\":\"OPEN_GATE_QUEUED\",\"session\":\"%s\",\"timeout\":%d}", sid, timeout);
+                emitSerialLine(ackBuf);
             } else {
-                logWarn("CMD", "OPEN_GATE rejected! Check session='%s', protocol=%d, phase=%d, storageOk=%d, busy=%d",
-                        sid, (int)command["protocol"], creditJournal.phase, creditStorageOk.load(), depositCycleBusy.load());
+                char rejBuf[192];
+                snprintf(rejBuf, sizeof(rejBuf),
+                    "{\"event\":\"OPEN_GATE_REJECTED\",\"session\":\"%s\",\"proto\":%d,\"phase\":%d,\"storage\":%d,\"busy\":%d,\"finish\":%d,\"same\":%d,\"phaseOk\":%d}",
+                    sid, (int)command["protocol"], creditJournal.phase, creditStorageOk.load(), depositCycleBusy.load(), finishRequested.load(), same, phaseOk);
+                emitSerialLine(rejBuf);
             }
             xSemaphoreGive(creditMutex);
         } else if (strcmp(cmd, "CREDIT_ACK") == 0) {
@@ -1786,6 +1813,7 @@ void loop() {
             if (sid[0] == '\0' || strcmp(sid, creditJournal.session) == 0) {
                 entranceGateRequested = false;
                 forceGateClose = true;
+                finishRequested = false;
                 logDebug("CMD", "Forced gate close flag set.");
             }
             if (pca9685Found && !depositCycleBusy && !manualGateTestOpen.load()) {
@@ -1802,7 +1830,7 @@ void loop() {
         } else if (strcmp(cmd, "FINISH_ACK") == 0) {
             xSemaphoreTake(creditMutex, portMAX_DELAY);
             logDebug("CMD", "FINISH_ACK received for session='%s'", sid);
-            if (command["protocol"] == 2 && strcmp(sid, creditJournal.session) == 0) {
+            if (command["protocol"] == 2 && (sid[0] == '\0' || strcmp(sid, creditJournal.session) == 0)) {
                 finishRequested = false;
                 forceGateClose = false;
                 logDebug("CMD", "Finish request acknowledged by host.");
@@ -2125,10 +2153,14 @@ void loop() {
     }
     if (down && !buttonHandled && millis() - buttonChanged >= 50) {
         buttonHandled = true;
-        finishRequested = true;
-        entranceGateRequested = false;
-        forceGateClose = true;
-        logDebug("BTN", "Finish button press detected (held >= 50ms). Session finish requested.");
+        xSemaphoreTake(creditMutex, portMAX_DELAY);
+        if (creditJournal.session[0] && !depositCycleBusy) {
+            finishRequested = true;
+            entranceGateRequested = false;
+            forceGateClose = true;
+            logDebug("BTN", "Finish button press detected (held >= 50ms). Session finish requested.");
+        }
+        xSemaphoreGive(creditMutex);
     }
 
     static uint32_t lastReceiptSend = 0;

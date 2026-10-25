@@ -591,9 +591,12 @@ class TimePortal(object):
         self.p.active_depositor_last_seen=now;self.p.active_depositor_timeout=now+timeout+5
         self.p.active_deposit_rejection=None
 
-        already_open = bool(getattr(self.p, 'physical_esp32_state', {}).get('gate_open', False))
-        if opened and already_open:
-            return jsonify(success=True,timeout=timeout,deposit_session_id=sid,already_open=True)
+        # Ensure success drop flap is initialized to closed angle right after trigger
+        try:
+            suc_close = int(self.p.get_config('esp_suc_close_angle', '0'))
+            self.p.transmit_to_esp32({'cmd':'TEST_SERVO','channel':1,'angle':suc_close,'hold_ms':0})
+        except Exception:
+            pass
 
         try:
             if hasattr(self.p, 'chute_tracker') and self.p.chute_tracker:
@@ -607,22 +610,6 @@ class TimePortal(object):
             self.p.active_depositor_last_seen=0;self.p.active_depositor_timeout=0
             session.pop('deposit_session_id',None)
             raise ValueError('hardware_unavailable')
-
-        # Real-time hardware actuation verification:
-        if not getattr(self.p.app, 'testing', False) and self.p.get_config('simulator_enabled', '0') != '1':
-            gate_confirmed = False
-            for _ in range(30):
-                time.sleep(0.025)
-                if getattr(self.p, 'physical_esp32_state', {}).get('gate_open'):
-                    gate_confirmed = True
-                    break
-            if not gate_confirmed:
-                with self.p.db_connection() as c2:
-                    c2.execute("UPDATE deposit_sessions SET status='HOLD',error='Chute failed to open' WHERE id=?", (sid,))
-                self.p.active_depositor_ip=None;self.p.active_depositor_mac=None;self.p.active_depositor_sid=None
-                self.p.active_depositor_last_seen=0;self.p.active_depositor_timeout=0
-                session.pop('deposit_session_id',None)
-                raise ValueError('hardware_not_responding')
 
         return jsonify(success=True,timeout=timeout,deposit_session_id=sid)
 
@@ -709,7 +696,7 @@ class TimePortal(object):
         try:
             data=json.loads(raw) if isinstance(raw,(str,bytes)) else dict(raw);event=data.get('event');now,mono=self.now()
             if event=='CREDIT_ADD':
-                event_id=data.get('event_id');sid=data.get('session_id');bottles=data.get('bottles')
+                event_id=data.get('event_id');sid=data.get('session_id');phase=data.get('phase',0);bottles=data.get('bottles')
                 encoded=json.dumps(data,sort_keys=True)
                 with self.p.db_connection() as conn:
                     deposit=engine.one(conn,'SELECT * FROM deposit_sessions WHERE id=?',(sid,)) if isinstance(sid,str) else None
@@ -728,13 +715,13 @@ class TimePortal(object):
                             (recovery_id,encoded,'unknown_or_late_deposit_event',now))
                     else:
                         conn.execute('INSERT INTO deposit_events VALUES (?,?,?,?)',(storage_event_id,sid,bottles,now))
-                        conn.execute('UPDATE deposit_sessions SET updated_at=? WHERE id=?',(now,sid))
+                        conn.execute("UPDATE deposit_sessions SET status='OPEN',updated_at=? WHERE id=?",(now,sid))
                         day=datetime.fromtimestamp(now).strftime('%Y-%m-%d')
                         conn.execute('INSERT OR IGNORE INTO stats(date,total_bottles) VALUES (?,0)',(day,))
                         conn.execute('UPDATE stats SET total_bottles=total_bottles+? WHERE date=?',(bottles,day))
                 # ACK only after durable receipt (or durable quarantine) commits.
                 if isinstance(event_id,str):self.p.transmit_to_esp32({'cmd':'CREDIT_ACK','event_id':event_id,'session_id':sid,'protocol':2})
-                if valid and deposit and deposit['status']=='OPEN' and self.p.license_valid():
+                if valid and deposit and deposit['status'] in ('OPEN','HOLD') and self.p.license_valid():
                     drop_tout = int(self.p.get_config('drop_timeout', '60'))
                     self.p.active_depositor_timeout = now + drop_tout + 5
                     self.p.active_depositor_last_seen = now
@@ -742,12 +729,13 @@ class TimePortal(object):
                 self.p.active_deposit_rejection=None
                 self.restore_projections()
             elif event=='DEPOSIT_RECOVERY':
-                event_id=data.get('event_id');sid=data.get('session_id')
+                event_id=data.get('event_id');sid=data.get('session_id');phase=data.get('phase',0)
                 if not isinstance(event_id,str) or not 0<len(event_id)<=160:raise ValueError('invalid_recovery_receipt')
                 with self.p.db_connection() as conn:
                     conn.execute('INSERT OR IGNORE INTO deposit_recovery(event_id,payload_json,reason,received_at) VALUES (?,?,?,?)',
                         (event_id,json.dumps(data,sort_keys=True),'Physical drop outcome uncertain; inspect before awarding credit.',now))
-                    conn.execute("UPDATE deposit_sessions SET status='HOLD',updated_at=? WHERE id=? AND status='OPEN'",(now,sid))
+                    if phase != 1:
+                        conn.execute("UPDATE deposit_sessions SET status='HOLD',updated_at=? WHERE id=? AND status='OPEN'",(now,sid))
                 self.p.transmit_to_esp32({'cmd':'CREDIT_ACK','event_id':event_id,'session_id':sid,'protocol':2})
             elif event=='REJECTED':
                 sid=data.get('session_id')
@@ -785,8 +773,8 @@ class TimePortal(object):
                 with self.p.db_connection() as conn:
                     self.require_ready(conn)
                     deposit=engine.one(conn,'SELECT * FROM deposit_sessions WHERE id=?',(sid,))
-                    if not deposit:raise ValueError('unknown_deposit')
-                    self.finalize(conn,deposit,now,mono)
+                    if deposit and deposit['status'] in ('OPEN','HOLD'):
+                        self.finalize(conn,deposit,now,mono)
                 self.p.transmit_to_esp32({'cmd':'FINISH_ACK','session_id':sid,'protocol':2})
                 self.p.active_depositor_ip=None;self.p.active_depositor_mac=None;self.p.active_depositor_sid=None
                 self.p.active_depositor_last_seen=0;self.p.active_depositor_timeout=0

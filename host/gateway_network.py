@@ -107,6 +107,7 @@ def setup(lan='eth1', wan='eth0'):
         if ipt('-t', 'nat', '-C', 'POSTROUTING', '-s', str(SUBNET), '-o', WAN, '-j', 'MASQUERADE', check=False).returncode:
             ipt('-t', 'nat', '-A', 'POSTROUTING', '-s', str(SUBNET), '-o', WAN, '-j', 'MASQUERADE')
         # Build behind the terminal DROP, then remove that first DROP last.
+        ipt('-A', 'ECOFI_FORWARD', '-p', 'tcp', '--tcp-flags', 'SYN,RST', 'SYN', '-j', 'TCPMSS', '--clamp-mss-to-pmtu')
         ipt('-A', 'ECOFI_FORWARD', '-j', 'ECOFI_LICENSE')
         ipt('-A', 'ECOFI_FORWARD', '-i', LAN, '-j', 'ECOFI_MAC_BLOCK')
         ipt('-A', 'ECOFI_FORWARD', '-i', LAN, '-o', WAN, '-m', 'set', '--match-set', 'ecofi_auth', 'src',
@@ -161,8 +162,8 @@ def setup_shaping():
     for device in [LAN, 'ifb0']:
         run(['tc', 'qdisc', 'del', 'dev', device, 'root'], check=False)
         run(['tc', 'qdisc', 'add', 'dev', device, 'root', 'handle', '1:', 'htb', 'default', '99'])
-        run(['tc', 'class', 'add', 'dev', device, 'parent', '1:', 'classid', '1:1', 'htb', 'rate', '100mbit'])
-        run(['tc', 'class', 'add', 'dev', device, 'parent', '1:1', 'classid', '1:99', 'htb', 'rate', '100mbit'])
+        run(['tc', 'class', 'add', 'dev', device, 'parent', '1:', 'classid', '1:1', 'htb', 'rate', '100mbit', 'burst', '128k', 'cburst', '64k'])
+        run(['tc', 'class', 'add', 'dev', device, 'parent', '1:1', 'classid', '1:99', 'htb', 'rate', '100mbit', 'burst', '128k', 'cburst', '64k'])
         run(['tc', 'qdisc', 'add', 'dev', device, 'parent', '1:99', 'handle', '99:', 'sfq', 'perturb', '10'])
     run(['tc', 'qdisc', 'del', 'dev', LAN, 'ingress'], check=False)
     run(['tc', 'qdisc', 'add', 'dev', LAN, 'ingress'])
@@ -177,8 +178,11 @@ def shape(ip, dl, ul):
     mark = 256 + (int(ipaddress.IPv4Address(ip)) & 8191)
     classid = '1:{:x}'.format(mark)
     for device, direction, rate in [(LAN, 'dst', values[0]), ('ifb0', 'src', values[1])]:
+        burst_val = max(64, int(rate // 32))
+        cburst_val = max(32, int(rate // 64))
         run(['tc', 'class', 'replace', 'dev', device, 'parent', '1:1', 'classid', classid, 'htb',
-             'rate', '{}kbit'.format(rate), 'ceil', '{}kbit'.format(rate), 'burst', '15k'])
+             'rate', '{}kbit'.format(rate), 'ceil', '{}kbit'.format(rate),
+             'burst', '{}k'.format(burst_val), 'cburst', '{}k'.format(cburst_val)])
         if ip not in _shaped:
             run(['tc', 'qdisc', 'replace', 'dev', device, 'parent', classid, 'handle', '{:x}:'.format(mark), 'sfq', 'perturb', '10'])
             # A prior partial shaping failure may have left a filter behind.
@@ -316,7 +320,7 @@ def set_gaming_qos(enabled, percent=20):
                 ipt('-t', 'mangle', '-A', 'PREROUTING', '-p', 'udp', '-m', 'multiport', '--dports', '5000:5500,7000:8000,27000:27050,30000:30010', '-j', 'MARK', '--set-mark', '10', check=False)
                 for device in [LAN, 'ifb0']:
                     rate = '{}mbit'.format(max(1, int(percent)))
-                    run(['tc', 'class', 'replace', 'dev', device, 'parent', '1:1', 'classid', '1:10', 'htb', 'rate', rate, 'ceil', '100mbit', 'prio', '0'], check=False)
+                    run(['tc', 'class', 'replace', 'dev', device, 'parent', '1:1', 'classid', '1:10', 'htb', 'rate', rate, 'ceil', '100mbit', 'prio', '0', 'burst', '64k', 'cburst', '32k'], check=False)
                     run(['tc', 'qdisc', 'replace', 'dev', device, 'parent', '1:10', 'handle', '10:', 'sfq', 'perturb', '10'], check=False)
                     run(['tc', 'filter', 'del', 'dev', device, 'protocol', 'ip', 'parent', '1:', 'prio', '1', 'handle', '10', 'fw'], check=False)
                     run(['tc', 'filter', 'add', 'dev', device, 'protocol', 'ip', 'parent', '1:', 'prio', '1', 'handle', '10', 'fw', 'flowid', '1:10'], check=False)
