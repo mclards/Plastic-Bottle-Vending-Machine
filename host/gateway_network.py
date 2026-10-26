@@ -303,10 +303,19 @@ def set_isp_gateway_access(enabled, gateway_ip='192.168.1.1'):
     global LAN
     with lock:
         try:
-            while ipt('-D', 'ECOFI_FORWARD', '-i', LAN, '-d', gateway_ip + '/32', '-j', 'ACCEPT', check=False).returncode == 0:
-                pass
-            if enabled:
-                ipt('-I', 'ECOFI_FORWARD', '2', '-i', LAN, '-d', gateway_ip + '/32', '-j', 'ACCEPT', check=False)
+            targets = set()
+            if gateway_ip:
+                targets.add(str(gateway_ip).strip())
+            targets.add('192.168.1.1')
+            for ip in targets:
+                while ipt('-D', 'ECOFI_FORWARD', '-i', LAN, '-d', ip + '/32', '-j', 'ACCEPT', check=False).returncode == 0:
+                    pass
+                while ipt('-D', 'ECOFI_FORWARD', '-i', LAN, '-d', ip + '/32', '-j', 'DROP', check=False).returncode == 0:
+                    pass
+                if not enabled:
+                    ipt('-I', 'ECOFI_FORWARD', '1', '-i', LAN, '-d', ip + '/32', '-j', 'DROP', check=False)
+                else:
+                    ipt('-I', 'ECOFI_FORWARD', '2', '-i', LAN, '-d', ip + '/32', '-j', 'ACCEPT', check=False)
         except Exception as e:
             log.warning('set_isp_gateway_access error: {}'.format(e))
 
