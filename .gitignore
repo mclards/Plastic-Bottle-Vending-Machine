@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# SQLite & Runtime State
+*.db
+*.sqlite3
+*.log
+*.key
+provision.key
+deposit_journal.json
+current_active_client.txt
+
+# OS
+.DS_Store
+Thumbs.db
