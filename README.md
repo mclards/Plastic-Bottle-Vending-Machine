@@ -231,7 +231,7 @@ The left navigation sidebar organizes every control into **five functional domai
 
 ## 1. Signing In & First-Boot Security
 
-<p><img src="screenshots/admin-login.png" alt="Admin Sign-In Screen" width="560"></p>
+<p><img src="screenshots/admin-login.png" alt="Admin Sign-In Screen" width="100%"></p>
 
 1. Navigate to **`http://10.0.0.1/admin`**.
 2. Enter your administrator username and password and sign in.
@@ -243,7 +243,7 @@ The left navigation sidebar organizes every control into **five functional domai
 
 ### Dashboard & Stats
 
-<p><img src="screenshots/admin-dashboard.png" alt="Admin Dashboard & Stats" width="560"></p>
+<p><img src="screenshots/admin-dashboard.png" alt="Admin Dashboard & Stats" width="100%"></p>
 
 The Dashboard gives operators an immediate overview of machine performance, revenue usage, environmental impact, and hardware health:
 - **Top KPIs:** Today's Bottles, Lifetime Bottles, Active Clients, and License Status.
@@ -255,7 +255,7 @@ The Dashboard gives operators an immediate overview of machine performance, reve
 
 ### Active Clients
 
-<p><img src="screenshots/admin-clients.png" alt="Admin Active Clients" width="560"></p>
+<p><img src="screenshots/admin-clients.png" alt="Admin Active Clients" width="100%"></p>
 
 The **Connected Client Sessions** table monitors all authorized and paused customer devices in real time:
 - Inspect each client's **IP Address**, **MAC Address**, **Remaining Time**, **Status** (`ACTIVE`, `PAUSED`, `PAID`), and **Bandwidth** cap.
@@ -269,7 +269,7 @@ The **Connected Client Sessions** table monitors all authorized and paused custo
 
 ### Voucher Tickets
 
-<p><img src="screenshots/admin-vouchers.png" alt="Admin Voucher Tickets" width="560"></p>
+<p><img src="screenshots/admin-vouchers.png" alt="Admin Voucher Tickets" width="100%"></p>
 
 Use **Voucher Tickets** to create and audit prepaid WiFi codes:
 - **Generate Prepaid Vouchers:** Select batch quantity (`1–100`) and duration per ticket, then generate ready-to-sell codes.
@@ -280,7 +280,7 @@ Use **Voucher Tickets** to create and audit prepaid WiFi codes:
 
 ### Rates & Packages
 
-<p><img src="screenshots/admin-rates.png" alt="Admin Rates & Packages" width="560"></p>
+<p><img src="screenshots/admin-rates.png" alt="Admin Rates & Packages" width="100%"></p>
 
 Configure how bottles convert to internet minutes:
 - **Base Settings:** Define **Base Rate (Mins/Bottle)** and **Drop Timeout (s)** (how long the airlock gate waits during a deposit session).
@@ -291,7 +291,7 @@ Configure how bottles convert to internet minutes:
 
 ### Validity & Pauses
 
-<p><img src="screenshots/admin-validity-pauses.png" alt="Admin Validity & Pauses" width="560"></p>
+<p><img src="screenshots/admin-validity-pauses.png" alt="Admin Validity & Pauses" width="100%"></p>
 
 Control expiration windows and pause privileges under **Time Validity & Pause Rules**:
 - **Allow Customer Pauses:** Master toggle allowing or restricting client-initiated pauses.
@@ -308,7 +308,7 @@ The **Network & Interfaces** page contains four tabs (**Adapters & WAN/LAN**, **
 
 ### Adapters & WAN/LAN
 
-<p><img src="screenshots/admin-network-adapters.png" alt="Admin Network Adapters" width="560"></p>
+<p><img src="screenshots/admin-network-adapters.png" alt="Admin Network Adapters" width="100%"></p>
 
 Inspect and assign the upstream **WAN** interface (connected to your ISP router or Starlink Ethernet adapter) and downstream **LAN** interface (connected to your customer WiFi Access Point on subnet `10.0.0.1/19`). Monitor live link state, RX/TX throughput, and gateway assignments.
 
@@ -316,7 +316,7 @@ Inspect and assign the upstream **WAN** interface (connected to your ISP router 
 
 ### DNS & Domain
 
-<p><img src="screenshots/admin-network-dns.png" alt="Admin Network DNS & Domain" width="560"></p>
+<p><img src="screenshots/admin-network-dns.png" alt="Admin Network DNS & Domain" width="100%"></p>
 
 Configure upstream DNS resolvers for authorized internet traffic and captive portal hostname/domain settings. The gateway maintains captive probe interception for Apple CNA (`captive.apple.com`), Android (`connectivitycheck.gstatic.com`), and Windows (`msftconnecttest.com`), as well as RFC 8908 / Option 114 captive portal discovery.
 
@@ -324,7 +324,7 @@ Configure upstream DNS resolvers for authorized internet traffic and captive por
 
 ### DHCP & Leases
 
-<p><img src="screenshots/admin-network-dhcp.png" alt="Admin Network DHCP & Leases" width="560"></p>
+<p><img src="screenshots/admin-network-dhcp.png" alt="Admin Network DHCP & Leases" width="100%"></p>
 
 Monitor the local DHCP pool (**`10.0.0.0/19`**, **`8,190 IPs`** available from `10.0.0.100` to `10.0.31.254`). The full-height scrollable IP lease table displays every client's leased IP, MAC address, hostname, lease status, and active session status (such as `Paid (42m left)` or `Unauthenticated`).
 
@@ -332,7 +332,7 @@ Monitor the local DHCP pool (**`10.0.0.0/19`**, **`8,190 IPs`** available from `
 
 ### Access Policies
 
-<p><img src="screenshots/admin-network-policies.png" alt="Admin Network Access Policies" width="560"></p>
+<p><img src="screenshots/admin-network-policies.png" alt="Admin Network Access Policies" width="100%"></p>
 
 Harden the customer WiFi subnet against unauthorized upstream access and sharing bypasses:
 - **ISP Modem Isolation:** Prevents customer devices from reaching upstream router/modem management pages on private RFC 1918 subnets.
@@ -343,7 +343,7 @@ Harden the customer WiFi subnet against unauthorized upstream access and sharing
 
 ### Bandwidth & Speed + Gaming QoS
 
-<p><img src="screenshots/admin-bandwidth.png" alt="Admin Bandwidth & Gaming QoS" width="560"></p>
+<p><img src="screenshots/admin-bandwidth.png" alt="Admin Bandwidth & Gaming QoS" width="100%"></p>
 
 Manage fair bandwidth distribution and low-latency online gaming:
 - **Fixed Client Speed Limits:** Set global per-device upload and download speed caps (`Kbps`/`Mbps`) enforced via Linux HTB/SFQ traffic control.
@@ -354,7 +354,7 @@ Manage fair bandwidth distribution and low-latency online gaming:
 
 ### Walled Garden Sites
 
-<p><img src="screenshots/admin-walled-garden.png" alt="Admin Walled Garden Sites" width="560"></p>
+<p><img src="screenshots/admin-walled-garden.png" alt="Admin Walled Garden Sites" width="100%"></p>
 
 Maintain an allowlist of domain names or hosts that customers may reach **before** earning WiFi time (for example, local informational pages or payment/school portals). Only add trusted destinations here, as listed sites bypass the pre-authentication block.
 
@@ -362,7 +362,7 @@ Maintain an allowlist of domain names or hosts that customers may reach **before
 
 ### MAC Filtering
 
-<p><img src="screenshots/admin-mac-filtering.png" alt="Admin MAC Filtering" width="560"></p>
+<p><img src="screenshots/admin-mac-filtering.png" alt="Admin MAC Filtering" width="100%"></p>
 
 Manage permanent bypass and block rules by hardware MAC address:
 - **VIP Whitelist:** Grants continuous internet access to operator devices, kiosk displays, or staff phones without requiring bottle deposits.
@@ -375,7 +375,7 @@ Manage permanent bypass and block rules by hardware MAC address:
 
 ### Portal & Banners
 
-<p><img src="screenshots/admin-portal-banners.png" alt="Admin Portal & Banners" width="560"></p>
+<p><img src="screenshots/admin-portal-banners.png" alt="Admin Portal & Banners" width="100%"></p>
 
 Customize the customer-facing portal appearance in real time:
 - **Vendo Name:** Main header title shown on both the portal banner and screen greeting.
@@ -386,7 +386,7 @@ Customize the customer-facing portal appearance in real time:
 
 ### Audio & Chimes
 
-<p><img src="screenshots/admin-audio-chimes.png" alt="Admin Audio & Chimes" width="560"></p>
+<p><img src="screenshots/admin-audio-chimes.png" alt="Admin Audio & Chimes" width="100%"></p>
 
 Configure audio feedback across **four distinct event stages**:
 1. **Standby Loop:** Background/idle audio behavior.
@@ -404,7 +404,7 @@ The **ESP32 Hardware** workspace provides complete diagnostics, sensor calibrati
 
 ### Chute Sequence Monitor
 
-<p><img src="screenshots/admin-esp32-sequence.png" alt="Admin ESP32 Chute Sequence Monitor" width="560"></p>
+<p><img src="screenshots/admin-esp32-sequence.png" alt="Admin ESP32 Chute Sequence Monitor" width="100%"></p>
 
 Monitor the real-time **7-Stage Chute Sequence Pipeline (`S1–S7`)** and latency budget from the moment the entrance gate unlocks through object sorting, verification, and drop completion:
 - Inspect live stage timing, pass/fail telemetry, and diagnostics stream messages.
@@ -414,7 +414,7 @@ Monitor the real-time **7-Stage Chute Sequence Pipeline (`S1–S7`)** and latenc
 
 ### NIR Spectrometer (AS7263)
 
-<p><img src="screenshots/admin-esp32-nir.png" alt="Admin ESP32 NIR Spectrometer" width="560"></p>
+<p><img src="screenshots/admin-esp32-nir.png" alt="Admin ESP32 NIR Spectrometer" width="100%"></p>
 
 Calibrate the **AS7263 6-Channel Near-Infrared Sensor (`R, S, T, U, V, W`)** used for material discrimination:
 - View real-time spectral channel counts and calibrated `W` intensity (`uW/cm²`).
@@ -425,7 +425,7 @@ Calibrate the **AS7263 6-Channel Near-Infrared Sensor (`R, S, T, U, V, W`)** use
 
 ### Weight Sensor (HX711)
 
-<p><img src="screenshots/admin-esp32-weight.png" alt="Admin ESP32 Weight Sensor" width="560"></p>
+<p><img src="screenshots/admin-esp32-weight.png" alt="Admin ESP32 Weight Sensor" width="100%"></p>
 
 Tune the load-cell cradle connected to the **HX711 ADC**:
 - **Weight Window:** Default valid bottle range is **`15 – 90` g** (with default **HX711 calibration factor `260`**).
@@ -435,7 +435,7 @@ Tune the load-cell cradle connected to the **HX711 ADC**:
 
 ### Servos & Gates (PCA9685)
 
-<p><img src="screenshots/admin-esp32-servos.png" alt="Admin ESP32 Servos & Gates" width="560"></p>
+<p><img src="screenshots/admin-esp32-servos.png" alt="Admin ESP32 Servos & Gates" width="100%"></p>
 
 Calibrate mechanical angles on the **PCA9685 PWM Servo Controller**:
 - **Channel 0 — Entrance Gate Servo:** Controls customer bottle entry access (standard closed/open angles `0° / 90°`).
@@ -446,7 +446,7 @@ Calibrate mechanical angles on the **PCA9685 PWM Servo Controller**:
 
 ### Timers & Proximity
 
-<p><img src="screenshots/admin-esp32-timers.png" alt="Admin ESP32 Timers & Proximity" width="560"></p>
+<p><img src="screenshots/admin-esp32-timers.png" alt="Admin ESP32 Timers & Proximity" width="100%"></p>
 
 Configure bin fullness sensing and chute state machine timers:
 - **Bin Detection Policy & Geometry:** Set enclosure bin orientation (for example, horizontal bin depth **`18 cm`** triggered at **`3 s`** sustained blockage) so the machine automatically prevents overflow and alerts operators.
@@ -456,7 +456,7 @@ Configure bin fullness sensing and chute state machine timers:
 
 ### Firmware Flash
 
-<p><img src="screenshots/admin-esp32-firmware.png" alt="Admin ESP32 Firmware Flash" width="560"></p>
+<p><img src="screenshots/admin-esp32-firmware.png" alt="Admin ESP32 Firmware Flash" width="100%"></p>
 
 Update the connected ESP32 microcontroller safely without removing it from the machine:
 - Review the GPIO strapping / boot pin guidance card before flashing.
@@ -466,7 +466,7 @@ Update the connected ESP32 microcontroller safely without removing it from the m
 
 ### ESP32 Hardware Simulator
 
-<p><img src="screenshots/portal-simulator.png" alt="ESP32 Hardware Simulator" width="560"></p>
+<p><img src="screenshots/portal-simulator.png" alt="ESP32 Hardware Simulator" width="100%"></p>
 
 When enabled by an administrator, the authenticated **`/simulator`** route opens the interactive **VMC ECO-VENDO ESP32 Hardware Simulator**:
 - Mirrors the physical **20x4 I2C LCD** screen (including rotating rate tiers and drop state messages).
@@ -479,7 +479,7 @@ When enabled by an administrator, the authenticated **`/simulator`** route opens
 
 ### Telegram Automated Alerts
 
-<p><img src="screenshots/admin-telegram.png" alt="Admin Telegram Automated Alerts" width="560"></p>
+<p><img src="screenshots/admin-telegram.png" alt="Admin Telegram Automated Alerts" width="100%"></p>
 
 Receive instant mobile alerts from your vending machine via Telegram:
 1. Create a bot using **`@BotFather`** in Telegram (`New Bot`) to obtain your **Bot Token**.
@@ -490,7 +490,7 @@ Receive instant mobile alerts from your vending machine via Telegram:
 
 ### System Verifier & Health
 
-<p><img src="screenshots/admin-system-verifier.png" alt="Admin System Verifier & Health" width="560"></p>
+<p><img src="screenshots/admin-system-verifier.png" alt="Admin System Verifier & Health" width="100%"></p>
 
 Located under **System Maintenance -> System Verifier & Health**, this tool performs end-to-end checks across portal HTTP routes, SQLite database schema integrity, `dnsmasq`/DHCP/DNS readiness, `iptables`/QoS firewall rules, NTP clock status, and ESP32 serial link health so operators can diagnose issues in one click.
 
@@ -498,7 +498,7 @@ Located under **System Maintenance -> System Verifier & Health**, this tool perf
 
 ### Backup & Database
 
-<p><img src="screenshots/admin-system-backup.png" alt="Admin Database Backup & Restore" width="560"></p>
+<p><img src="screenshots/admin-system-backup.png" alt="Admin Database Backup & Restore" width="100%"></p>
 
 Protect your rates, voucher ledger, client sessions, and configuration:
 - **Export System Backup:** Download a compressed `.zip` snapshot containing the SQLite database (`ecovendo.db` / system state), settings, vouchers, and operational records.
@@ -508,7 +508,7 @@ Protect your rates, voucher ledger, client sessions, and configuration:
 
 ### Power & Operations
 
-<p><img src="screenshots/admin-system-power.png" alt="Admin Power & Operations" width="560"></p>
+<p><img src="screenshots/admin-system-power.png" alt="Admin Power & Operations" width="100%"></p>
 
 Perform high-impact operational commands safely (each action prompts for explicit confirmation before executing):
 - **Flush All Sessions:** Disconnects all currently active clients and resets live firewall grants.
@@ -519,7 +519,7 @@ Perform high-impact operational commands safely (each action prompts for explici
 
 ### System Event Logger
 
-<p><img src="screenshots/admin-system-logs.png" alt="Admin System Event Logger" width="560"></p>
+<p><img src="screenshots/admin-system-logs.png" alt="Admin System Event Logger" width="100%"></p>
 
 Inspect real-time and historical events from the portal backend, entitlement engine, network firewall, and ESP32 controller:
 - Filter log lines by **Source** and **Severity Level** or run a keyword search.
@@ -529,7 +529,7 @@ Inspect real-time and historical events from the portal backend, entitlement eng
 
 ### Hardware Licensing & Remote Support
 
-<p><img src="screenshots/admin-licensing.png" alt="Admin Hardware Licensing" width="560"></p>
+<p><img src="screenshots/admin-licensing.png" alt="Admin Hardware Licensing" width="100%"></p>
 
 Manage commercial licensing and vendor assistance:
 - **Machine Hardware ID (`HWID`):** Copy the unit's unique 32-character (`XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`) identifier when requesting a commercial license.
