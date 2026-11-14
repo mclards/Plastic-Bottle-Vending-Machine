@@ -76,78 +76,94 @@ python -B -m unittest discover -s host -p "test_*.py"
 
 ## Portal & Admin Screenshot Gallery
 
-All screenshots below are also documented step-by-step in [USER_GUIDE.md](USER_GUIDE.md).
+All screenshots below are also documented step-by-step in [USER_GUIDE.md](USER_GUIDE.md). Click any preview to view the full-resolution image.
 
 ### 1. Customer Captive Portal & Hardware Simulator
 
-| View | Preview |
-| :--- | :--- |
-| **Ready / Disconnected Portal & Rates** | ![Customer Portal Ready](screenshots/portal-ready.png) |
-| **Airlock Gate Open (Bottle Deposit)** | ![Airlock Deposit Session](screenshots/portal-deposit.png) |
-| **Connected Session (`CONNECTED`)** | ![Connected Session](screenshots/portal-connected.png) |
-| **Paused Session (`PAUSED`)** | ![Paused Session](screenshots/portal-paused.png) |
-| **Voucher Redemption Tab** | ![Voucher Tab](screenshots/portal-voucher.png) |
-| **Time Transfer / Share Tab** | ![Time Transfer Tab](screenshots/portal-transfer.png) |
-| **ESP32 Hardware Simulator (`/simulator`)** | ![ESP32 Hardware Simulator](screenshots/portal-simulator.png) |
+| Ready & Rates | Airlock Gate Open (Deposit) | Connected Session (`CONNECTED`) |
+| :---: | :---: | :---: |
+| <img src="screenshots/portal-ready.png" alt="Customer Portal Ready" width="220"> | <img src="screenshots/portal-deposit.png" alt="Airlock Deposit Session" width="220"> | <img src="screenshots/portal-connected.png" alt="Connected Session" width="220"> |
+
+| Paused Session (`PAUSED`) | Voucher Redemption Tab | Time Transfer / Share Tab |
+| :---: | :---: | :---: |
+| <img src="screenshots/portal-paused.png" alt="Paused Session" width="220"> | <img src="screenshots/portal-voucher.png" alt="Voucher Tab" width="220"> | <img src="screenshots/portal-transfer.png" alt="Time Transfer Tab" width="220"> |
+
+**ESP32 Hardware Simulator (`/simulator`)**
+
+<img src="screenshots/portal-simulator.png" alt="ESP32 Hardware Simulator" width="560">
 
 ---
 
 ### 2. Admin Panel — Vendo Operations
 
-| View | Preview |
-| :--- | :--- |
-| **Admin Sign-In** | ![Admin Login](screenshots/admin-login.png) |
-| **Dashboard & Stats** | ![Dashboard & Stats](screenshots/admin-dashboard.png) |
-| **Active Clients** | ![Active Clients](screenshots/admin-clients.png) |
-| **Voucher Tickets** | ![Voucher Tickets](screenshots/admin-vouchers.png) |
-| **Rates & Packages** | ![Rates & Packages](screenshots/admin-rates.png) |
-| **Validity & Pauses** | ![Validity & Pauses](screenshots/admin-validity-pauses.png) |
+| Admin Sign-In | Dashboard & Stats |
+| :---: | :---: |
+| <img src="screenshots/admin-login.png" alt="Admin Login" width="380"> | <img src="screenshots/admin-dashboard.png" alt="Dashboard & Stats" width="380"> |
+
+| Active Clients | Voucher Tickets |
+| :---: | :---: |
+| <img src="screenshots/admin-clients.png" alt="Active Clients" width="380"> | <img src="screenshots/admin-vouchers.png" alt="Voucher Tickets" width="380"> |
+
+| Rates & Packages | Validity & Pauses |
+| :---: | :---: |
+| <img src="screenshots/admin-rates.png" alt="Rates & Packages" width="380"> | <img src="screenshots/admin-validity-pauses.png" alt="Validity & Pauses" width="380"> |
 
 ---
 
 ### 3. Admin Panel — Network & Traffic
 
-| View | Preview |
-| :--- | :--- |
-| **Network — Adapters & WAN/LAN** | ![Adapters & WAN/LAN](screenshots/admin-network-adapters.png) |
-| **Network — DNS & Domain** | ![DNS & Domain](screenshots/admin-network-dns.png) |
-| **Network — DHCP & Leases** | ![DHCP & Leases](screenshots/admin-network-dhcp.png) |
-| **Network — Access Policies** | ![Access Policies](screenshots/admin-network-policies.png) |
-| **Bandwidth & Speed + Gaming QoS** | ![Bandwidth & Speed](screenshots/admin-bandwidth.png) |
-| **Walled Garden Sites** | ![Walled Garden Sites](screenshots/admin-walled-garden.png) |
-| **MAC Filtering (VIP & Blacklist)** | ![MAC Filtering](screenshots/admin-mac-filtering.png) |
+| Network — Adapters & WAN/LAN | Network — DNS & Domain |
+| :---: | :---: |
+| <img src="screenshots/admin-network-adapters.png" alt="Adapters & WAN/LAN" width="380"> | <img src="screenshots/admin-network-dns.png" alt="DNS & Domain" width="380"> |
+
+| Network — DHCP & Leases | Network — Access Policies |
+| :---: | :---: |
+| <img src="screenshots/admin-network-dhcp.png" alt="DHCP & Leases" width="380"> | <img src="screenshots/admin-network-policies.png" alt="Access Policies" width="380"> |
+
+| Bandwidth & Speed + Gaming QoS | Walled Garden Sites |
+| :---: | :---: |
+| <img src="screenshots/admin-bandwidth.png" alt="Bandwidth & Speed" width="380"> | <img src="screenshots/admin-walled-garden.png" alt="Walled Garden Sites" width="380"> |
+
+| MAC Filtering (VIP & Blacklist) | |
+| :---: | :---: |
+| <img src="screenshots/admin-mac-filtering.png" alt="MAC Filtering" width="380"> | |
 
 ---
 
 ### 4. Admin Panel — Portal & Branding
 
-| View | Preview |
-| :--- | :--- |
-| **Portal & Banners** | ![Portal & Banners](screenshots/admin-portal-banners.png) |
-| **Audio & Chimes** | ![Audio & Chimes](screenshots/admin-audio-chimes.png) |
+| Portal & Banners | Audio & Chimes |
+| :---: | :---: |
+| <img src="screenshots/admin-portal-banners.png" alt="Portal & Banners" width="380"> | <img src="screenshots/admin-audio-chimes.png" alt="Audio & Chimes" width="380"> |
 
 ---
 
 ### 5. Admin Panel — ESP32 Hardware & Sensors
 
-| View | Preview |
-| :--- | :--- |
-| **ESP32 — Chute Sequence Monitor** | ![Chute Sequence Monitor](screenshots/admin-esp32-sequence.png) |
-| **ESP32 — NIR Spectrometer (AS7263)** | ![NIR Spectrometer](screenshots/admin-esp32-nir.png) |
-| **ESP32 — Weight Sensor (HX711)** | ![Weight Sensor](screenshots/admin-esp32-weight.png) |
-| **ESP32 — Servos & Gates (PCA9685)** | ![Servos & Gates](screenshots/admin-esp32-servos.png) |
-| **ESP32 — Timers & Proximity** | ![Timers & Proximity](screenshots/admin-esp32-timers.png) |
-| **ESP32 — Firmware Flash** | ![Firmware Flash](screenshots/admin-esp32-firmware.png) |
+| Chute Sequence Monitor | NIR Spectrometer (AS7263) |
+| :---: | :---: |
+| <img src="screenshots/admin-esp32-sequence.png" alt="Chute Sequence Monitor" width="380"> | <img src="screenshots/admin-esp32-nir.png" alt="NIR Spectrometer" width="380"> |
+
+| Weight Sensor (HX711) | Servos & Gates (PCA9685) |
+| :---: | :---: |
+| <img src="screenshots/admin-esp32-weight.png" alt="Weight Sensor" width="380"> | <img src="screenshots/admin-esp32-servos.png" alt="Servos & Gates" width="380"> |
+
+| Timers & Proximity | Firmware Flash |
+| :---: | :---: |
+| <img src="screenshots/admin-esp32-timers.png" alt="Timers & Proximity" width="380"> | <img src="screenshots/admin-esp32-firmware.png" alt="Firmware Flash" width="380"> |
 
 ---
 
 ### 6. Admin Panel — System & Maintenance
 
-| View | Preview |
-| :--- | :--- |
-| **Telegram Automated Alerts** | ![Telegram Alerts](screenshots/admin-telegram.png) |
-| **System Verifier & Health** | ![System Verifier](screenshots/admin-system-verifier.png) |
-| **Database Backup & Restore** | ![Backup & Database](screenshots/admin-system-backup.png) |
-| **Power & Operations** | ![Power & Operations](screenshots/admin-system-power.png) |
-| **System Event Logger** | ![System Event Logger](screenshots/admin-system-logs.png) |
-| **Hardware Licensing** | ![Hardware Licensing](screenshots/admin-licensing.png) |
+| Telegram Automated Alerts | System Verifier & Health |
+| :---: | :---: |
+| <img src="screenshots/admin-telegram.png" alt="Telegram Alerts" width="380"> | <img src="screenshots/admin-system-verifier.png" alt="System Verifier" width="380"> |
+
+| Database Backup & Restore | Power & Operations |
+| :---: | :---: |
+| <img src="screenshots/admin-system-backup.png" alt="Backup & Database" width="380"> | <img src="screenshots/admin-system-power.png" alt="Power & Operations" width="380"> |
+
+| System Event Logger | Hardware Licensing |
+| :---: | :---: |
+| <img src="screenshots/admin-system-logs.png" alt="System Event Logger" width="380"> | <img src="screenshots/admin-licensing.png" alt="Hardware Licensing" width="380"> |

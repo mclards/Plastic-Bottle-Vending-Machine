@@ -4,6 +4,8 @@
 
 Welcome to the official User Guide and Operator Manual for **VMC ECO-VENDO**, a Bottle-to-WiFi Smart Reverse Vending Machine (RVM) portal and administration suite. This manual walks both everyday WiFi customers and machine operators through every interface in the system.
 
+> **Tip:** Screenshots are scaled to fit alongside the instructions so you can follow each step without excessive scrolling. Click any screenshot on GitHub to open the full-resolution image.
+
 ---
 
 ## Table of Contents
@@ -59,25 +61,37 @@ The Customer Captive Portal automatically opens when you join the Eco-Vendo WiFi
 
 ## 1. Connecting & Viewing Portal Status
 
-![Customer Captive Portal Ready](screenshots/portal-ready.png)
-
-The main portal screen shows:
-- **Portal Banner:** Displays the station name (for example, **VMC ECO-VENDO**), tagline, and any active announcement posted by the operator.
-- **AVAILABLE INTERNET TIME:** Your remaining internet time formatted as `Dd HHh:MMm:SSs`, paired with your current connection badge:
-  - **`DISCONNECTED`**: You do not currently have active internet time on this device.
-  - **`CONNECTED`**: Your internet session is active and counting down.
-  - **`PAUSED`**: Your remaining time balance is safely held until you resume or reach your auto-resume deadline.
-- **Insert Plastic Bottle:** Opens the machine's airlock entrance gate to begin a deposit session.
-- **Bottom Feature Tabs:** Switch between **Rates**, **Voucher**, and **Transfer**.
-- **Footer:** Displays your device's assigned LAN IP address and hardware MAC address for support reference.
+<table>
+  <tr>
+    <td width="265" align="center" valign="top">
+      <img src="screenshots/portal-ready.png" alt="Customer Captive Portal Ready" width="240">
+    </td>
+    <td valign="top">
+      <p>The main portal screen shows everything you need at a glance:</p>
+      <ul>
+        <li><strong>Portal Banner:</strong> Displays the station name (for example, <strong>VMC ECO-VENDO</strong>), tagline, and any active announcement posted by the operator.</li>
+        <li><strong>AVAILABLE INTERNET TIME:</strong> Your remaining time formatted as <code>Dd HHh:MMm:SSs</code>, paired with your status badge:
+          <ul>
+            <li><code>DISCONNECTED</code> — No active internet time on this device yet.</li>
+            <li><code>CONNECTED</code> — Your internet session is live and counting down.</li>
+            <li><code>PAUSED</code> — Your balance is safely held until you resume or reach your auto-resume deadline.</li>
+          </ul>
+        </li>
+        <li><strong>Insert Plastic Bottle:</strong> Opens the machine's airlock entrance gate to start a deposit session.</li>
+        <li><strong>Bottom Feature Tabs:</strong> Switch between <strong>Rates</strong>, <strong>Voucher</strong>, and <strong>Transfer</strong>.</li>
+        <li><strong>Footer:</strong> Displays your device's assigned LAN IP address and hardware MAC address for support reference.</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
 ---
 
 ## 2. Acceptable vs. Rejected Items
 
-Before opening the bottle chute, review the **Bottle Acceptance Guide** inside the **Rates** tab:
+Before opening the bottle chute, check the **Bottle Acceptance Guide** at the bottom of the **Rates** tab:
 
-- **Accepted:** Empty, clean PET plastic beverage bottles (without metal caps, liquids inside, or foreign objects).
+- **Accepted:** Empty, clean PET plastic beverage bottles (without metal caps, liquid inside, or foreign objects).
 - **Rejected:** Aluminum/metal cans, glass bottles, cardboard/paper cups, heavy non-bottle objects, or wet/filled bottles.
 
 Inserting non-PET or metallic items triggers the sensor rejection gate so you can retrieve the item safely.
@@ -86,13 +100,22 @@ Inserting non-PET or metallic items triggers the sensor rejection gate so you ca
 
 ## 3. Depositing Plastic Bottles
 
-![Airlock Gate Open Deposit Modal](screenshots/portal-deposit.png)
-
-1. Tap **Insert Plastic Bottle** on the portal home screen.
-2. Wait for the **AIRLOCK GATE OPEN** prompt to appear along with the gate countdown timer (e.g., `60s` / `58s` window).
-3. Insert one empty PET bottle into the chute at a time. Wait for verification and the acceptance chime before inserting the next bottle.
-4. Watch the live modal counters update with your **credited bottle count** and **earned WiFi minutes** (including any tiered bonus packages configured by the operator).
-5. When finished, tap **DONE / START BROWSING** (or wait for the gate timer to finish) to activate your WiFi access immediately.
+<table>
+  <tr>
+    <td width="265" align="center" valign="top">
+      <img src="screenshots/portal-deposit.png" alt="Airlock Gate Open Deposit Modal" width="240">
+    </td>
+    <td valign="top">
+      <ol>
+        <li>Tap <strong>Insert Plastic Bottle</strong> on the portal home screen.</li>
+        <li>Wait for the <strong>AIRLOCK GATE OPEN</strong> prompt along with the live gate countdown timer (e.g., <code>60s</code> / <code>58s</code> window).</li>
+        <li>Insert one empty PET bottle into the chute at a time. Wait for verification and the acceptance chime before inserting the next bottle.</li>
+        <li>Watch the modal counters update in real time with your <strong>credited bottle count</strong> and <strong>earned WiFi minutes</strong> (including any tiered bonus packages configured by the operator).</li>
+        <li>When finished, tap <strong>DONE / START BROWSING</strong> (or wait for the gate timer to finish) to activate your WiFi access immediately.</li>
+      </ol>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -100,49 +123,84 @@ Inserting non-PET or metallic items triggers the sensor rejection gate so you ca
 
 ### Active Session (`CONNECTED`)
 
-![Customer Connected Session](screenshots/portal-connected.png)
-
-Once credited, your status turns green (**`CONNECTED`**) and your countdown begins. Below your controls, **SESSION VALIDITY** shows:
-- Remaining pause allowances (e.g., `3 Pauses Left`) if pausing is enabled by the operator.
-- Your session expiration timestamp (**`Valid Until`**).
-
-Tap **PAUSE TIME** whenever you step away and want to conserve your remaining balance (subject to minimum balance and maximum pause limits set by the operator).
+<table>
+  <tr>
+    <td width="265" align="center" valign="top">
+      <img src="screenshots/portal-connected.png" alt="Customer Connected Session" width="240">
+    </td>
+    <td valign="top">
+      <p>Once credited, your status badge turns green (<strong><code>CONNECTED</code></strong>) and your countdown begins.</p>
+      <ul>
+        <li><strong>SESSION VALIDITY:</strong> Displays remaining pause allowances (e.g., <code>3 Pauses Left</code>) when pausing is enabled by the operator, plus your session expiration timestamp (<strong><code>Valid Until</code></strong>).</li>
+        <li><strong>PAUSE TIME:</strong> Tap whenever you step away to hold your remaining balance (subject to minimum balance and maximum pause limits set by the operator).</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
 ### Paused Session (`PAUSED`)
 
-![Customer Paused Session](screenshots/portal-paused.png)
-
-While paused:
-- Internet traffic for your device is temporarily blocked and your remaining time stops counting down.
-- The **SESSION VALIDITY** panel displays your **`Auto-resumes`** deadline—your session automatically resumes once that deadline passes if you do not resume manually earlier.
-- Tap **Resume Time** when you are ready to go back online.
+<table>
+  <tr>
+    <td width="265" align="center" valign="top">
+      <img src="screenshots/portal-paused.png" alt="Customer Paused Session" width="240">
+    </td>
+    <td valign="top">
+      <p>While paused:</p>
+      <ul>
+        <li>Internet traffic for your device is temporarily blocked and your remaining time stops counting down.</li>
+        <li><strong>Auto-resumes:</strong> The <strong>SESSION VALIDITY</strong> panel displays your auto-resume deadline—your session resumes automatically once that deadline passes if you do not resume manually earlier.</li>
+        <li><strong>Resume Time:</strong> Tap when you are ready to go back online.</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
 ---
 
 ## 5. Redeeming a Prepaid Voucher
 
-![Customer Voucher Redemption Tab](screenshots/portal-voucher.png)
-
-If you received a prepaid voucher code from the operator (formatted such as `Eco-XXXX`):
-1. Tap the **Voucher** tab at the bottom of the portal.
-2. Enter your voucher code in the input field.
-3. Tap **Redeem Voucher** to immediately credit the voucher's duration to your device and start or extend your session.
+<table>
+  <tr>
+    <td width="265" align="center" valign="top">
+      <img src="screenshots/portal-voucher.png" alt="Customer Voucher Redemption Tab" width="240">
+    </td>
+    <td valign="top">
+      <p>If you received a prepaid voucher code from the operator (formatted such as <code>Eco-XXXX</code>):</p>
+      <ol>
+        <li>Tap the <strong>Voucher</strong> tab near the bottom of the portal.</li>
+        <li>Enter your voucher code in the input field.</li>
+        <li>Tap <strong>Redeem Voucher</strong> to immediately credit the voucher's duration to your device and start or extend your session.</li>
+      </ol>
+    </td>
+  </tr>
+</table>
 
 ---
 
 ## 6. Sharing & Transferring Time Across Devices
 
-![Customer Time Transfer Tab](screenshots/portal-transfer.png)
-
-You can move minutes from your current device to another phone, tablet, or laptop on the same Eco-Vendo hotspot:
-
-- **Send / Share Time:**
-  1. Open the **Transfer** tab.
-  2. Enter the number of minutes to transfer out of your active balance and generate a transfer code.
-  3. Share the generated code with the destination device.
-- **Claim a Transfer Code:**
-  1. On the receiving device, open **`http://10.0.0.1/`** -> **Transfer** tab.
-  2. Enter the transfer code in **Claim a Transfer Code** and submit to credit those minutes to the receiving device.
+<table>
+  <tr>
+    <td width="265" align="center" valign="top">
+      <img src="screenshots/portal-transfer.png" alt="Customer Time Transfer Tab" width="240">
+    </td>
+    <td valign="top">
+      <p>Move minutes from your current device to another phone, tablet, or laptop on the same Eco-Vendo hotspot:</p>
+      <p><strong>Send / Share Time</strong></p>
+      <ol>
+        <li>Open the <strong>Transfer</strong> tab.</li>
+        <li>Enter the number of minutes to transfer out of your active balance and generate a transfer code.</li>
+        <li>Share the generated code with the destination device.</li>
+      </ol>
+      <p><strong>Claim a Transfer Code</strong></p>
+      <ol>
+        <li>On the receiving device, open <code>http://10.0.0.1/</code> &rarr; <strong>Transfer</strong> tab.</li>
+        <li>Enter the transfer code under <strong>Claim a Transfer Code</strong> and submit to credit those minutes.</li>
+      </ol>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -169,7 +227,7 @@ The left navigation sidebar organizes every control into **five functional domai
 
 ## 1. Signing In & First-Boot Security
 
-![Admin Sign-In Screen](screenshots/admin-login.png)
+<p><img src="screenshots/admin-login.png" alt="Admin Sign-In Screen" width="560"></p>
 
 1. Navigate to **`http://10.0.0.1/admin`**.
 2. Enter your administrator username and password and sign in.
@@ -181,7 +239,7 @@ The left navigation sidebar organizes every control into **five functional domai
 
 ### Dashboard & Stats
 
-![Admin Dashboard & Stats](screenshots/admin-dashboard.png)
+<p><img src="screenshots/admin-dashboard.png" alt="Admin Dashboard & Stats" width="560"></p>
 
 The Dashboard gives operators an immediate overview of machine performance, revenue usage, environmental impact, and hardware health:
 - **Top KPIs:** Today's Bottles, Lifetime Bottles, Active Clients, and License Status.
@@ -193,7 +251,7 @@ The Dashboard gives operators an immediate overview of machine performance, reve
 
 ### Active Clients
 
-![Admin Active Clients](screenshots/admin-clients.png)
+<p><img src="screenshots/admin-clients.png" alt="Admin Active Clients" width="560"></p>
 
 The **Connected Client Sessions** table monitors all authorized and paused customer devices in real time:
 - Inspect each client's **IP Address**, **MAC Address**, **Remaining Time**, **Status** (`ACTIVE`, `PAUSED`, `PAID`), and **Bandwidth** cap.
@@ -207,7 +265,7 @@ The **Connected Client Sessions** table monitors all authorized and paused custo
 
 ### Voucher Tickets
 
-![Admin Voucher Tickets](screenshots/admin-vouchers.png)
+<p><img src="screenshots/admin-vouchers.png" alt="Admin Voucher Tickets" width="560"></p>
 
 Use **Voucher Tickets** to create and audit prepaid WiFi codes:
 - **Generate Prepaid Vouchers:** Select batch quantity (`1–100`) and duration per ticket, then generate ready-to-sell codes.
@@ -218,7 +276,7 @@ Use **Voucher Tickets** to create and audit prepaid WiFi codes:
 
 ### Rates & Packages
 
-![Admin Rates & Packages](screenshots/admin-rates.png)
+<p><img src="screenshots/admin-rates.png" alt="Admin Rates & Packages" width="560"></p>
 
 Configure how bottles convert to internet minutes:
 - **Base Settings:** Define **Base Rate (Mins/Bottle)** and **Drop Timeout (s)** (how long the airlock gate waits during a deposit session).
@@ -229,7 +287,7 @@ Configure how bottles convert to internet minutes:
 
 ### Validity & Pauses
 
-![Admin Validity & Pauses](screenshots/admin-validity-pauses.png)
+<p><img src="screenshots/admin-validity-pauses.png" alt="Admin Validity & Pauses" width="560"></p>
 
 Control expiration windows and pause privileges under **Time Validity & Pause Rules**:
 - **Allow Customer Pauses:** Master toggle allowing or restricting client-initiated pauses.
@@ -246,7 +304,7 @@ The **Network & Interfaces** page contains four tabs (**Adapters & WAN/LAN**, **
 
 ### Adapters & WAN/LAN
 
-![Admin Network Adapters](screenshots/admin-network-adapters.png)
+<p><img src="screenshots/admin-network-adapters.png" alt="Admin Network Adapters" width="560"></p>
 
 Inspect and assign the upstream **WAN** interface (connected to your ISP router or Starlink Ethernet adapter) and downstream **LAN** interface (connected to your customer WiFi Access Point on subnet `10.0.0.1/19`). Monitor live link state, RX/TX throughput, and gateway assignments.
 
@@ -254,7 +312,7 @@ Inspect and assign the upstream **WAN** interface (connected to your ISP router 
 
 ### DNS & Domain
 
-![Admin Network DNS & Domain](screenshots/admin-network-dns.png)
+<p><img src="screenshots/admin-network-dns.png" alt="Admin Network DNS & Domain" width="560"></p>
 
 Configure upstream DNS resolvers for authorized internet traffic and captive portal hostname/domain settings. The gateway maintains captive probe interception for Apple CNA (`captive.apple.com`), Android (`connectivitycheck.gstatic.com`), and Windows (`msftconnecttest.com`), as well as RFC 8908 / Option 114 captive portal discovery.
 
@@ -262,7 +320,7 @@ Configure upstream DNS resolvers for authorized internet traffic and captive por
 
 ### DHCP & Leases
 
-![Admin Network DHCP & Leases](screenshots/admin-network-dhcp.png)
+<p><img src="screenshots/admin-network-dhcp.png" alt="Admin Network DHCP & Leases" width="560"></p>
 
 Monitor the local DHCP pool (**`10.0.0.0/19`**, **`8,190 IPs`** available from `10.0.0.100` to `10.0.31.254`). The full-height scrollable IP lease table displays every client's leased IP, MAC address, hostname, lease status, and active session status (such as `Paid (42m left)` or `Unauthenticated`).
 
@@ -270,7 +328,7 @@ Monitor the local DHCP pool (**`10.0.0.0/19`**, **`8,190 IPs`** available from `
 
 ### Access Policies
 
-![Admin Network Access Policies](screenshots/admin-network-policies.png)
+<p><img src="screenshots/admin-network-policies.png" alt="Admin Network Access Policies" width="560"></p>
 
 Harden the customer WiFi subnet against unauthorized upstream access and sharing bypasses:
 - **ISP Modem Isolation:** Prevents customer devices from reaching upstream router/modem management pages on private RFC 1918 subnets.
@@ -281,7 +339,7 @@ Harden the customer WiFi subnet against unauthorized upstream access and sharing
 
 ### Bandwidth & Speed + Gaming QoS
 
-![Admin Bandwidth & Gaming QoS](screenshots/admin-bandwidth.png)
+<p><img src="screenshots/admin-bandwidth.png" alt="Admin Bandwidth & Gaming QoS" width="560"></p>
 
 Manage fair bandwidth distribution and low-latency online gaming:
 - **Fixed Client Speed Limits:** Set global per-device upload and download speed caps (`Kbps`/`Mbps`) enforced via Linux HTB/SFQ traffic control.
@@ -292,7 +350,7 @@ Manage fair bandwidth distribution and low-latency online gaming:
 
 ### Walled Garden Sites
 
-![Admin Walled Garden Sites](screenshots/admin-walled-garden.png)
+<p><img src="screenshots/admin-walled-garden.png" alt="Admin Walled Garden Sites" width="560"></p>
 
 Maintain an allowlist of domain names or hosts that customers may reach **before** earning WiFi time (for example, local informational pages or payment/school portals). Only add trusted destinations here, as listed sites bypass the pre-authentication block.
 
@@ -300,7 +358,7 @@ Maintain an allowlist of domain names or hosts that customers may reach **before
 
 ### MAC Filtering
 
-![Admin MAC Filtering](screenshots/admin-mac-filtering.png)
+<p><img src="screenshots/admin-mac-filtering.png" alt="Admin MAC Filtering" width="560"></p>
 
 Manage permanent bypass and block rules by hardware MAC address:
 - **VIP Whitelist:** Grants continuous internet access to operator devices, kiosk displays, or staff phones without requiring bottle deposits.
@@ -313,7 +371,7 @@ Manage permanent bypass and block rules by hardware MAC address:
 
 ### Portal & Banners
 
-![Admin Portal & Banners](screenshots/admin-portal-banners.png)
+<p><img src="screenshots/admin-portal-banners.png" alt="Admin Portal & Banners" width="560"></p>
 
 Customize the customer-facing portal appearance in real time:
 - **Vendo Name:** Main header title shown on both the portal banner and screen greeting.
@@ -324,7 +382,7 @@ Customize the customer-facing portal appearance in real time:
 
 ### Audio & Chimes
 
-![Admin Audio & Chimes](screenshots/admin-audio-chimes.png)
+<p><img src="screenshots/admin-audio-chimes.png" alt="Admin Audio & Chimes" width="560"></p>
 
 Configure audio feedback across **four distinct event stages**:
 1. **Standby Loop:** Background/idle audio behavior.
@@ -342,7 +400,7 @@ The **ESP32 Hardware** workspace provides complete diagnostics, sensor calibrati
 
 ### Chute Sequence Monitor
 
-![Admin ESP32 Chute Sequence Monitor](screenshots/admin-esp32-sequence.png)
+<p><img src="screenshots/admin-esp32-sequence.png" alt="Admin ESP32 Chute Sequence Monitor" width="560"></p>
 
 Monitor the real-time **7-Stage Chute Sequence Pipeline (`S1–S7`)** and latency budget from the moment the entrance gate unlocks through object sorting, verification, and drop completion:
 - Inspect live stage timing, pass/fail telemetry, and diagnostics stream messages.
@@ -352,7 +410,7 @@ Monitor the real-time **7-Stage Chute Sequence Pipeline (`S1–S7`)** and latenc
 
 ### NIR Spectrometer (AS7263)
 
-![Admin ESP32 NIR Spectrometer](screenshots/admin-esp32-nir.png)
+<p><img src="screenshots/admin-esp32-nir.png" alt="Admin ESP32 NIR Spectrometer" width="560"></p>
 
 Calibrate the **AS7263 6-Channel Near-Infrared Sensor (`R, S, T, U, V, W`)** used for material discrimination:
 - View real-time spectral channel counts and calibrated `W` intensity (`uW/cm²`).
@@ -363,7 +421,7 @@ Calibrate the **AS7263 6-Channel Near-Infrared Sensor (`R, S, T, U, V, W`)** use
 
 ### Weight Sensor (HX711)
 
-![Admin ESP32 Weight Sensor](screenshots/admin-esp32-weight.png)
+<p><img src="screenshots/admin-esp32-weight.png" alt="Admin ESP32 Weight Sensor" width="560"></p>
 
 Tune the load-cell cradle connected to the **HX711 ADC**:
 - **Weight Window:** Default valid bottle range is **`15 – 90` g** (with default **HX711 calibration factor `260`**).
@@ -373,7 +431,7 @@ Tune the load-cell cradle connected to the **HX711 ADC**:
 
 ### Servos & Gates (PCA9685)
 
-![Admin ESP32 Servos & Gates](screenshots/admin-esp32-servos.png)
+<p><img src="screenshots/admin-esp32-servos.png" alt="Admin ESP32 Servos & Gates" width="560"></p>
 
 Calibrate mechanical angles on the **PCA9685 PWM Servo Controller**:
 - **Channel 0 — Entrance Gate Servo:** Controls customer bottle entry access (standard closed/open angles `0° / 90°`).
@@ -384,7 +442,7 @@ Calibrate mechanical angles on the **PCA9685 PWM Servo Controller**:
 
 ### Timers & Proximity
 
-![Admin ESP32 Timers & Proximity](screenshots/admin-esp32-timers.png)
+<p><img src="screenshots/admin-esp32-timers.png" alt="Admin ESP32 Timers & Proximity" width="560"></p>
 
 Configure bin fullness sensing and chute state machine timers:
 - **Bin Detection Policy & Geometry:** Set enclosure bin orientation (for example, horizontal bin depth **`18 cm`** triggered at **`3 s`** sustained blockage) so the machine automatically prevents overflow and alerts operators.
@@ -394,7 +452,7 @@ Configure bin fullness sensing and chute state machine timers:
 
 ### Firmware Flash
 
-![Admin ESP32 Firmware Flash](screenshots/admin-esp32-firmware.png)
+<p><img src="screenshots/admin-esp32-firmware.png" alt="Admin ESP32 Firmware Flash" width="560"></p>
 
 Update the connected ESP32 microcontroller safely without removing it from the machine:
 - Review the GPIO strapping / boot pin guidance card before flashing.
@@ -404,7 +462,7 @@ Update the connected ESP32 microcontroller safely without removing it from the m
 
 ### ESP32 Hardware Simulator
 
-![ESP32 Hardware Simulator](screenshots/portal-simulator.png)
+<p><img src="screenshots/portal-simulator.png" alt="ESP32 Hardware Simulator" width="560"></p>
 
 When enabled by an administrator, the authenticated **`/simulator`** route opens the interactive **VMC ECO-VENDO ESP32 Hardware Simulator**:
 - Mirrors the physical **20x4 I2C LCD** screen (including rotating rate tiers and drop state messages).
@@ -417,7 +475,7 @@ When enabled by an administrator, the authenticated **`/simulator`** route opens
 
 ### Telegram Automated Alerts
 
-![Admin Telegram Automated Alerts](screenshots/admin-telegram.png)
+<p><img src="screenshots/admin-telegram.png" alt="Admin Telegram Automated Alerts" width="560"></p>
 
 Receive instant mobile alerts from your vending machine via Telegram:
 1. Create a bot using **`@BotFather`** in Telegram (`New Bot`) to obtain your **Bot Token**.
@@ -428,7 +486,7 @@ Receive instant mobile alerts from your vending machine via Telegram:
 
 ### System Verifier & Health
 
-![Admin System Verifier & Health](screenshots/admin-system-verifier.png)
+<p><img src="screenshots/admin-system-verifier.png" alt="Admin System Verifier & Health" width="560"></p>
 
 Located under **System Maintenance -> System Verifier & Health**, this tool performs end-to-end checks across portal HTTP routes, SQLite database schema integrity, `dnsmasq`/DHCP/DNS readiness, `iptables`/QoS firewall rules, NTP clock status, and ESP32 serial link health so operators can diagnose issues in one click.
 
@@ -436,7 +494,7 @@ Located under **System Maintenance -> System Verifier & Health**, this tool perf
 
 ### Backup & Database
 
-![Admin Database Backup & Restore](screenshots/admin-system-backup.png)
+<p><img src="screenshots/admin-system-backup.png" alt="Admin Database Backup & Restore" width="560"></p>
 
 Protect your rates, voucher ledger, client sessions, and configuration:
 - **Export System Backup:** Download a compressed `.zip` snapshot containing the SQLite database (`ecovendo.db` / system state), settings, vouchers, and operational records.
@@ -446,7 +504,7 @@ Protect your rates, voucher ledger, client sessions, and configuration:
 
 ### Power & Operations
 
-![Admin Power & Operations](screenshots/admin-system-power.png)
+<p><img src="screenshots/admin-system-power.png" alt="Admin Power & Operations" width="560"></p>
 
 Perform high-impact operational commands safely (each action prompts for explicit confirmation before executing):
 - **Flush All Sessions:** Disconnects all currently active clients and resets live firewall grants.
@@ -457,7 +515,7 @@ Perform high-impact operational commands safely (each action prompts for explici
 
 ### System Event Logger
 
-![Admin System Event Logger](screenshots/admin-system-logs.png)
+<p><img src="screenshots/admin-system-logs.png" alt="Admin System Event Logger" width="560"></p>
 
 Inspect real-time and historical events from the portal backend, entitlement engine, network firewall, and ESP32 controller:
 - Filter log lines by **Source** and **Severity Level** or run a keyword search.
@@ -467,7 +525,7 @@ Inspect real-time and historical events from the portal backend, entitlement eng
 
 ### Hardware Licensing & Remote Support
 
-![Admin Hardware Licensing](screenshots/admin-licensing.png)
+<p><img src="screenshots/admin-licensing.png" alt="Admin Hardware Licensing" width="560"></p>
 
 Manage commercial licensing and vendor assistance:
 - **Machine Hardware ID (`HWID`):** Copy the unit's unique 32-character (`XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`) identifier when requesting a commercial license.
