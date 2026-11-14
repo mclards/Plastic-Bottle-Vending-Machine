@@ -80,7 +80,6 @@ The Customer Captive Portal opens automatically when you join the Eco-Vendo WiFi
           </ul>
         </li>
         <li><strong>Insert Plastic Bottle:</strong> Opens the machine's airlock entrance gate to start a deposit session.</li>
-        <li><strong>MUST &bull; RECOMMENDED Callout:</strong> Prominently reminds users directly below the Insert button to <strong>remove plastic / cellophane labels first</strong> (and drain liquids) for high-accuracy NIR sensor detection.</li>
         <li><strong>Bottom Feature Tabs:</strong> Switch between <strong>Rates</strong>, <strong>Voucher</strong>, and <strong>Transfer</strong>, with the <strong>Bottle Acceptance Guide</strong> displayed cleanly underneath.</li>
         <li><strong>Footer:</strong> Displays your device's assigned LAN IP address and hardware MAC address for support reference.</li>
       </ul>
@@ -92,9 +91,9 @@ The Customer Captive Portal opens automatically when you join the Eco-Vendo WiFi
 
 ## 2. Acceptable vs. Rejected Items
 
-Before opening the bottle chute, review the preparation reminder and **Bottle Acceptance Guide**:
+Before opening the bottle chute, review the **Bottle Acceptance Guide**:
 
-- **MUST • RECOMMENDED First Step:** **Remove plastic / cellophane bottle labels completely** before inserting. Label wrappers scatter near-infrared light—peeling them off gives the optical spectrometer clean readings on bare clear PET plastic for highest detection accuracy.
+- **Preparation Tip (`RECOMMENDED`):** **Remove plastic / cellophane bottle labels completely** before inserting. Label wrappers scatter near-infrared light—peeling them off gives the optical spectrometer clean readings on bare clear PET plastic for highest detection accuracy.
 - **Accepted (`ALLOWED`):** Bare clear PET water & soda bottles (`250ml to 1.5L`), completely empty & drained, uncrushed and intact.
 - **Rejected (`NOT ALLOWED`):** Glass bottles, aluminum/tin cans, bottles containing water/colored liquid/dirt, crushed bottles, chemical jugs, or paper wrappers.
 
