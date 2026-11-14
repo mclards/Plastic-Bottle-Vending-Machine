@@ -22,7 +22,8 @@ HARDWARE_BOUNDS={
     'bin_full_threshold_cm':(1,400,18),'pet_nir_w_min':(0,65535,10),
     'pet_nir_w_max':(1,65535,120),'entrance_gate_timeout':(1,600,65),
     'settle_time_ms':(1,30000,1000),'success_drop_tout_ms':(1,30000,3100),
-    'retrieval_timeout_s':(5,300,50),'require_nir_sensor':(0,1,1),
+    'retrieval_timeout_s':(5,300,50),'post_drop_reopen_ms':(500,30000,2500),
+    'require_nir_sensor':(0,1,1),
     'require_weight_sensor':(0,1,1),'require_bin_sensor':(0,1,0),
     'bin_sensor_orientation':(0,1,1),'bin_empty_depth_cm':(20,250,60),
     'bin_debounce_s':(1,30,3),
@@ -61,6 +62,7 @@ class ESP32Simulator:
         self.settle_time_ms = 1000
         self.success_drop_tout_ms = 3100
         self.retrieval_timeout_s = 50
+        self.post_drop_reopen_ms = 2500
         self.require_nir_sensor = 1
         self.require_weight_sensor = 1
         self.require_bin_sensor = 0
@@ -92,6 +94,7 @@ class ESP32Simulator:
         self.current_session_bottles = 0
         self.entrance_gate_requested = False
         self.force_gate_close = False
+        self.last_success_drop_confirm_time = 0.0
         self.lcd_lines = ['=== VMC ECO-VENDO ==', 'Ready for Deposit   ', 'Rate: 1 Bottle = 10m', 'Session Bottles: 0  ']
         self.oled_text = 'VMC ECO-VENDO Ready'
         self.serial_logs = deque(maxlen=100)
@@ -166,6 +169,7 @@ class ESP32Simulator:
                     if self.journal['pending']:return
                     if self.pipe_item_stage not in ('idle','intake') and sid!=self.journal['session_id']:return
                     if self.journal['session_id']!=sid:
+                        self.last_success_drop_confirm_time = 0.0
                         self.journal['session_id']=sid;self.journal['total']=0
                         self.current_session_bottles=0;self._save_journal()
                 self.open_entrance_gate(data.get('timeout',self.entrance_gate_timeout))
@@ -288,6 +292,7 @@ class ESP32Simulator:
 
     def close_entrance_gate(self):
         with self.lock:
+            self.last_success_drop_confirm_time = 0.0
             self.force_gate_close = True
             self.entrance_servo_angle = self.ent_close_angle
             self.led_green = False
@@ -355,6 +360,18 @@ class ESP32Simulator:
             time.sleep(0.05)
 
     def _handle_entrance_cycle(self):
+        confirm_ts = self.last_success_drop_confirm_time
+        self.last_success_drop_confirm_time = 0.0
+        if confirm_ts > 0.0:
+            target_sec = float(getattr(self, 'post_drop_reopen_ms', 2500)) / 1000.0
+            while self.running and not self.force_gate_close and (time.monotonic() - confirm_ts) < target_sec:
+                time.sleep(0.02)
+            if self.force_gate_close or not self.running:
+                with self.lock:
+                    self.force_gate_close = False
+                    self.pipe_item_stage = 'idle'
+                    self.pipe_item_type = 'none'
+                return
         with self.lock:
             self.entrance_servo_angle = self.ent_open_angle
             self.top_ir_triggered = False
@@ -451,10 +468,12 @@ class ESP32Simulator:
             with self.lock:
                 self.success_servo_angle = self.suc_close_angle
             if passed_drop:
+                self.last_success_drop_confirm_time = time.monotonic()
                 self.record_bottle()
                 self.buzz(duration_sec=0.12, pulses=2)
                 self.set_lcd(line0='=== VMC ECO-VENDO ==', line1='STATUS: BOTTLE SAVED', line2='Ready for Deposit   ', line3='Session Bottles: {:<3}'.format(self.current_session_bottles))
-                time.sleep(1.2)
+                splash_sec = 1.2 if self.post_drop_reopen_ms >= 2200 else min(1.2, max(0.2, self.post_drop_reopen_ms / 1000.0))
+                time.sleep(splash_sec)
                 self.led_green = False
                 with self.lock:
                     self.pipe_item_stage = 'idle'

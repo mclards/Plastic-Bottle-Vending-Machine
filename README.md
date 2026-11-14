@@ -450,7 +450,7 @@ Calibrate mechanical angles on the **PCA9685 PWM Servo Controller**:
 
 Configure bin fullness sensing and chute state machine timers:
 - **Bin Detection Policy & Geometry:** Set enclosure bin orientation (for example, horizontal bin depth **`18 cm`** triggered at **`3 s`** sustained blockage) so the machine automatically prevents overflow and alerts operators.
-- **Cycle Timers:** Fine-tune authoritative timing windows (default **Gate `65 s`**, **Settle `1000 ms`**, **Drop `3100 ms`**, **Retrieval `50 s`**) to match physical chute mechanics and anti-crush drop protection.
+- **Cycle Timers:** Fine-tune authoritative timing windows (default **Gate `65 s`**, **Retrieval `50 s`**, **Settle `1000 ms`**, **Drop `3100 ms`**, **Reopen `2500 ms`** after confirmed Stage 7 PET drop) to match physical chute mechanics and anti-crush drop protection.
 
 ---
 

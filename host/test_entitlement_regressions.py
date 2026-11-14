@@ -1345,6 +1345,67 @@ class PortalRegression(unittest.TestCase):
         self.assertEqual(st2['status'], 'REJECTED')
         self.assertEqual(st2['stages']['6_exit']['action'], 'REJECT')
 
+    def test_post_drop_reopen_delay_bounds_persistence_and_tooltips(self):
+        from esp32_simulator import HARDWARE_BOUNDS, validate_hardware_config
+        self.assertEqual(HARDWARE_BOUNDS['post_drop_reopen_ms'], (500, 30000, 2500))
+        self.assertEqual(validate_hardware_config({})['post_drop_reopen_ms'], 2500)
+        self.assertEqual(validate_hardware_config({'post_drop_reopen_ms': 500})['post_drop_reopen_ms'], 500)
+        self.assertEqual(validate_hardware_config({'post_drop_reopen_ms': 30000})['post_drop_reopen_ms'], 30000)
+        with self.assertRaises(ValueError):
+            validate_hardware_config({'post_drop_reopen_ms': 499})
+        with self.assertRaises(ValueError):
+            validate_hardware_config({'post_drop_reopen_ms': 30001})
+
+        with self.client.session_transaction() as sess:
+            sess['admin_logged_in'] = True
+        sent = []
+        self.p.transmit_to_esp32 = lambda data: sent.append(data) or True
+
+        bad = self.client.post('/admin/api/esp32/save', json={'post_drop_reopen_ms': 499})
+        self.assertEqual(bad.status_code, 400)
+        self.assertFalse(sent)
+
+        ok = self.client.post('/admin/api/esp32/save', json={'post_drop_reopen_ms': 4200})
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(self.p.get_config('esp_post_drop_reopen_ms'), '4200')
+        self.assertEqual(sent[-1]['post_drop_reopen_ms'], 4200)
+
+        admin_page = self.client.get('/admin')
+        self.assertEqual(admin_page.status_code, 200)
+        html = admin_page.data.decode('utf-8')
+        self.assertIn('id="esp-reopen-delay"', html)
+        self.assertIn('value="4200"', html)
+        self.assertIn("forId: 'esp-reopen-delay'", html)
+
+    def test_simulator_post_drop_reopen_delay_timing(self):
+        import threading, time
+        from esp32_simulator import ESP32Simulator
+        sim = ESP32Simulator(journal_path=os.path.join(self.folder.name, 'reopen_journal.json'), start_worker=False)
+        try:
+            sim.post_drop_reopen_ms = 650
+            sim.last_success_drop_confirm_time = time.monotonic()
+            sim.force_gate_close = False
+            sim.journal['session_id'] = 'reopen-test-sid'
+            start_t = time.monotonic()
+            t = threading.Thread(target=sim._handle_entrance_cycle, daemon=True)
+            t.start()
+            time.sleep(0.25)
+            self.assertEqual(sim.entrance_servo_angle, sim.ent_close_angle)
+            time.sleep(0.55)
+            self.assertEqual(sim.entrance_servo_angle, sim.ent_open_angle)
+            elapsed_ms = (time.monotonic() - start_t) * 1000.0
+            self.assertGreaterEqual(elapsed_ms, 580.0)
+            sim.close_entrance_gate()
+            t.join(timeout=2.0)
+
+            # Forced close or new session must clear residual drop timestamp immediately
+            sim.last_success_drop_confirm_time = time.monotonic()
+            sim.close_entrance_gate()
+            self.assertEqual(sim.last_success_drop_confirm_time, 0.0)
+        finally:
+            sim.stop()
+
+
 
 
 def uuid_token():
