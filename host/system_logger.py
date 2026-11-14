@@ -569,31 +569,24 @@ class ChuteSequenceTracker(object):
         self.logger.success("CHUTE", log_msg, log_details)
         self._schedule_auto_reset(run_id, delay_sec=8.0)
 
-    def on_rejected(self, reason='Item Rejected', code=None, sensor_data=None):
-        """Item rejected event."""
-        now = time.time()
-        now_str = _format_time_ms()
+    def _extract_sensor_summary(self, sensor_data=None):
+        """Returns (summary_str, sensor_details_dict) from current stage snapshots or packet."""
         with self._lock:
-            delta_ms = int((now - self.last_event_epoch) * 1000) if self.last_event_epoch > 0 else 0
-            self.status = "REJECTED"
-            self.rejection_reason = reason
-            self.rejection_code = code or 'item_rejected'
-            self.stages['6_exit']['action'] = 'REJECT'
-            self.stages['6_exit']['status'] = 'failed'
-            self.stages['6_exit']['timestamp'] = now_str
-            run_id = self._sequence_run_id
-
             wt = self.stages['4_scale'].get('weight_g')
             cal_w = self.stages['5_nir'].get('cal_w')
             is_metal = self.stages['3_prox'].get('is_metal')
 
         if sensor_data and isinstance(sensor_data, dict):
             if wt is None and sensor_data.get('weight_g') is not None:
-                try: wt = round(float(sensor_data.get('weight_g')), 1)
-                except Exception: pass
+                try:
+                    wt = round(float(sensor_data.get('weight_g')), 1)
+                except Exception:
+                    pass
             if cal_w is None and sensor_data.get('cal_w') is not None:
-                try: cal_w = round(float(sensor_data.get('cal_w')), 2)
-                except Exception: pass
+                try:
+                    cal_w = round(float(sensor_data.get('cal_w')), 2)
+                except Exception:
+                    pass
             if is_metal is None and sensor_data.get('is_metal') is not None:
                 is_metal = bool(sensor_data.get('is_metal'))
 
@@ -610,8 +603,60 @@ class ChuteSequenceTracker(object):
             sensor_details['is_metal'] = is_metal
 
         summary = " [" + ", ".join(sensor_parts) + "]" if sensor_parts else ""
+        return summary, sensor_details
+
+    def is_awaiting_drop_transit(self):
+        """True once Stage 6 opened ACCEPT flap and Stage 7 bottom IR transit has not passed."""
+        with self._lock:
+            return (
+                self.current_stage >= 6
+                and self.stages['6_exit'].get('action') == 'ACCEPT'
+                and not self.stages['7_drop'].get('transit_verified', False)
+            )
+
+    def on_rejected(self, reason='Item Rejected', code=None, sensor_data=None):
+        """Item rejected event (Stages 3-5 classification reject, unless drop timeout)."""
+        now = time.time()
+        now_str = _format_time_ms()
+        with self._lock:
+            delta_ms = int((now - self.last_event_epoch) * 1000) if self.last_event_epoch > 0 else 0
+            self.status = "REJECTED"
+            self.rejection_reason = reason
+            self.rejection_code = code or 'item_rejected'
+            self.stages['6_exit']['action'] = 'REJECT'
+            self.stages['6_exit']['status'] = 'failed'
+            self.stages['6_exit']['timestamp'] = now_str
+            run_id = self._sequence_run_id
+
+        summary, sensor_details = self._extract_sensor_summary(sensor_data)
         log_msg = "Chute Classification REJECTED: {}{} (+{}ms)".format(reason, summary, delta_ms)
         log_details = {'stage': 6, 'reason': reason, 'code': code, 'latency_ms': delta_ms}
+        log_details.update(sensor_details)
+
+        self.logger.warn("CHUTE", log_msg, log_details)
+        self._schedule_auto_reset(run_id, delay_sec=8.0)
+
+    def on_drop_timeout(self, reason='Bottom IR did not clear within Success Drop Time', code='drop_timeout', sensor_data=None):
+        """Stage 7 timeout: Classification passed and Stage 6 opened, but bottom IR transit missed."""
+        now = time.time()
+        now_str = _format_time_ms()
+        with self._lock:
+            delta_ms = int((now - self.last_event_epoch) * 1000) if self.last_event_epoch > 0 else 0
+            self.last_event_epoch = now
+            self.total_elapsed_ms = int((now - self.start_epoch) * 1000) if self.start_epoch > 0 else 0
+            self.current_stage = 7
+            self.status = "TIMEOUT"
+            self.rejection_reason = reason
+            self.rejection_code = code or 'drop_timeout'
+            self.stages['7_drop']['status'] = 'failed'
+            self.stages['7_drop']['transit_verified'] = False
+            self.stages['7_drop']['timestamp'] = now_str
+            self.stages['7_drop']['latency_ms'] = delta_ms
+            run_id = self._sequence_run_id
+
+        summary, sensor_details = self._extract_sensor_summary(sensor_data)
+        log_msg = "STAGE 7: PIR Drop Transit TIMEOUT - {}{} (+{}ms)".format(reason, summary, delta_ms)
+        log_details = {'stage': 7, 'reason': reason, 'code': self.rejection_code, 'latency_ms': delta_ms}
         log_details.update(sensor_details)
 
         self.logger.warn("CHUTE", log_msg, log_details)
@@ -693,7 +738,12 @@ class ChuteSequenceTracker(object):
                     elif k == '6_exit':
                         st['detail'] = '{} ({}°)'.format(st.get('action') or 'Flap', st.get('angle', 0))
                     elif k == '7_drop':
-                        st['detail'] = 'Transit OK (+1)' if st.get('transit_verified') else 'Awaiting Fall'
+                        if st.get('transit_verified'):
+                            st['detail'] = 'Transit OK (+1)'
+                        elif st_status == 'failed':
+                            st['detail'] = 'Transit Timeout'
+                        else:
+                            st['detail'] = 'Awaiting Fall'
 
             events_copy = []
             for r in recent_logs:

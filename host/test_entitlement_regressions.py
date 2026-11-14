@@ -1295,6 +1295,56 @@ class PortalRegression(unittest.TestCase):
             self.assertEqual(ok.status_code,200)
             qos_mock.assert_called_with(True,30)
 
+    def test_drop_timeout_preserves_stage6_accept_and_logs_stage7_timeout(self):
+        start_res = self.request('/api/vendo/open_gate')
+        self.assertEqual(start_res.status_code, 200)
+        sid = start_res.get_json()['deposit_session_id']
+
+        for pkt in (
+            {'event': 'GATE_OPEN', 'session_id': sid, 'protocol': 2},
+            {'event': 'INTAKE', 'session_id': sid, 'protocol': 2},
+            {'event': 'PROX_SAMPLE', 'session_id': sid, 'protocol': 2, 'metal': False},
+            {'event': 'WEIGHT_SAMPLE', 'session_id': sid, 'protocol': 2, 'weight_g': 21.2, 'is_valid': True},
+            {'event': 'NIR_SAMPLE', 'session_id': sid, 'protocol': 2, 'calibrated_w': 25.6, 'is_pet': True},
+            {'event': 'DROP_ACTUATED', 'session_id': sid, 'protocol': 2, 'action': 'ACCEPT', 'angle': 90},
+        ):
+            self.p.handle_physical_esp32_packet(pkt)
+
+        self.assertTrue(self.p.chute_tracker.is_awaiting_drop_transit())
+
+        # Physical ESP32 emits bare REJECTED on MSG_DROP_TIMEOUT after Stage 6 ACCEPT
+        drop_tout_pkt = {'event': 'REJECTED', 'session_id': sid, 'protocol': 2}
+        self.p.handle_physical_esp32_packet(drop_tout_pkt)
+        self.p.time_service.on_event(drop_tout_pkt)
+
+        st = self.p.chute_tracker.get_state()
+        self.assertEqual(st['status'], 'TIMEOUT')
+        self.assertEqual(st['stages']['6_exit']['action'], 'ACCEPT')
+        self.assertEqual(st['stages']['6_exit']['status'], 'passed')
+        self.assertEqual(st['stages']['7_drop']['status'], 'failed')
+        self.assertFalse(st['stages']['7_drop']['transit_verified'])
+        self.assertEqual(st['stages']['7_drop']['detail'], 'Transit Timeout')
+
+        vendo_st = self.request('/api/vendo/status', get=True).get_json()
+        self.assertTrue(vendo_st['rejection_alert']['active'])
+        self.assertEqual(vendo_st['rejection_alert']['reason'], 'drop_timeout')
+
+        # Normal classification reject prior to Stage 6 ACCEPT still triggers Stage 6 REJECT
+        start_res2 = self.request('/api/vendo/open_gate')
+        sid2 = start_res2.get_json()['deposit_session_id']
+        for pkt in (
+            {'event': 'GATE_OPEN', 'session_id': sid2, 'protocol': 2},
+            {'event': 'INTAKE', 'session_id': sid2, 'protocol': 2},
+            {'event': 'WEIGHT_SAMPLE', 'session_id': sid2, 'protocol': 2, 'weight_g': 0.0, 'is_valid': False},
+        ):
+            self.p.handle_physical_esp32_packet(pkt)
+        self.assertFalse(self.p.chute_tracker.is_awaiting_drop_transit())
+        rej_pkt = {'event': 'REJECTED', 'session_id': sid2, 'protocol': 2}
+        self.p.handle_physical_esp32_packet(rej_pkt)
+        st2 = self.p.chute_tracker.get_state()
+        self.assertEqual(st2['status'], 'REJECTED')
+        self.assertEqual(st2['stages']['6_exit']['action'], 'REJECT')
+
 
 
 def uuid_token():

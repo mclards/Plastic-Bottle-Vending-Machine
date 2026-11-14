@@ -746,8 +746,17 @@ class TimePortal(object):
                 self.p.transmit_to_esp32({'cmd':'CREDIT_ACK','event_id':event_id,'session_id':sid,'protocol':2})
             elif event=='REJECTED':
                 sid=data.get('session_id')
-                reason=data.get('reason')
-                desc=data.get('desc') or data.get('message') or 'Invalid Material'
+                reason=data.get('reason') or data.get('code')
+                desc=data.get('desc') or data.get('message')
+                if not desc and not reason:
+                    tracker=getattr(self.p,'chute_tracker',None)
+                    if tracker is not None and tracker.is_awaiting_drop_transit():
+                        reason='drop_timeout'
+                        desc='Drop Sensor Timeout - Accepted item did not clear bottom IR within Success Drop Time.'
+                    else:
+                        desc='Invalid Material'
+                elif not desc:
+                    desc='Invalid Material'
                 self.p.active_deposit_rejection={
                     'session_id':sid,
                     'active':True,
