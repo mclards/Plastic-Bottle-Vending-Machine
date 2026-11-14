@@ -80,7 +80,8 @@ The Customer Captive Portal opens automatically when you join the Eco-Vendo WiFi
           </ul>
         </li>
         <li><strong>Insert Plastic Bottle:</strong> Opens the machine's airlock entrance gate to start a deposit session.</li>
-        <li><strong>Bottom Feature Tabs:</strong> Switch between <strong>Rates</strong>, <strong>Voucher</strong>, and <strong>Transfer</strong>.</li>
+        <li><strong>MUST &bull; RECOMMENDED Callout:</strong> Prominently reminds users directly below the Insert button to <strong>remove plastic / cellophane labels first</strong> (and drain liquids) for high-accuracy NIR sensor detection.</li>
+        <li><strong>Bottom Feature Tabs:</strong> Switch between <strong>Rates</strong>, <strong>Voucher</strong>, and <strong>Transfer</strong>, with the <strong>Bottle Acceptance Guide</strong> displayed cleanly underneath.</li>
         <li><strong>Footer:</strong> Displays your device's assigned LAN IP address and hardware MAC address for support reference.</li>
       </ul>
     </td>
@@ -91,10 +92,11 @@ The Customer Captive Portal opens automatically when you join the Eco-Vendo WiFi
 
 ## 2. Acceptable vs. Rejected Items
 
-Before opening the bottle chute, check the **Bottle Acceptance Guide** inside the **Rates** tab:
+Before opening the bottle chute, review the preparation reminder and **Bottle Acceptance Guide**:
 
-- **Accepted:** Empty, clean PET plastic beverage bottles (without metal caps, liquid inside, or foreign objects).
-- **Rejected:** Aluminum/metal cans, glass bottles, cardboard/paper cups, heavy non-bottle objects, or wet/filled bottles.
+- **MUST • RECOMMENDED First Step:** **Remove plastic / cellophane bottle labels completely** before inserting. Label wrappers scatter near-infrared light—peeling them off gives the optical spectrometer clean readings on bare clear PET plastic for highest detection accuracy.
+- **Accepted (`ALLOWED`):** Bare clear PET water & soda bottles (`250ml to 1.5L`), completely empty & drained, uncrushed and intact.
+- **Rejected (`NOT ALLOWED`):** Glass bottles, aluminum/tin cans, bottles containing water/colored liquid/dirt, crushed bottles, chemical jugs, or paper wrappers.
 
 Inserting non-PET or metallic items triggers the sensor rejection gate so you can retrieve the item safely.
 
@@ -109,8 +111,9 @@ Inserting non-PET or metallic items triggers the sensor rejection gate so you ca
     </td>
     <td valign="top">
       <ol>
+        <li>Peel off any <strong>plastic or cellophane wrapper labels</strong> and drain all remaining liquid from your PET bottle.</li>
         <li>Tap <strong>Insert Plastic Bottle</strong> on the portal home screen.</li>
-        <li>Wait for the <strong>AIRLOCK GATE OPEN</strong> prompt along with the live gate countdown timer (e.g., <code>60s</code> / <code>58s</code> window).</li>
+        <li>Wait for the <strong>AIRLOCK GATE OPEN</strong> prompt (showing the inline <strong>RECOMMENDED: Remove plastic / cellophane labels first</strong> reminder and the live countdown timer, e.g., <code>60s</code> / <code>58s</code>).</li>
         <li>Insert one empty PET bottle into the chute at a time. Wait for verification and the acceptance chime before inserting the next bottle.</li>
         <li>Watch the modal counters update in real time with your <strong>credited bottle count</strong> and <strong>earned WiFi minutes</strong> (including any tiered bonus packages configured by the operator).</li>
         <li>When finished, tap <strong>DONE / START BROWSING</strong> (or wait for the gate timer to finish) to activate your WiFi access immediately.</li>
